@@ -1,0 +1,34 @@
+schema: spec-driven
+
+context: |
+  Product: Downlet, a Windows-first native desktop utility for downloading audio or video from a YouTube URL to the user's local computer.
+  Primary user: someone who wants a direct, trustworthy alternative to operating yt-dlp manually.
+  Current phase: design only. Use deterministic fake data and fake transitions. Do not add real yt-dlp integration, subprocesses, network access, ffmpeg, executable discovery, persistence, telemetry, updates, packaging, or backend architecture beyond tiny fake seams needed by the UI.
+  UI target: Kotlin/JVM, Compose Desktop, JetBrains Jewel standalone, IntUiTheme, and DecoratedWindow when it produces the right Windows result.
+  Product shape: one stable primary window, one content column, six in-place states, no navigation, sidebar, tabs, settings, or first-run flow.
+  Required states: Empty, Resolving, Ready, Downloading, Completed, and Error.
+  Design sources: PRODUCT.md, DESIGN.md, D:\Downloads\INITIAL_DESIGN_ORCHESTRATOR_PROMPT.md, and approved docs/design/reviews gate artifacts.
+  Accessibility target: default basic native-desktop accessibility, including logical keyboard focus, visible focus, semantics, contrast, progress announcements, and no status conveyed by color alone.
+  Evidence: G1-G3 require IntelliJ MCP build and inspection plus Compose Hot Reload MCP screenshots, semantics, interactions, resizing, logs, and UI-error checks from exact reviewed commits.
+  Thread model: the root task owns planning and integration. Actual UI implementation and any independent review run only in explicit top-level Codex tasks using GPT-5.6 Sol High. Project subagents are forbidden.
+
+rules:
+  proposal:
+    - Keep this change design-only and name backend integration as out of scope.
+    - State all four human review gates and the explicit stop condition.
+  design:
+    - Map significant UI elements to current Jewel components or a narrowly justified Compose primitive.
+    - Record Windows-first behavior, all six states, fake transitions, review harness, and evidence strategy.
+  specs:
+    - Use SHALL or MUST for normative behavior and include observable scenarios.
+    - Cover only UI design, fake state behavior, the design-review harness, basic accessibility, and review evidence.
+  tasks:
+    - Make every task narrow and independently verifiable.
+    - Give every task an ID, scope, out-of-scope note, expected files or components, acceptance criteria, IntelliJ MCP check, Compose MCP check when visual, and expected evidence.
+
+operations:
+  apply:
+    guidance:
+      - Do not implement before explicit G0 approval.
+      - Use deterministic fake state only.
+      - Dispatch actual UI implementation and independent review to explicit top-level GPT-5.6 Sol High tasks; do not use subagents.
