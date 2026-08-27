@@ -22,6 +22,7 @@ dependencies {
     }
     implementation("org.jetbrains.jewel:jewel-int-ui-standalone:0.39.1-262.9437.29")
     implementation("org.jetbrains.jewel:jewel-int-ui-decorated-window:0.39.1-262.9437.29")
+    testImplementation(kotlin("test"))
 }
 
 kotlin {
