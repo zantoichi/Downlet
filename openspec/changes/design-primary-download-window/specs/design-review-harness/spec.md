@@ -38,7 +38,7 @@ The controller SHALL provide fixtures for normal content, a long two-line title,
 
 ### Requirement: Theme and reset are controllable
 
-The controller SHALL switch the product between light and dark Jewel themes and SHALL reset all fake state to the same known Empty baseline.
+The controller SHALL explicitly switch the product between light and dark Jewel themes regardless of the normal Windows startup preference and SHALL reset all fake state to the same known Empty baseline.
 
 #### Scenario: Reviewer switches theme
 
@@ -66,12 +66,12 @@ The product window SHALL support the ordinary fake transitions independently of 
 
 ### Requirement: Review evidence comes from the product window
 
-Gate screenshots and semantic captures SHALL come from the running product window at the exact reviewed commit. The controller SHALL NOT appear in product screenshots.
+Gate screenshots and semantic captures SHALL come from the running product window at the exact reviewed commit. Compose Hot Reload MCP screenshots SHALL be treated as client-area captures. When title-bar behavior is reviewed, the evidence SHALL also include a Codex Computer Use `Windows.Graphics.Capture` screenshot of the complete real Downlet window and a manual Windows interaction record at that commit. The controller SHALL NOT appear in product screenshots.
 
 #### Scenario: Gate evidence is captured
 
 - **WHEN** G1, G2, or G3 evidence is prepared
-- **THEN** the recorded commit, IntelliJ build result, tests, run configuration, Compose MCP state, screenshots, semantic trees, resize cases, interactions, UI-error result, and log result describe the same running code
+- **THEN** the recorded commit, IntelliJ build result, tests, run configuration, Compose MCP state, client-area screenshots, semantic trees, resize cases, interactions, UI-error result, log result, and any required native full-window proof describe the same running code
 
 ### Requirement: Human gates stop implementation progress
 

@@ -30,9 +30,10 @@ Use this G1 baseline unless a minimal scaffold build proves a hard incompatibili
 - Compose Multiplatform `1.11.0`
 - Jewel standalone `0.39.1-262.9437.29`
 - Compose Hot Reload `1.2.0`
-- JetBrains Runtime / toolchain 25
+- JVM bytecode target `21`
+- JBR `25` as the development and application runtime
 
-Jewel `0.39.1` is the current published standalone line and fixes the standalone transitive icon dependencies. Jewel `0.40` exists for the IntelliJ Platform line but does not publish a standalone version in the current release table. Compose Hot Reload `1.2.0` supports Compose Multiplatform 1.10 or newer and exposes the MCP review tools required by the prompt.
+Jewel `0.39.1` is the current published standalone line and fixes the standalone transitive icon dependencies. Jewel `0.40` exists for the IntelliJ Platform line but does not publish a standalone version in the current release table. Compose Hot Reload `1.2.0` supports Compose Multiplatform 1.10 or newer and exposes the MCP review tools required by the prompt. Hot Reload runs on JBR 25, while its official compatibility requirement keeps project bytecode at Java 21 or earlier; G1 therefore compiles Kotlin and any Java source to target 21 and launches the app on JBR 25.
 
 Alternative considered: follow Jewel `0.40` source APIs. Rejected because this product needs a published standalone artifact, not an IntelliJ Platform bridge.
 
@@ -43,6 +44,10 @@ Use Jewel `DecoratedWindow` with a Compose `WindowState` near `720.dp × 420.dp`
 The title bar contains only the Downlet title and Jewel/JBR-managed Windows controls. Do not add a project stripe, menu, toolbar, breadcrumbs, or IDE actions. This keeps the whole frame in sync when the design-review harness forces light or dark mode while relying on Jewel's JBR-backed drag, resize, maximize, minimize, and close behavior.
 
 Alternative considered: Compose Desktop `Window` with native OS chrome. Rejected because the review harness must switch the complete app frame between light and dark independently of the current Windows theme; native chrome can leave a light title bar around dark Jewel content.
+
+Normal launch reads `androidx.compose.foundation.isSystemInDarkTheme()` and uses that value as its initial `IntUiTheme` selection. If the platform value is unavailable, Downlet uses light. Live switching after the Windows setting changes is not required in this design change; restarting reads the setting again. The Design Review entry point supplies an explicit Light or Dark override.
+
+Compose Hot Reload 1.2.0 screenshots intentionally exclude window-title chrome. Compose MCP remains authoritative for the client area, semantics, interactions, and resize bounds. Each coded gate that judges title-bar parity also records one Codex Computer Use `Windows.Graphics.Capture` screenshot of the real running Downlet window and a manual Windows check for theme, controls, drag, and maximize/restore at the same commit.
 
 ### 3. Keep one pure product surface and one small state holder
 
@@ -94,7 +99,7 @@ Ready uses four regions without cards:
 - Media identity row: a local deterministic 16:9 image or fixed-size fallback on the left; title and one metadata line on the right.
 - Format row: two Jewel `RadioButtonRow` controls for Video and Audio.
 - Quality row: Jewel `ListComboBox` with an explicit fixed/fill width. The selected first item names the actual resolved best, such as `Best available — 2160p` or `Best available — 251 kbps audio`.
-- Destination row: truncated Jewel `Text` plus a Jewel `Link` labeled `Change…`; the fake callback cycles between deterministic destination fixtures.
+- Destination row: truncated Jewel `Text` plus a Jewel `Link` labeled `Change…`; the fake callback cycles between deterministic destination fixtures and shows `Save location changed to {destination}.`
 
 The bottom-right Download action uses Jewel `DefaultButton`. No other primary action appears.
 
@@ -105,8 +110,21 @@ The thumbnail uses Compose `Image` and a bundled local resource because Jewel do
 - **Empty:** YouTube-link row plus one short explanatory sentence; no placeholder illustration.
 - **Resolving:** Jewel `CircularProgressIndicator` beside concise status text. Use the horizontal indeterminate bar only if the first coded review proves the spinner too weak; do not use skeletons.
 - **Downloading:** Jewel `HorizontalProgressBar(progress)` plus percentage and one metadata line. Choices are disabled. Cancel is a Jewel `Link` and returns to Ready with selections preserved.
-- **Completed:** a Jewel success `Icon` plus saved-location text. `DefaultButton("Open Folder")` is primary and a Jewel `Link("Download Another")` resets to Empty. In this design-only build, Open Folder leaves the state in place and shows the concise acknowledgement `Folder opening is simulated in this design build.`
+- **Completed:** a Jewel success `Icon` plus saved-location text. `DefaultButton("Open Folder")` is primary and a Jewel `Link("Download Another")` resets to Empty. In this design-only build, Open Folder leaves the state in place and shows `Folder opening is unavailable in this design preview.`
 - **Error:** `InlineErrorBanner` with `Modifier.fillMaxWidth()` and a banner link action labeled Retry. Preserve media context. Use the non-deprecated `InlineErrorBanner` API available in 0.39.1.
+
+Provisional visible copy is fixed for G1/G2 implementation:
+
+- Empty hint: `Paste a YouTube link to choose video or audio.`
+- Invalid link: `Enter a valid YouTube link.`
+- Resolving: `Checking this YouTube link…`
+- Destination change acknowledgement: `Save location changed to {destination}.`
+- G1-only Download acknowledgement: `Design preview: Download action received.` This is replaced by the real fake Downloading transition at G2.
+- Downloading label: `Downloading`
+- Completed: `Saved to {destination}`
+- Design-only Open Folder acknowledgement: `Folder opening is unavailable in this design preview.`
+- Error title: `Couldn't download this media.`
+- Error body: `Check that the YouTube link is available and try again.`
 
 Fake timing is fixed: resolution completes after `550 ms`; download progress advances through `0, 18, 43, 68, 87, 100` at `350 ms` intervals. The failure fixture enters Error at 68 percent. Controller-forced states bypass timers.
 
@@ -143,7 +161,7 @@ Provide two entry points in the same application module:
 
 The controller uses ordinary Jewel controls to force state, theme, and fixtures. It has no visual influence on the product surface and no shared layout component beyond the state holder. The `Design Review` IntelliJ run configuration launches the review entry point.
 
-Compose Hot Reload MCP must be configured through its `hotMcpServer` Gradle task during G1. Gate evidence targets the product window ID returned by `list_windows`; the controller window is excluded from product screenshots.
+Compose Hot Reload MCP must be configured through its `hotMcpServer` Gradle task during G1. Gate evidence targets the product window ID returned by `list_windows`; the controller window is excluded from product screenshots. Compose captures document the client area. A separate Codex Computer Use `Windows.Graphics.Capture` screenshot documents the complete product frame when title-bar behavior is under review.
 
 ### 12. Preserve the four-gate implementation topology
 
@@ -151,10 +169,24 @@ The root task owns OpenSpec, dispatch packets, integration, and human gates. Act
 
 Each coded gate records an exact commit and is rejected as NOT READY unless IntelliJ MCP inspection/build, relevant tests, run configuration, Compose MCP connection, screenshots, semantic trees, interactions, resize checks, UI errors, and logs all agree on that commit.
 
+Planned implementation packet order:
+
+1. `01-g1-scaffold.md` — tasks 2.2–2.3.
+2. `02-g1-foundation.md` — tasks 2.5–2.9.
+3. `03-g1-url-flow.md` — tasks 3.2–3.6.
+4. `04-g1-ready-surface.md` — tasks 3.8–3.14.
+5. `05-g2-state-system.md` — tasks 4.2–4.9.
+6. `06-g3-hardening.md` — tasks 5.2–5.11.
+
+Review tasks run separately at GPT-5.6 Sol High and are read-only. A concrete defect reopens its owning implementation task IDs; the root then dispatches a separate top-level Sol High implementation task from the last accepted commit. Reviewers and the root do not edit application code.
+
 ## Risks / Trade-offs
 
 - **Jewel 0.40 is newer than the standalone artifact** → Pin the published 0.39.1 standalone coordinate and use its extracted source signatures for G0; make G1's first task a minimal IntelliJ build smoke test.
+- **JBR 25 can be mistaken for the project bytecode level** → Run Gradle and Downlet on JBR 25 but set Kotlin `JvmTarget.JVM_21` and Java `--release 21` explicitly.
 - **Custom decoration can expose platform-specific drag, scale, or window-control defects** → Use Jewel's JBR-backed `DecoratedWindow` and `TitleBar` without custom hit regions, then prove drag, maximize/restore, 125/150 percent scaling, and light/dark frame parity on Windows before a coded gate passes.
+- **Compose MCP screenshots omit title chrome** → Treat them as client-area evidence and add a same-commit Codex Computer Use `Windows.Graphics.Capture` screenshot plus manual Windows interaction record for title-bar checks.
+- **Compose 1.11 does not need to promise live Windows theme updates** → Read `isSystemInDarkTheme()` at normal launch, fall back to light, and require restart after the OS preference changes; the review controller supplies deterministic overrides.
 - **Minimum height is tight in Ready** → Use one compact-height metric branch and prove exactly 620 by 350 through Compose MCP before G1 review.
 - **Paste intent and text-field edits can race** → Keep one short-lived paste-intent flag, clear it after the next edit, and add a small state-holder test for paste-immediate versus type-debounced behavior.
 - **Long path truncation can hide useful context** → Preserve the full path in semantics and deterministic fixtures while keeping Change visibly reachable.

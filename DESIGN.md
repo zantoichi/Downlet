@@ -10,7 +10,7 @@ description: A quiet native desktop utility for clear media-download decisions.
 
 **Creative North Star: "The Quiet Transfer Desk"**
 
-Downlet should resemble a well-made Windows utility opened for one short task. A person pastes a YouTube URL at their Windows desktop in ordinary daytime or evening light, expects immediate confirmation, and wants a local audio or video file without learning a download tool. The theme follows the user's light or dark Windows environment rather than forcing a mood.
+Downlet should resemble a well-made Windows utility opened for one short task. A person pastes a YouTube URL at their Windows desktop in ordinary daytime or evening light, expects immediate confirmation, and wants a local audio or video file without learning a download tool. Normal launch adopts the current Windows light or dark preference at startup through Compose `isSystemInDarkTheme()`, with light as the fallback. The Design Review Controller may override this deterministically. Live switching after Windows changes theme is not promised in this design change; restarting the app picks up the new preference.
 
 The interface combines JetBrains New UI precision with familiar Windows utility behavior. It uses one stable column, compact desktop rhythm, and progressive disclosure. State change provides the interest; decoration does not. Motion is responsive and limited to feedback, progress, and in-place transitions.
 

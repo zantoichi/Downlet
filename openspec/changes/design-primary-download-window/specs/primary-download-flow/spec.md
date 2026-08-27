@@ -23,10 +23,25 @@ The product SHALL present one primary Jewel `DecoratedWindow` with one content c
 - **WHEN** the flow moves among Empty, Resolving, Ready, Downloading, Completed, and Error
 - **THEN** the same primary window and URL context remain in place without navigation, tabs, a sidebar, or a settings surface
 
-#### Scenario: Product theme changes
+#### Scenario: Normal application chooses its startup theme
 
-- **WHEN** the design-review harness switches between light and dark
-- **THEN** the Jewel content and title bar change together without adding a project stripe, menu, toolbar, breadcrumbs, or IDE actions
+- **WHEN** Downlet starts normally and the Windows theme preference is available
+- **THEN** the Jewel content and title bar use that light or dark preference together without adding a project stripe, menu, toolbar, breadcrumbs, or IDE actions
+
+#### Scenario: Windows theme preference is unavailable
+
+- **WHEN** Downlet starts normally and Compose cannot determine the Windows theme preference
+- **THEN** the product uses light theme
+
+#### Scenario: Windows theme changes while Downlet remains open
+
+- **WHEN** the Windows theme preference changes during this design phase
+- **THEN** live switching is not required and the next normal launch reads the new preference
+
+#### Scenario: Design review forces a theme
+
+- **WHEN** the design-review harness selects Light or Dark
+- **THEN** that explicit choice overrides the normal startup preference for the product window
 
 ### Requirement: URL input submits without an extra command
 
@@ -50,25 +65,25 @@ The product SHALL keep a field visibly labeled `YouTube link` and a Paste afford
 #### Scenario: Input is invalid
 
 - **WHEN** pasted or typed text is not a parseable YouTube URL
-- **THEN** the text remains editable, restrained inline validation appears, and no fake resolution starts
+- **THEN** the text remains editable, `Enter a valid YouTube link.` appears as restrained inline validation, and no fake resolution starts
 
 ### Requirement: Empty state remains quiet
 
-The Empty state SHALL show only the persistent YouTube-link row and at most one restrained explanatory sentence. It SHALL NOT show media, format, quality, destination, progress, or download controls before they are useful.
+The Empty state SHALL show only the persistent YouTube-link row and the sentence `Paste a YouTube link to choose video or audio.` It SHALL NOT show media, format, quality, destination, progress, or download controls before they are useful.
 
 #### Scenario: No URL has been submitted
 
 - **WHEN** the product is in Empty
-- **THEN** focus and visual emphasis are placed on the YouTube-link task without illustration, cards, advanced options, or inactive downstream controls
+- **THEN** focus and visual emphasis are placed on the YouTube-link task, the fixed explanatory sentence is visible, and no illustration, cards, advanced options, or inactive downstream controls appear
 
 ### Requirement: Resolving preserves context
 
-The Resolving state SHALL preserve the YouTube-link row, communicate that the media is being checked with a restrained activity treatment, and avoid disruptive reflow.
+The Resolving state SHALL preserve the YouTube-link row, show `Checking this YouTube link…` with a restrained activity treatment, and avoid disruptive reflow.
 
 #### Scenario: Valid URL starts resolving
 
 - **WHEN** fake resolution begins
-- **THEN** the submitted URL remains visible and an indeterminate progress treatment plus concise status text replaces the quiet body region
+- **THEN** the submitted URL remains visible and an indeterminate progress treatment plus `Checking this YouTube link…` replaces the quiet body region
 
 ### Requirement: Ready confirms media identity
 
@@ -103,6 +118,11 @@ The Ready state SHALL expose mutually exclusive Video and Audio choices, one qua
 - **WHEN** Ready is visible
 - **THEN** the current destination begins as Downloads, long paths truncate safely, and a secondary Change action is available
 
+#### Scenario: User changes the destination in the design-only build
+
+- **WHEN** the user activates Change
+- **THEN** the destination cycles to the next deterministic fixture and `Save location changed to {destination}.` appears without opening a native picker
+
 #### Scenario: User starts the download
 
 - **WHEN** the user activates Download in Ready
@@ -124,17 +144,17 @@ The Downloading state SHALL preserve the URL and media identity, lock choices th
 
 ### Requirement: Completed keeps the outcome in place
 
-The Completed state SHALL replace the progress/status region in place, state where the item was saved, present Open Folder as the primary action, and present Download Another as a secondary reset action.
+The Completed state SHALL replace the progress/status region in place, show `Saved to {destination}`, present Open Folder as the primary action, and present Download Another as a secondary reset action.
 
 #### Scenario: Fake download completes
 
 - **WHEN** fake progress reaches completion
-- **THEN** the product shows a calm saved confirmation with Open Folder and Download Another and no celebratory page or animation
+- **THEN** the product shows `Saved to {destination}` with Open Folder and Download Another and no celebratory page or animation
 
 #### Scenario: Open Folder is activated in the design-only build
 
 - **WHEN** the user activates Open Folder
-- **THEN** no operating-system folder action occurs, the Completed context remains in place, and a concise acknowledgement states that folder opening is simulated in this design build
+- **THEN** no operating-system folder action occurs, the Completed context remains in place, and `Folder opening is unavailable in this design preview.` appears
 
 #### Scenario: User downloads another item
 
@@ -143,12 +163,12 @@ The Completed state SHALL replace the progress/status region in place, state whe
 
 ### Requirement: Recoverable failure is actionable
 
-The Error state SHALL preserve useful source and media context, describe the failure in ordinary language, and expose Retry without stack traces, process output, yt-dlp terminology, or backend details.
+The Error state SHALL preserve useful source and media context, show `Couldn't download this media.` and `Check that the YouTube link is available and try again.`, and expose Retry without stack traces, process output, yt-dlp terminology, or backend details.
 
 #### Scenario: Fake download fails
 
 - **WHEN** the deterministic failure fixture is triggered
-- **THEN** an inline error treatment states that the media could not be downloaded and offers Retry
+- **THEN** an inline error treatment shows the fixed error title and body and offers Retry
 
 #### Scenario: User retries
 
