@@ -1,12 +1,12 @@
 # G0 — Direction
 
 Gate: G0  
-Status: INTERNAL_REVIEW
+Status: AWAITING_USER
 Decision: PENDING  
 OpenSpec change: `design-primary-download-window`  
 Code status: NOT STARTED — G0 approval required  
 Compose MCP evidence: NOT APPLICABLE AT G0  
-Independent review: FIRST PASS NOT READY AT `9f6b9b1`; FIXES APPLIED; RECHECK PENDING
+Independent review: PASS — TOP-LEVEL GPT-5.6 SOL HIGH RECHECK OF `c475ecf`
 
 ## Recommended direction
 
@@ -131,6 +131,8 @@ Model: GPT-5.6 Sol
 Reasoning: High
 Reviewed commit: `9f6b9b1e2d9e71d42ab8bf63f7cc91587291bbc6`
 First verdict: NOT READY
+Rechecked commit: `c475ecfebae95fc8be556270f482900cd9c11837`
+Recheck verdict: READY
 
 First-pass findings and resolutions:
 
@@ -169,4 +171,6 @@ Request changes with:
 
 `REVISE G0: <feedback>`
 
-No G1 application code begins before explicit approval. User review remains blocked until the Sol High recheck passes.
+No G1 application code begins before explicit approval.
+
+AWAITING USER: APPROVE G0 or REVISE G0: <feedback>
