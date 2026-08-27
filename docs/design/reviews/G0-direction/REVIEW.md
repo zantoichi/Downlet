@@ -1,10 +1,10 @@
 # G0 — Direction
 
 Gate: G0  
-Status: AWAITING_USER
-Decision: PENDING  
+Status: APPROVED
+Decision: APPROVE G0
 OpenSpec change: `design-primary-download-window`  
-Code status: NOT STARTED — G0 approval required  
+Code status: G1 UNLOCKED — implementation remains delegated to top-level GPT-5.6 Sol High tasks
 Compose MCP evidence: NOT APPLICABLE AT G0  
 Independent review: PASS — TOP-LEVEL GPT-5.6 SOL HIGH RECHECK OF `c475ecf`
 
@@ -171,6 +171,6 @@ Request changes with:
 
 `REVISE G0: <feedback>`
 
-No G1 application code begins before explicit approval.
+User response recorded verbatim: `APPROVE G0`
 
-AWAITING USER: APPROVE G0 or REVISE G0: <feedback>
+G1 is unlocked. Root remains responsible for orchestration and does not implement application code.
