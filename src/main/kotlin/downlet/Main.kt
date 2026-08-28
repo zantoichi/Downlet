@@ -512,7 +512,6 @@ private fun MediaIdentity(fixture: DownloadFixture, thumbnailWidth: androidx.com
                     text = "Preview unavailable",
                     style =
                         JewelTheme.defaultTextStyle.copy(
-                            color = JewelTheme.globalColors.text.info,
                             fontWeight = FontWeight.Medium,
                         ),
                 )
