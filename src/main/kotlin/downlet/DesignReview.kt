@@ -40,6 +40,7 @@ internal object DesignReviewApp {
             stateHolder = stateHolder,
             theme = productTheme,
             onCloseRequest = ::exitApplication,
+            initialPosition = WindowPosition(8.dp, 48.dp),
         )
         ControllerWindow(
             state = stateHolder.state,

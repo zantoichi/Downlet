@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import java.awt.Dimension
@@ -84,10 +85,12 @@ internal fun ProductWindow(
     stateHolder: DownloadStateHolder,
     theme: DownletTheme,
     onCloseRequest: () -> Unit,
+    initialPosition: WindowPosition = WindowPosition.PlatformDefault,
     readClipboardText: () -> String? = ::readWindowsClipboardText,
 ) {
     val windowState =
         rememberWindowState(
+            position = initialPosition,
             width = ProductWindowWidth.dp,
             height = ProductWindowHeight.dp,
         )
