@@ -127,3 +127,15 @@ Conventional Commit and return commit SHA, exact files, checks, and clean status
 ## Dispatch record
 
 Top-level task ID: `01a048a3-3531-7173-884d-81a5775878a8`
+
+## Root inspection correction — 2026-08-28
+
+Root inspection of evidence commit `ec330351eb6137602b0819bc0e75dadd38e18d75` rejected
+`docs/design/evidence/G1/g1-native-ready-dark-full-window.png`: a visible mouse pointer and blue Computer Use halo remain
+near the center of the product content, violating the no-foreign-pixels requirement.
+
+Reopen only task `3.16`. Recapture only that Ready Dark WGC file from the unchanged reviewed product, moving the pointer
+fully outside the target frame before a fresh observation. Inspect the saved PNG at original resolution. Update
+`product-evidence.md` and `g1-ready-semantics.json` only if the final window ID, dimensions, or origin differ. Do not alter
+the accepted Compose captures, Empty native capture, app files, or other evidence. Run strict OpenSpec validation, recheck
+task `3.16`, commit the bounded correction, and return the new evidence commit and clean status.
