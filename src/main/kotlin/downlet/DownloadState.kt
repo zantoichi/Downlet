@@ -1,9 +1,46 @@
 package downlet
 
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import java.net.URI
+import java.net.URISyntaxException
+import java.util.Locale
+
+internal const val ManualLinkDebounceMillis = 350L
+internal const val FakeResolutionMillis = 550L
+internal const val PasteIntentLifetimeMillis = 1_000L
+internal const val InvalidLinkMessage = "Enter a valid YouTube link."
+
+private val YoutubeHosts = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be")
+
+internal fun isValidYouTubeUrl(value: String): Boolean =
+    try {
+        val uri = URI(value.trim())
+        uri.scheme?.lowercase(Locale.ROOT) in setOf("http", "https") &&
+                uri.host?.lowercase(Locale.ROOT) in YoutubeHosts
+    } catch (_: URISyntaxException) {
+        false
+    }
+
+internal sealed interface LinkSubmission {
+    data object None : LinkSubmission
+
+    data object ResolveImmediately : LinkSubmission
+
+    data class ResolveAfter(val delayMillis: Long) : LinkSubmission
+}
+
+internal fun linkSubmissionFor(value: String, pasteIntent: Boolean): LinkSubmission =
+    when {
+        !isValidYouTubeUrl(value) -> LinkSubmission.None
+        pasteIntent -> LinkSubmission.ResolveImmediately
+        else -> LinkSubmission.ResolveAfter(ManualLinkDebounceMillis)
+    }
 
 internal enum class DownletTheme {
     Light,
@@ -72,7 +109,10 @@ internal object DownloadFixtures {
 internal sealed interface DownloadUiState {
     data object Empty : DownloadUiState
 
-    data class Resolving(val fixture: DownloadFixture) : DownloadUiState
+    data class Resolving(
+        val fixture: DownloadFixture,
+        val completesAutomatically: Boolean = true,
+    ) : DownloadUiState
 
     data class Ready(val fixture: DownloadFixture) : DownloadUiState
 
@@ -116,19 +156,88 @@ internal val DownloadUiState.label: String
 internal sealed interface DownloadEvent {
     data object Reset : DownloadEvent
 
+    data class ShowResolving(val fixture: DownloadFixture = DownloadFixtures.normal) : DownloadEvent
+
     data class ShowReady(val fixture: DownloadFixture = DownloadFixtures.normal) : DownloadEvent
 }
 
 @Stable
 internal class DownloadStateHolder(initialState: DownloadUiState = DownloadUiState.Empty) {
+    val linkFieldState = TextFieldState()
+
     var state by mutableStateOf(initialState)
         private set
 
+    var validationMessage by mutableStateOf<String?>(null)
+        private set
+
+    private var observedLinkText = ""
+
+    fun observeLinkEdit(text: String): Boolean {
+        if (text == observedLinkText) return false
+
+        observedLinkText = text
+        validationMessage = text.takeIf { it.isNotBlank() && !isValidYouTubeUrl(it) }?.let { InvalidLinkMessage }
+        state = DownloadUiState.Empty
+        return true
+    }
+
+    fun pasteLink(text: String) {
+        val value = text.trim()
+        if (value.isEmpty()) return
+
+        replaceLink(value)
+        if (isValidYouTubeUrl(value)) {
+            beginResolution(value)
+        } else {
+            validationMessage = InvalidLinkMessage
+            state = DownloadUiState.Empty
+        }
+    }
+
+    fun beginResolution(text: String) {
+        val value = text.trim()
+        if (!isValidYouTubeUrl(value)) return
+
+        replaceLink(value)
+        validationMessage = null
+        state = DownloadUiState.Resolving(DownloadFixtures.normal.copy(sourceUrl = value))
+    }
+
+    fun completeResolution(fixture: DownloadFixture) {
+        val current = state
+        if (current is DownloadUiState.Resolving && current.completesAutomatically && current.fixture == fixture) {
+            state = DownloadUiState.Ready(fixture)
+        }
+    }
+
     fun onEvent(event: DownloadEvent) {
-        state =
-            when (event) {
-                DownloadEvent.Reset -> DownloadUiState.Empty
-                is DownloadEvent.ShowReady -> DownloadUiState.Ready(event.fixture)
+        when (event) {
+            DownloadEvent.Reset -> {
+                observedLinkText = ""
+                linkFieldState.clearText()
+                validationMessage = null
+                state = DownloadUiState.Empty
             }
+
+            is DownloadEvent.ShowResolving -> {
+                replaceLink(event.fixture.sourceUrl)
+                validationMessage = null
+                state = DownloadUiState.Resolving(event.fixture, completesAutomatically = false)
+            }
+
+            is DownloadEvent.ShowReady -> {
+                replaceLink(event.fixture.sourceUrl)
+                validationMessage = null
+                state = DownloadUiState.Ready(event.fixture)
+            }
+        }
+    }
+
+    private fun replaceLink(text: String) {
+        observedLinkText = text
+        if (linkFieldState.text.toString() != text) {
+            linkFieldState.setTextAndPlaceCursorAtEnd(text)
+        }
     }
 }

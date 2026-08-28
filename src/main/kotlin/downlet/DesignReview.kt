@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -36,7 +37,7 @@ internal object DesignReviewApp {
         var productTheme by remember { mutableStateOf(DownletTheme.Light) }
 
         ProductWindow(
-            state = stateHolder.state,
+            stateHolder = stateHolder,
             theme = productTheme,
             onCloseRequest = ::exitApplication,
         )
@@ -58,7 +59,12 @@ private fun ControllerWindow(
     onThemeChange: (DownletTheme) -> Unit,
     onCloseRequest: () -> Unit,
 ) {
-    val windowState = rememberWindowState(width = 380.dp, height = 260.dp)
+    val windowState =
+        rememberWindowState(
+            position = WindowPosition(800.dp, 48.dp),
+            width = 380.dp,
+            height = 260.dp,
+        )
 
     IntUiTheme(
         theme = JewelTheme.lightThemeDefinition(),
@@ -85,6 +91,9 @@ private fun ControllerWindow(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { onEvent(DownloadEvent.Reset) }) {
                             Text("Empty")
+                        }
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowResolving()) }) {
+                            Text("Resolving")
                         }
                         OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady()) }) {
                             Text("Ready")
