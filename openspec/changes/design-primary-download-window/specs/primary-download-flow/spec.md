@@ -45,12 +45,7 @@ The product SHALL present one primary Jewel `DecoratedWindow` with one content c
 
 ### Requirement: URL input submits without an extra command
 
-The product SHALL keep a field visibly labeled `YouTube link` and a Paste affordance visible throughout the flow. A valid pasted YouTube URL SHALL begin fake resolution immediately, while a manually typed valid URL SHALL begin fake resolution after a short idle debounce without requiring Enter or an Analyze action.
-
-#### Scenario: Paste affordance receives a valid URL
-
-- **WHEN** the user activates Paste and the clipboard contains a parseable YouTube URL
-- **THEN** the field is populated and the product enters Resolving immediately
+The product SHALL keep a field visibly labeled `YouTube link` throughout the flow and SHALL NOT show a separate Paste or Analyze action. A valid URL pasted through the operating-system text-field shortcut SHALL begin fake resolution immediately, while a manually typed valid URL SHALL begin fake resolution after a short idle debounce without requiring Enter. The product SHALL NOT proactively read or monitor clipboard contents.
 
 #### Scenario: Operating-system paste shortcut receives a valid URL
 
@@ -69,7 +64,7 @@ The product SHALL keep a field visibly labeled `YouTube link` and a Paste afford
 
 ### Requirement: Empty state remains quiet
 
-The Empty state SHALL show only the persistent YouTube-link row and the sentence `Paste a YouTube link to choose video or audio.` It SHALL NOT show media, format, quality, destination, progress, or download controls before they are useful.
+The Empty state SHALL show only the persistent YouTube-link row and the sentence `Paste or type a YouTube link. Downlet checks it automatically.` It SHALL NOT show media, format, quality, destination, progress, or download controls before they are useful.
 
 #### Scenario: No URL has been submitted
 
@@ -85,9 +80,23 @@ The Resolving state SHALL preserve the YouTube-link row, show `Checking this You
 - **WHEN** fake resolution begins
 - **THEN** the submitted URL remains visible and an indeterminate progress treatment plus `Checking this YouTube link…` replaces the quiet body region
 
+### Requirement: State changes use restrained motion
+
+The state body SHALL change in place with a short `180–220 ms` fade and at most `6` logical pixels of vertical rise. Motion SHALL use standard Compose duration scaling, SHALL NOT block interaction, and SHALL NOT bounce, loop decoratively, or carry status meaning by itself.
+
+#### Scenario: Product state changes with normal animation scale
+
+- **WHEN** Empty, Resolving, or Ready replaces the prior state body
+- **THEN** one restrained fade-and-rise transition clarifies the change without moving the persistent URL field or window geometry
+
+#### Scenario: System animation scale is zero
+
+- **WHEN** Compose reports zero duration scale
+- **THEN** the state body reaches the same final layout immediately without losing any status text or meaning
+
 ### Requirement: Ready confirms media identity
 
-The Ready state SHALL identify the resolved item with a 16:9 thumbnail or missing-thumbnail fallback, title, channel, duration, and provider. The title SHALL support two lines before truncating, and low-value extractor or encoding metadata SHALL remain absent.
+The Ready state SHALL identify the resolved item with a 16:9 thumbnail or missing-thumbnail fallback, title, channel, duration, and provider inside one subtly bounded, low-chroma tonal work plane. The thumbnail SHALL use a modest rounded clip and thin theme-aware boundary. The title SHALL support two lines before truncating, and low-value extractor or encoding metadata SHALL remain absent.
 
 #### Scenario: Typical media resolves
 
@@ -97,7 +106,7 @@ The Ready state SHALL identify the resolved item with a 16:9 thumbnail or missin
 #### Scenario: Thumbnail is unavailable
 
 - **WHEN** fake resolution uses the missing-thumbnail fixture
-- **THEN** the media region keeps the same geometry and shows a restrained non-broken fallback
+- **THEN** the media region keeps the same geometry and shows a clearly distinct tonal fallback with `Preview unavailable` rather than a broken or empty image
 
 ### Requirement: Ready exposes only useful choices
 
@@ -127,6 +136,11 @@ The Ready state SHALL expose mutually exclusive Video and Audio choices, one qua
 
 - **WHEN** the user activates Download in Ready
 - **THEN** the product enters fake Downloading using the visible mode, quality, and destination selections
+
+#### Scenario: Download is unavailable
+
+- **WHEN** the deterministic disabled-action fixture is active
+- **THEN** Download uses its native disabled treatment and the existing feedback area shows one concise visible reason that does not depend on color alone
 
 ### Requirement: Downloading communicates progress calmly
 

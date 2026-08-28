@@ -1,11 +1,11 @@
 # G1 — Core Surface
 
 Gate: G1  
-Status: AWAITING_USER  
+Status: REVISION_IN_PROGRESS
 Commit: `4444ee7949e29b8c8432f3274e186addb9267164`  
 Evidence source commit: `c80f48c03b64db26221d5a9c18a3f026a65b30a7`  
 OpenSpec change: `design-primary-download-window`  
-OpenSpec tasks: `2.1–2.9`, `3.1–3.18`  
+OpenSpec tasks: historical `2.1–2.9`, `3.1–3.18`; revision `3.19–3.23`
 Run configuration: `Design Review`  
 IntelliJ build: PASS  
 Tests: PASS — 17/17  
@@ -13,7 +13,22 @@ Compose MCP: CONNECTED
 UI errors: NONE  
 Date: 2026-08-28
 
-The evidence source differs from the reviewed product commit only through committed orchestration and evidence documents. Application source, resources, build configuration, and run configurations are identical.
+The evidence source differs from the reviewed product commit only through committed orchestration and evidence documents. Application source, resources, build configuration, and run configurations are identical. This package is retained as historical evidence and is superseded by the approved G1 revision now in progress.
+
+## Approved G1 revision
+
+User feedback, recorded verbatim:
+
+> Design is solid.
+>
+> 1. remove the "Paste" button ideally since this should be automatic.
+> 2. I would like the design to be much more fancy and polished, using subtle cool animations, and design elements. Mimicking extremely modern similar designs. And to be minimal at the same time.
+
+User decision, recorded verbatim:
+
+`APPROVE G1 REVISION`
+
+The revision removes the visible Paste action while preserving native `Ctrl+V` immediate resolution and typed-link debounce. It adds one low-chroma tonal work plane, stronger hierarchy, a refined preview/fallback, concise disabled-action explanation, initial/reset focus, and one short fade/rise state transition. It does not add cards, a visual framework, a dependency, backend behavior, G2, or G3 scope.
 
 ## What changed
 
@@ -31,7 +46,7 @@ The evidence source differs from the reviewed product commit only through commit
 - The G1 Download action remains in Ready and shows `Design preview: Download action received.`; G2 replaces it with the deterministic Downloading transition.
 - No settings, history, library, onboarding, advanced format table, codec picker, terminal, or provider-general architecture.
 
-## Manual review
+## Superseded manual review
 
 1. Open `C:\Users\SVall\IdeaProjects\Downlet` in IntelliJ IDEA. Current committed `main` contains the same application tree as reviewed product commit `4444ee7949e29b8c8432f3274e186addb9267164`.
 2. Run the shared `Design Review` configuration. Confirm one `Downlet` product window and one `Design Review Controller` window open.
@@ -49,12 +64,10 @@ The evidence source differs from the reviewed product commit only through commit
 - Paste and typing require no Analyze action or Enter key.
 - The developer-only controller makes the design reproducible without leaking review controls into normal launch.
 
-## Known compromises
+## Historical compromises being resolved
 
 - Product semantic-tree serialization timed out once in Empty and once in Ready because of the known Jewel text-editor tooling stall. The committed JSON records the exact timeout plus controller semantics, native frame accessibility, and visible product labels/actions from the same observed states. No successful product semantic-tree claim is made.
-- Initial focus is not guaranteed. This non-blocking P2 is assigned to task `5.7`.
-- The disabled Download fixture does not explain why the action is unavailable. This non-blocking P2 is assigned to task `5.4`.
-- The missing-preview placeholder is structurally sound but visually subtle. This P3 is assigned to task `5.3`.
+- Initial focus, disabled-action explanation, and missing-preview emphasis are now included in revision task `3.20` instead of being deferred.
 - The complete peak-end experience cannot be judged until G2 adds Downloading and Completed.
 
 ## Inspect these closely
@@ -84,4 +97,4 @@ Request changes with:
 
 `REVISE G1: <feedback>`
 
-AWAITING USER: APPROVE G1 or REVISE G1: <feedback>
+G1 revision in progress. A new code-backed package will replace this one before the gate asks for approval again.

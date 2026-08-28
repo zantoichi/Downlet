@@ -34,7 +34,7 @@ Interactive controls SHALL expose meaningful names, roles, values, and enabled o
 #### Scenario: Ready semantics are inspected
 
 - **WHEN** the semantic tree is captured in Ready
-- **THEN** YouTube link, Paste, Video, Audio, quality, destination change, and Download have unambiguous accessible names and state
+- **THEN** YouTube link, Video, Audio, quality, destination change, and Download have unambiguous accessible names and state
 
 #### Scenario: Downloading semantics are inspected
 
@@ -52,8 +52,13 @@ Buttons and choices SHALL support their native Enter or Space activation behavio
 
 #### Scenario: User activates a focused action
 
-- **WHEN** a keyboard user presses the native activation key on Paste, Download, Cancel, Retry, Open Folder, or Download Another
+- **WHEN** a keyboard user presses the native activation key on Download, Cancel, Retry, Open Folder, or Download Another
 - **THEN** the same action occurs as with pointer activation
+
+#### Scenario: User pastes into the link field
+
+- **WHEN** a keyboard user presses the Windows paste shortcut while the YouTube-link field is focused
+- **THEN** native text editing applies the paste and a valid pasted link begins fake resolution without moving focus through a redundant Paste control
 
 #### Scenario: User presses Escape in the primary surface
 
@@ -101,3 +106,12 @@ All actions required to complete, cancel, retry, reset, or locate a fake downloa
 
 - **WHEN** Ready, Downloading, Completed, or Error first appears
 - **THEN** every essential action for that state is visible with a text label
+
+### Requirement: Motion has an accessible instant alternative
+
+State motion SHALL supplement persistent text and control-state changes rather than communicate meaning alone, and SHALL honor standard Compose duration scaling.
+
+#### Scenario: Motion duration is disabled
+
+- **WHEN** the platform or Compose duration scale is zero
+- **THEN** every state reaches the same visible and semantic result immediately with no missing status, focus, or action

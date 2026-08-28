@@ -1,6 +1,6 @@
 ## Context
 
-See `proposal.md` for motivation and the three capability specs for observable behavior. The repository currently contains design and OpenSpec files only; IntelliJ IDEA reports one empty Java module with no dependencies or run configurations. G0 is therefore theoretical but API-grounded. No Kotlin application code may be added before explicit G0 approval.
+See `proposal.md` for motivation and the three capability specs for observable behavior. G0 is approved and the repository now contains the coded G1 Jewel surface, deterministic review harness, focused state tests, and review evidence. The approved G1 revision removes the redundant visible Paste action and raises visual/motion polish before G1 is presented again.
 
 The recommended Impeccable direction is **The Quiet Transfer Desk**: a familiar Windows utility frame, one persistent YouTube-link row, and one restrained work area that reveals only the information required by the current state.
 
@@ -53,27 +53,28 @@ Compose Hot Reload 1.2.0 screenshots intentionally exclude window-title chrome. 
 
 Create one immutable `DownloadUiState` model with the six explicit product states and one small Compose-aware state holder that accepts UI events. Use sealed state/event types only where they make invalid combinations impossible; do not add repositories, services, factories, dependency injection, or a fake backend interface.
 
-Platform clipboard access stays at the application edge as a function callback. The product composable receives state and event callbacks and contains no AWT type.
+The product composable receives state and event callbacks and contains no AWT clipboard integration. Native text-field editing is the only clipboard surface.
 
 Alternative considered: MVVM plus service interfaces. Rejected as unnecessary for a single deterministic design surface.
 
-### 4. Treat paste as intent while preserving normal text editing
+### 4. Let the field handle paste and submit automatically
 
-Use Jewel's state-based `TextField(TextFieldState, ...)` API. The Paste button reads Windows clipboard text through a tiny AWT adapter, updates the field, validates with `java.net.URI`, and immediately starts fake resolution for supported YouTube hosts.
+Use Jewel's state-based `TextField(TextFieldState, ...)` API with no visible Paste button and no proactive clipboard read. Windows `Ctrl+V` remains native text editing rather than a second product action.
 
-For keyboard paste, apply a Compose key-event modifier that records Ctrl+V intent before the text field handles the edit. Observe `TextFieldState.text`; the next valid pasted value resolves immediately. Other valid edits resolve after a `350 ms` idle debounce. Invalid text remains in the field and sets a restrained inline validation state.
+Apply a Compose preview key-event modifier only to record `Ctrl+V` intent before the text field handles the edit. Observe `TextFieldState.text`; the next valid pasted value resolves immediately. Other valid edits resolve after a `350 ms` idle debounce. Invalid text remains editable and sets a restrained inline validation state. The key path never reads or monitors clipboard contents itself.
 
 Supported fake-validation hosts are `youtube.com`, `www.youtube.com`, `m.youtube.com`, and `youtu.be`. Validation proves only interaction behavior; it does not contact the provider.
 
 Alternative considered: resolve every valid edit immediately. Rejected because it would make manual typing feel jumpy and would not satisfy the agreed debounce behavior.
 
-### 5. Use a stable vertical composition with one compact-height metric switch
+### 5. Use a stable vertical composition with one quiet work plane
 
 The product content is a single `Column`:
 
 1. Persistent URL form row.
-2. Horizontal Jewel `Divider`.
-3. One state body occupying the remaining space.
+2. One subtly bounded, inset tonal work plane occupying the remaining space.
+
+The work plane is a single grouping surface, not a card grid or nested-card system. It uses theme-aware low-chroma cool neutrals, a thin boundary, and no decorative shadow. Its geometry remains stable while the state content changes in place.
 
 Default metrics use approximately 20 dp outer padding, 16 dp major gaps, 8 dp control gaps, and a 96 dp label column. Below roughly 380 dp of client height, one `BoxWithConstraints` branch reduces outer padding and major gaps to 16/12 dp and reduces the media thumbnail while preserving the same information hierarchy. This is desktop resize hardening, not a mobile layout.
 
@@ -81,20 +82,20 @@ If common Windows scaling causes true overflow, the body may use a simple vertic
 
 Alternative considered: allow the minimum-size view to clip or force window expansion. Rejected because the minimum size is an explicit review requirement.
 
-### 6. Keep the YouTube-link row visually ordinary
+### 6. Keep the YouTube-link row direct and automatic
 
-Map the row to Jewel `Text`, state-based `TextField`, and `OutlinedButton`:
+Map the row to Jewel `Text` and the state-based `TextField`:
 
 - `YouTube link` uses a fixed label width aligned with later form rows.
-- The text field takes remaining width and shows `Paste a YouTube link…` as placeholder text.
-- Paste uses an `OutlinedButton`, not a primary button or icon-only action.
+- The text field takes all remaining width and shows `Paste a YouTube link…` as placeholder text.
+- No visible Paste or Analyze action competes with the field; native paste and typed input trigger the automatic behavior.
 - Validation appears as one compact text line directly beneath the field rather than a card or modal.
 
 The YouTube-link row remains present and editable in every state. Editing it during Downloading is disabled; in other states, a new valid URL restarts fake resolution.
 
 ### 7. Make Ready the reference composition
 
-Ready uses four regions without cards:
+Ready uses four regions inside the one work plane, without nested cards:
 
 - Media identity row: a local deterministic 16:9 image or fixed-size fallback on the left; title and one metadata line on the right.
 - Format row: two Jewel `RadioButtonRow` controls for Video and Audio.
@@ -103,7 +104,7 @@ Ready uses four regions without cards:
 
 The bottom-right Download action uses Jewel `DefaultButton`. No other primary action appears.
 
-The thumbnail uses Compose `Image` and a bundled local resource because Jewel does not need to own ordinary media imagery. The fallback uses a quiet Compose `Box`, Jewel `Icon` or text, and explicit semantics. This is the only small custom visual primitive in the main composition.
+The thumbnail uses Compose `Image` and a bundled local resource because Jewel does not need to own ordinary media imagery. It is clipped to a modest rounded rectangle with a thin theme-aware boundary. The fallback uses the same geometry, a distinct tonal fill, concise `Preview unavailable` copy, and explicit semantics. This is the only small custom visual primitive in the main composition.
 
 ### 8. Map remaining states to native Jewel treatments
 
@@ -115,11 +116,12 @@ The thumbnail uses Compose `Image` and a bundled local resource because Jewel do
 
 Provisional visible copy is fixed for G1/G2 implementation:
 
-- Empty hint: `Paste a YouTube link to choose video or audio.`
+- Empty hint: `Paste or type a YouTube link. Downlet checks it automatically.`
 - Invalid link: `Enter a valid YouTube link.`
 - Resolving: `Checking this YouTube link…`
 - Destination change acknowledgement: `Save location changed to {destination}.`
 - G1-only Download acknowledgement: `Design preview: Download action received.` This is replaced by the real fake Downloading transition at G2.
+- Disabled Download reason: `Download is unavailable for this item.`
 - Downloading label: `Downloading`
 - Completed: `Saved to {destination}`
 - Design-only Open Folder acknowledgement: `Folder opening is unavailable in this design preview.`
@@ -128,19 +130,25 @@ Provisional visible copy is fixed for G1/G2 implementation:
 
 Fake timing is fixed: resolution completes after `550 ms`; download progress advances through `0, 18, 43, 68, 87, 100` at `350 ms` intervals. The failure fixture enters Error at 68 percent. Controller-forced states bypass timers.
 
-### 9. Let Jewel supply the visual system
+### 9. Let Jewel supply the visual system and keep motion purposeful
 
-Use Jewel typography, component metrics, semantic colors, icons, focus outlines, disabled appearance, and light/dark theme definitions. Product-specific values are limited to:
+Use Jewel typography, component metrics, semantic colors, icons, focus outlines, disabled appearance, and light/dark theme definitions. Add only one low-chroma cool secondary surface and one existing theme accent role. Do not add glass, neon, gradient text, bespoke shadows, or ornamental color.
+
+State-body replacement uses one short transition: a `180–220 ms` fade combined with at most `6.dp` of vertical rise and `CubicBezierEasing(0.22f, 1f, 0.36f, 1f)`. Focus, paste, and status feedback may reuse this restrained timing. There is no bounce, infinite decorative loop, staggered choreography, or motion that delays interaction. Compose duration scaling remains authoritative so a zero animation scale produces the instant end state.
+
+Product-specific values are limited to:
 
 - window target and minimum size;
 - outer/major/control spacing;
 - form label width;
 - thumbnail dimensions and corner size;
 - media/status region minimum height.
+- the single work-plane fill/boundary;
+- the single state-transition duration, offset, and easing.
 
 Do not define a token hierarchy, card component, generic form framework, or alternate button system. Use named parameters when calling Jewel APIs because its documented source-compatibility policy favors them.
 
-### 10. Add semantics only where native components do not carry enough meaning
+### 10. Add semantics and focus only where native components do not carry enough meaning
 
 Jewel controls retain their native focus and role behavior. Add Compose semantics to:
 
@@ -151,6 +159,8 @@ Jewel controls retain their native focus and role behavior. Add Compose semantic
 - grouped media metadata where individual fragments would be noisy.
 
 Use a polite live region for Resolving, Completed, and Error status changes. Do not make decorative dividers or thumbnail decoration focusable. Do not add a global Escape handler; native popup Escape behavior remains intact.
+
+Request focus for the YouTube-link field when Empty first appears and whenever reset returns to Empty. A disabled Download fixture keeps the native disabled treatment and adds one concise visible explanation in the existing feedback/status area. Motion never carries status meaning by itself.
 
 ### 11. Isolate the deterministic review controller
 
@@ -175,8 +185,9 @@ Planned implementation packet order:
 2. `02-g1-foundation.md` — tasks 2.5–2.9.
 3. `03-g1-url-flow.md` — tasks 3.2–3.6.
 4. `04-g1-ready-surface.md` — tasks 3.8–3.14.
-5. `05-g2-state-system.md` — tasks 4.2–4.9.
-6. `06-g3-hardening.md` — tasks 5.2–5.11.
+5. `07-g1-modern-polish-revision.md` — task 3.20.
+6. `05-g2-state-system.md` — tasks 4.2–4.9.
+7. `06-g3-hardening.md` — tasks 5.2–5.11.
 
 Review tasks run separately at GPT-5.6 Sol High and are read-only. A concrete defect reopens its owning implementation task IDs; the root then dispatches a separate top-level Sol High implementation task from the last accepted commit. Reviewers and the root do not edit application code.
 
@@ -188,7 +199,7 @@ Review tasks run separately at GPT-5.6 Sol High and are read-only. A concrete de
 - **Compose MCP screenshots omit title chrome** → Treat them as client-area evidence and add a same-commit Codex Computer Use `Windows.Graphics.Capture` screenshot plus manual Windows interaction record for title-bar checks.
 - **Compose 1.11 does not need to promise live Windows theme updates** → Read `isSystemInDarkTheme()` at normal launch, fall back to light, and require restart after the OS preference changes; the review controller supplies deterministic overrides.
 - **Minimum height is tight in Ready** → Use one compact-height metric branch and prove exactly 620 by 350 through Compose MCP before G1 review.
-- **Paste intent and text-field edits can race** → Keep one short-lived paste-intent flag, clear it after the next edit, and add a small state-holder test for paste-immediate versus type-debounced behavior.
+- **Paste intent and text-field edits can race** → Keep one short-lived key-intent flag, clear it after the next edit, never read the clipboard proactively, and retain focused tests for paste-immediate versus type-debounced behavior.
 - **Long path truncation can hide useful context** → Preserve the full path in semantics and deterministic fixtures while keeping Change visibly reachable.
 - **Hot Reload MCP is not available before a Gradle app exists** → G0 records the configuration target only; G1 is blocked from review, not from coding, until the server connects to the running app.
 - **Fake timing can make review flaky** → Controller-forced states bypass all delays and are the source for screenshot capture.

@@ -1,14 +1,14 @@
 # G1 — Evidence
 
 Gate: G1  
-Status: PASS  
+Status: SUPERSEDED_BY_APPROVED_G1_REVISION
 Date: 2026-08-28  
 Reviewed product commit: `4444ee7949e29b8c8432f3274e186addb9267164`  
 Evidence source commit: `c80f48c03b64db26221d5a9c18a3f026a65b30a7`  
 Final evidence correction commit: `28a140cd7b01655266deb927076a0776a4d58107`  
 Review orchestration base: `69b01ade0ecb80c9a7110871b2f127e436c1b7af`
 
-The evidence source and later documentation commits contain no application, resource, build, or run-configuration difference from the reviewed product commit.
+The evidence source and later documentation commits contain no application, resource, build, or run-configuration difference from the reviewed product commit. This remains an accurate historical record, but it cannot be used as final G1 evidence after the approved visual/interaction revision.
 
 ## Relevant product files
 

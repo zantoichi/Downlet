@@ -6,7 +6,8 @@ Downlet needs a codable, reviewable desktop direction before implementation begi
 
 - Define one compact, stable primary window for the complete download journey.
 - Define Empty, Resolving, Ready, Downloading, Completed, and Error as in-place states rather than separate screens.
-- Make paste the start of resolution; no Analyze action or Enter requirement is introduced.
+- Make a valid pasted or typed link start resolution automatically; no visible Paste, Analyze, or Enter action is introduced.
+- Refine the coded G1 surface with one low-chroma cool tonal work plane, clearer hierarchy, and restrained state motion while preserving the compact native utility character.
 - Define the Ready state around resolved media identity, Video or Audio selection, a quality label that includes the resolved quality, destination selection, and one Download action.
 - Define deterministic fake transitions and a separate development-only state controller so every state can be reviewed without network or process integration.
 - Define a Windows-first basic accessibility baseline for keyboard order, visible focus, semantics, status communication, contrast, scaling, long content, and missing thumbnails.
