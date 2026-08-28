@@ -129,6 +129,33 @@ class DownloadStateTest {
     }
 
     @Test
+    fun `stale paste intent expires before a later typed edit`() = runTest {
+        val holder = DownloadStateHolder()
+        var pasteIntent = true
+        backgroundScope.launch {
+            collectLinkEdits(
+                edits = snapshotFlow { holder.linkFieldState.text.toString() },
+                stateHolder = holder,
+                consumePasteIntent = { pasteIntent.also { pasteIntent = false } },
+            )
+        }
+        backgroundScope.launch { expirePasteIntent { pasteIntent = false } }
+        runCurrent()
+
+        advanceTimeBy(PasteIntentLifetimeMillis.milliseconds)
+        val typedUrl = "https://youtu.be/after-stale-paste"
+        holder.linkFieldState.setTextAndPlaceCursorAtEnd(typedUrl)
+        Snapshot.sendApplyNotifications()
+        runCurrent()
+
+        advanceTimeBy(349.milliseconds)
+        assertEquals(DownloadUiState.Empty, holder.state)
+        advanceTimeBy(1.milliseconds)
+        runCurrent()
+        assertEquals(typedUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
+    }
+
+    @Test
     fun `newer manual edit cancels prior debounce`() = runTest {
         val holder = DownloadStateHolder()
         backgroundScope.launch {
@@ -192,11 +219,22 @@ class DownloadStateTest {
     }
 
     @Test
-    fun `paste validation and fake resolution remain deterministic`() {
+    fun `native paste validation and fake resolution remain deterministic`() = runTest {
         val holder = DownloadStateHolder()
+        var pasteIntent = true
+        backgroundScope.launch {
+            collectLinkEdits(
+                edits = snapshotFlow { holder.linkFieldState.text.toString() },
+                stateHolder = holder,
+                consumePasteIntent = { pasteIntent.also { pasteIntent = false } },
+            )
+        }
+        runCurrent()
         val validUrl = "https://youtu.be/quiet-transfer"
 
-        holder.pasteLink(validUrl)
+        holder.linkFieldState.setTextAndPlaceCursorAtEnd(validUrl)
+        Snapshot.sendApplyNotifications()
+        runCurrent()
         val resolving = holder.state as DownloadUiState.Resolving
         assertEquals(validUrl, holder.linkFieldState.text.toString())
         assertEquals(validUrl, resolving.fixture.sourceUrl)
@@ -205,7 +243,10 @@ class DownloadStateTest {
         holder.completeResolution(resolving.fixture)
         assertEquals(DownloadUiState.Ready(resolving.fixture), holder.state)
 
-        holder.pasteLink("not a url")
+        pasteIntent = true
+        holder.linkFieldState.setTextAndPlaceCursorAtEnd("not a url")
+        Snapshot.sendApplyNotifications()
+        runCurrent()
         assertEquals(DownloadUiState.Empty, holder.state)
         assertEquals(InvalidLinkMessage, holder.validationMessage)
     }
@@ -279,8 +320,10 @@ class DownloadStateTest {
 
         holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.disabledAction))
         assertFalse(holder.downloadEnabled)
+        assertEquals(DownloadUnavailableMessage, holder.readyStatus)
         holder.download()
         assertNull(holder.readyFeedback)
+        assertEquals(DownloadUnavailableMessage, holder.readyStatus)
     }
 
     @Test

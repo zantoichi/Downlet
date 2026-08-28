@@ -1,6 +1,14 @@
 package downlet
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +35,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -37,6 +49,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,8 +59,6 @@ import androidx.compose.ui.window.rememberWindowState
 import downlet.generated.resources.Res
 import downlet.generated.resources.thumbnail_normal
 import java.awt.Dimension
-import java.awt.Toolkit
-import java.awt.datatransfer.DataFlavor
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -63,14 +74,11 @@ import org.jetbrains.jewel.intui.window.styling.dark
 import org.jetbrains.jewel.intui.window.styling.light
 import org.jetbrains.jewel.intui.window.styling.lightWithLightHeader
 import org.jetbrains.jewel.ui.ComponentStyling
-import org.jetbrains.jewel.ui.Orientation
 import org.jetbrains.jewel.ui.Outline
 import org.jetbrains.jewel.ui.component.CircularProgressIndicator
 import org.jetbrains.jewel.ui.component.DefaultButton
-import org.jetbrains.jewel.ui.component.Divider
 import org.jetbrains.jewel.ui.component.Link
 import org.jetbrains.jewel.ui.component.ListComboBox
-import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.RadioButtonRow
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
@@ -107,7 +115,6 @@ internal fun ProductWindow(
     theme: DownletTheme,
     onCloseRequest: () -> Unit,
     initialPosition: WindowPosition = WindowPosition.PlatformDefault,
-    readClipboardText: () -> String? = ::readWindowsClipboardText,
 ) {
     val windowState =
         rememberWindowState(
@@ -151,18 +158,16 @@ internal fun ProductWindow(
                 Text(ProductWindowTitle)
             }
 
-            ProductSurface(stateHolder = stateHolder, readClipboardText = readClipboardText)
+            ProductSurface(stateHolder = stateHolder)
         }
     }
 }
 
 @Composable
-private fun ProductSurface(
-    stateHolder: DownloadStateHolder,
-    readClipboardText: () -> String?,
-) {
+private fun ProductSurface(stateHolder: DownloadStateHolder) {
     val state = stateHolder.state
     val linkFieldState = stateHolder.linkFieldState
+    val linkFieldFocusRequester = remember { FocusRequester() }
     var pasteIntent by remember { mutableStateOf(false) }
 
     LaunchedEffect(linkFieldState) {
@@ -176,8 +181,12 @@ private fun ProductSurface(
     }
     LaunchedEffect(pasteIntent) {
         if (pasteIntent) {
-            delay(PasteIntentLifetimeMillis.milliseconds)
-            pasteIntent = false
+            expirePasteIntent { pasteIntent = false }
+        }
+    }
+    LaunchedEffect(state) {
+        if (state is DownloadUiState.Empty) {
+            linkFieldFocusRequester.requestFocus()
         }
     }
     LaunchedEffect(state) {
@@ -194,6 +203,10 @@ private fun ProductSurface(
         val compact = maxHeight < 330.dp
         val outerPadding = if (compact) 16.dp else 20.dp
         val majorGap = if (compact) 12.dp else 16.dp
+        val workPlaneShape = RoundedCornerShape(10.dp)
+        val accent = JewelTheme.globalColors.outlines.focused
+        val workPlaneFill = accent.copy(alpha = if (JewelTheme.isDark) 0.10f else 0.055f)
+        val workPlaneBorder = JewelTheme.globalColors.borders.normal
 
         Column(
             modifier = Modifier.fillMaxSize().padding(outerPadding),
@@ -214,6 +227,7 @@ private fun ProductSurface(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
+                                .focusRequester(linkFieldFocusRequester)
                                 .onPreviewKeyEvent { event ->
                                     if (
                                         event.type == KeyEventType.KeyDown &&
@@ -240,17 +254,18 @@ private fun ProductSurface(
                         }
                     }
                 }
-                OutlinedButton(
-                    onClick = { readClipboardText()?.let(stateHolder::pasteLink) },
-                    modifier = Modifier.padding(start = 8.dp),
-                ) {
-                    Text("Paste")
-                }
             }
 
-            Divider(orientation = Orientation.Horizontal)
-
-            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(workPlaneShape)
+                        .background(workPlaneFill)
+                        .border(1.dp, workPlaneBorder, workPlaneShape)
+                        .padding(if (compact) 12.dp else 16.dp),
+            ) {
                 ProductBody(stateHolder, compact)
             }
         }
@@ -276,6 +291,11 @@ internal suspend fun collectLinkEdits(
     }
 }
 
+internal suspend fun expirePasteIntent(clearPasteIntent: () -> Unit) {
+    delay(PasteIntentLifetimeMillis.milliseconds)
+    clearPasteIntent()
+}
+
 internal suspend fun completeAutomaticResolution(
     stateHolder: DownloadStateHolder,
     state: DownloadUiState.Resolving,
@@ -288,30 +308,53 @@ internal suspend fun completeAutomaticResolution(
 
 @Composable
 private fun ProductBody(stateHolder: DownloadStateHolder, compact: Boolean) {
-    when (val state = stateHolder.state) {
-        DownloadUiState.Empty ->
-            Text(
-                text = "Paste a YouTube link to choose video or audio.",
-                modifier = Modifier.semantics {
-                    contentDescription = "Status: Paste a YouTube link to choose video or audio."
-                },
-            )
+    val easing = remember { CubicBezierEasing(0.22f, 1f, 0.36f, 1f) }
+    val risePixels = with(LocalDensity.current) { 6.dp.roundToPx() }
 
-        is DownloadUiState.Resolving ->
-            Row(
-                modifier =
-                    Modifier.semantics(mergeDescendants = true) {
-                        contentDescription = "Status: Checking this YouTube link…"
-                        liveRegion = LiveRegionMode.Polite
-                    },
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                CircularProgressIndicator()
-                Text("Checking this YouTube link…")
-            }
+    AnimatedContent(
+        targetState = stateHolder.state,
+        transitionSpec = {
+            (fadeIn(animationSpec = tween(durationMillis = 200, easing = easing)) +
+                    slideInVertically(
+                        animationSpec = tween(durationMillis = 200, easing = easing),
+                        initialOffsetY = { risePixels },
+                    ))
+                .togetherWith(fadeOut(animationSpec = tween(durationMillis = 150, easing = easing)))
+                .using(sizeTransform = null)
+        },
+        contentAlignment = Alignment.TopStart,
+        contentKey = { it::class },
+        label = "Downlet state body",
+    ) { state ->
+        when (state) {
+            DownloadUiState.Empty ->
+                Text(
+                    text = "Paste or type a YouTube link. Downlet checks it automatically.",
+                    modifier =
+                        Modifier.semantics {
+                            contentDescription =
+                                "Status: Paste or type a YouTube link. Downlet checks it automatically."
+                        },
+                    style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.Medium),
+                )
 
-        is DownloadUiState.Ready -> ReadyBody(stateHolder, state.fixture, compact)
-        else -> Text(state.label)
+            is DownloadUiState.Resolving ->
+                Row(
+                    modifier =
+                        Modifier.semantics(mergeDescendants = true) {
+                            contentDescription = "Status: Checking this YouTube link…"
+                            liveRegion = LiveRegionMode.Polite
+                        },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator()
+                    Text("Checking this YouTube link…")
+                }
+
+            is DownloadUiState.Ready -> ReadyBody(stateHolder, state.fixture, compact)
+            else -> Text(state.label)
+        }
     }
 }
 
@@ -391,7 +434,7 @@ private fun ReadyBody(
             verticalAlignment = Alignment.Bottom,
         ) {
             Box(modifier = Modifier.weight(1f).height(36.dp)) {
-                stateHolder.readyFeedback?.let { feedback ->
+                stateHolder.readyStatus?.let { feedback ->
                     Text(
                         text = feedback,
                         modifier =
@@ -433,6 +476,17 @@ private fun FormRow(
 
 @Composable
 private fun MediaIdentity(fixture: DownloadFixture, thumbnailWidth: androidx.compose.ui.unit.Dp) {
+    val previewShape = RoundedCornerShape(7.dp)
+    val previewBorder = JewelTheme.globalColors.borders.normal
+    val fallbackFill =
+        JewelTheme.globalColors.outlines.focused.copy(alpha = if (JewelTheme.isDark) 0.16f else 0.09f)
+    val previewModifier =
+        Modifier
+            .width(thumbnailWidth)
+            .aspectRatio(16f / 9f)
+            .clip(previewShape)
+            .border(1.dp, previewBorder, previewShape)
+
     Row(
         modifier =
             Modifier
@@ -446,15 +500,22 @@ private fun MediaIdentity(fixture: DownloadFixture, thumbnailWidth: androidx.com
             Image(
                 painter = painterResource(Res.drawable.thumbnail_normal),
                 contentDescription = null,
-                modifier = Modifier.width(thumbnailWidth).aspectRatio(16f / 9f),
+                modifier = previewModifier,
                 contentScale = ContentScale.Crop,
             )
         } else {
             Box(
-                modifier = Modifier.width(thumbnailWidth).aspectRatio(16f / 9f),
+                modifier = previewModifier.background(fallbackFill),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Preview unavailable")
+                Text(
+                    text = "Preview unavailable",
+                    style =
+                        JewelTheme.defaultTextStyle.copy(
+                            color = JewelTheme.globalColors.text.info,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                )
             }
         }
 
@@ -464,7 +525,7 @@ private fun MediaIdentity(fixture: DownloadFixture, thumbnailWidth: androidx.com
         ) {
             Text(
                 text = fixture.title,
-                style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.Medium),
+                style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -483,15 +544,3 @@ internal fun mediaContentDescription(
 ): String =
     "Media: ${fixture.title}. ${fixture.channel} · ${fixture.duration} · YouTube." +
             if (thumbnailAvailable) "" else " Preview unavailable."
-
-private fun readWindowsClipboardText(): String? =
-    try {
-        val clipboard = Toolkit.getDefaultToolkit().systemClipboard
-        if (clipboard.isDataFlavorAvailable(DataFlavor.stringFlavor)) {
-            (clipboard.getData(DataFlavor.stringFlavor) as? String)?.takeIf { it.isNotBlank() }
-        } else {
-            null
-        }
-    } catch (_: Exception) {
-        null
-    }

@@ -16,6 +16,7 @@ internal const val FakeResolutionMillis = 550L
 internal const val PasteIntentLifetimeMillis = 1_000L
 internal const val InvalidLinkMessage = "Enter a valid YouTube link."
 internal const val DownloadAcknowledgement = "Design preview: Download action received."
+internal const val DownloadUnavailableMessage = "Download is unavailable for this item."
 
 internal enum class DownloadMode {
     Video,
@@ -219,6 +220,12 @@ internal class DownloadStateHolder(initialState: DownloadUiState = DownloadUiSta
                 fixture.canDownload && isValidYouTubeUrl(fixture.sourceUrl)
             } == true
 
+    val readyStatus: String?
+        get() =
+            (state as? DownloadUiState.Ready)?.fixture?.let { fixture ->
+                if (fixture.canDownload) readyFeedback else DownloadUnavailableMessage
+            }
+
     private var observedLinkText = ""
 
     fun observeLinkEdit(text: String): Boolean {
@@ -229,20 +236,6 @@ internal class DownloadStateHolder(initialState: DownloadUiState = DownloadUiSta
         clearReadySelection()
         state = DownloadUiState.Empty
         return true
-    }
-
-    fun pasteLink(text: String) {
-        val value = text.trim()
-        if (value.isEmpty()) return
-
-        replaceLink(value)
-        if (isValidYouTubeUrl(value)) {
-            beginResolution(value)
-        } else {
-            validationMessage = InvalidLinkMessage
-            clearReadySelection()
-            state = DownloadUiState.Empty
-        }
     }
 
     fun beginResolution(text: String) {
