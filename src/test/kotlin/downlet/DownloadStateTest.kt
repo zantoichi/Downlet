@@ -45,6 +45,7 @@ class DownloadStateTest {
         assertNull(DownloadFixtures.missingThumbnail.thumbnailResource)
         assertTrue(DownloadFixtures.longDestination.destination.length > DownloadFixtures.normal.destination.length)
         assertEquals(FakeDownloadOutcome.Failure(68), DownloadFixtures.failure.outcome)
+        assertFalse(DownloadFixtures.disabledAction.canDownload)
     }
 
     @Test
@@ -118,5 +119,96 @@ class DownloadStateTest {
         val forced = holder.state as DownloadUiState.Resolving
         holder.completeResolution(forced.fixture)
         assertEquals(forced, holder.state)
+    }
+
+    @Test
+    fun `fresh ready defaults to video and resolved best quality`() {
+        val holder = DownloadStateHolder()
+
+        holder.onEvent(DownloadEvent.ShowReady())
+
+        assertEquals(DownloadMode.Video, holder.selectedMode)
+        assertEquals(VideoQualityOptions, holder.qualityOptions)
+        assertEquals("Best available — 2160p", holder.selectedQualityLabel)
+        assertEquals("Downloads", holder.destination)
+        assertNull(holder.readyFeedback)
+    }
+
+    @Test
+    fun `mode and quality changes stay mutually exclusive and reset best quality`() {
+        val holder = DownloadStateHolder()
+        holder.onEvent(DownloadEvent.ShowReady())
+
+        holder.selectQuality(2)
+        assertEquals("1080p", holder.selectedQualityLabel)
+
+        holder.selectMode(DownloadMode.Audio)
+        assertEquals(DownloadMode.Audio, holder.selectedMode)
+        assertEquals(AudioQualityOptions, holder.qualityOptions)
+        assertEquals("Best available — 251 kbps audio", holder.selectedQualityLabel)
+
+        holder.selectQuality(1)
+        assertEquals("160 kbps audio", holder.selectedQualityLabel)
+
+        holder.selectMode(DownloadMode.Video)
+        assertEquals("Best available — 2160p", holder.selectedQualityLabel)
+    }
+
+    @Test
+    fun `destination cycles deterministic fixtures and acknowledges the visible value`() {
+        val holder = DownloadStateHolder()
+        holder.onEvent(DownloadEvent.ShowReady())
+
+        holder.changeDestination()
+
+        assertEquals(DownloadFixtures.longDestination.destination, holder.destination)
+        assertEquals("Save location changed to ${holder.destination}.", holder.readyFeedback)
+    }
+
+    @Test
+    fun `download acknowledgement stays ready and disabled fixture ignores activation`() {
+        val holder = DownloadStateHolder()
+        holder.onEvent(DownloadEvent.ShowReady())
+
+        holder.download()
+        assertEquals(DownloadAcknowledgement, holder.readyFeedback)
+        assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
+
+        holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.disabledAction))
+        assertFalse(holder.downloadEnabled)
+        holder.download()
+        assertNull(holder.readyFeedback)
+    }
+
+    @Test
+    fun `source resolution fixture and reset clear stale ready choices and feedback`() {
+        val holder = DownloadStateHolder()
+        holder.onEvent(DownloadEvent.ShowReady())
+        holder.selectMode(DownloadMode.Audio)
+        holder.selectQuality(1)
+        holder.changeDestination()
+        holder.download()
+
+        holder.observeLinkEdit("https://youtube.com/watch?v=new")
+        assertEquals(DownloadUiState.Empty, holder.state)
+        assertEquals(DownloadMode.Video, holder.selectedMode)
+        assertEquals(0, holder.selectedQualityIndex)
+        assertEquals("", holder.destination)
+        assertNull(holder.readyFeedback)
+
+        holder.beginResolution("https://youtube.com/watch?v=new")
+        val resolving = holder.state as DownloadUiState.Resolving
+        holder.completeResolution(resolving.fixture)
+        assertEquals("Downloads", holder.destination)
+        assertEquals("Best available — 2160p", holder.selectedQualityLabel)
+
+        holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.longDestination))
+        assertEquals(DownloadFixtures.longDestination.destination, holder.destination)
+        assertNull(holder.readyFeedback)
+
+        holder.onEvent(DownloadEvent.Reset)
+        assertEquals(DownloadUiState.Empty, holder.state)
+        assertEquals("", holder.destination)
+        assertNull(holder.readyFeedback)
     }
 }

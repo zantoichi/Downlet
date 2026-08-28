@@ -15,6 +15,15 @@ internal const val ManualLinkDebounceMillis = 350L
 internal const val FakeResolutionMillis = 550L
 internal const val PasteIntentLifetimeMillis = 1_000L
 internal const val InvalidLinkMessage = "Enter a valid YouTube link."
+internal const val DownloadAcknowledgement = "Design preview: Download action received."
+
+internal enum class DownloadMode {
+    Video,
+    Audio,
+}
+
+internal val VideoQualityOptions = listOf("Best available — 2160p", "1440p", "1080p", "720p", "480p")
+internal val AudioQualityOptions = listOf("Best available — 251 kbps audio", "160 kbps audio", "128 kbps audio")
 
 private val YoutubeHosts = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be")
 
@@ -66,6 +75,7 @@ internal data class DownloadFixture(
     val destination: String,
     val thumbnailResource: String?,
     val outcome: FakeDownloadOutcome = FakeDownloadOutcome.Success,
+    val canDownload: Boolean = true,
 )
 
 internal object DownloadFixtures {
@@ -77,7 +87,7 @@ internal object DownloadFixtures {
             channel = "North Window",
             duration = "12:34",
             destination = "Downloads",
-            thumbnailResource = "thumbnail-normal.png",
+            thumbnailResource = "thumbnail-normal.svg",
         )
 
     val longTitle =
@@ -104,7 +114,20 @@ internal object DownloadFixtures {
             id = "failure",
             outcome = FakeDownloadOutcome.Failure(atPercent = 68),
         )
+
+    val disabledAction =
+        normal.copy(
+            id = "disabled-action",
+            canDownload = false,
+        )
 }
+
+private val ReadyDestinations =
+    listOf(
+        DownloadFixtures.longDestination.destination,
+        "D:\\Media\\Downloads",
+        DownloadFixtures.normal.destination,
+    )
 
 internal sealed interface DownloadUiState {
     data object Empty : DownloadUiState
@@ -171,6 +194,30 @@ internal class DownloadStateHolder(initialState: DownloadUiState = DownloadUiSta
     var validationMessage by mutableStateOf<String?>(null)
         private set
 
+    var selectedMode by mutableStateOf(DownloadMode.Video)
+        private set
+
+    var selectedQualityIndex by mutableStateOf(0)
+        private set
+
+    var destination by mutableStateOf("")
+        private set
+
+    var readyFeedback by mutableStateOf<String?>(null)
+        private set
+
+    val qualityOptions: List<String>
+        get() = if (selectedMode == DownloadMode.Video) VideoQualityOptions else AudioQualityOptions
+
+    val selectedQualityLabel: String
+        get() = qualityOptions[selectedQualityIndex]
+
+    val downloadEnabled: Boolean
+        get() =
+            (state as? DownloadUiState.Ready)?.fixture?.let { fixture ->
+                fixture.canDownload && isValidYouTubeUrl(fixture.sourceUrl)
+            } == true
+
     private var observedLinkText = ""
 
     fun observeLinkEdit(text: String): Boolean {
@@ -178,6 +225,7 @@ internal class DownloadStateHolder(initialState: DownloadUiState = DownloadUiSta
 
         observedLinkText = text
         validationMessage = text.takeIf { it.isNotBlank() && !isValidYouTubeUrl(it) }?.let { InvalidLinkMessage }
+        clearReadySelection()
         state = DownloadUiState.Empty
         return true
     }
@@ -191,6 +239,7 @@ internal class DownloadStateHolder(initialState: DownloadUiState = DownloadUiSta
             beginResolution(value)
         } else {
             validationMessage = InvalidLinkMessage
+            clearReadySelection()
             state = DownloadUiState.Empty
         }
     }
@@ -201,14 +250,43 @@ internal class DownloadStateHolder(initialState: DownloadUiState = DownloadUiSta
 
         replaceLink(value)
         validationMessage = null
+        clearReadySelection()
         state = DownloadUiState.Resolving(DownloadFixtures.normal.copy(sourceUrl = value))
     }
 
     fun completeResolution(fixture: DownloadFixture) {
         val current = state
         if (current is DownloadUiState.Resolving && current.completesAutomatically && current.fixture == fixture) {
+            prepareReady(fixture)
             state = DownloadUiState.Ready(fixture)
         }
+    }
+
+    fun selectMode(mode: DownloadMode) {
+        if (state !is DownloadUiState.Ready || selectedMode == mode) return
+
+        selectedMode = mode
+        selectedQualityIndex = 0
+        readyFeedback = null
+    }
+
+    fun selectQuality(index: Int) {
+        if (state !is DownloadUiState.Ready || index !in qualityOptions.indices || selectedQualityIndex == index) return
+
+        selectedQualityIndex = index
+        readyFeedback = null
+    }
+
+    fun changeDestination() {
+        if (state !is DownloadUiState.Ready) return
+
+        val currentIndex = ReadyDestinations.indexOf(destination)
+        destination = ReadyDestinations[(currentIndex + 1).mod(ReadyDestinations.size)]
+        readyFeedback = "Save location changed to $destination."
+    }
+
+    fun download() {
+        if (downloadEnabled) readyFeedback = DownloadAcknowledgement
     }
 
     fun onEvent(event: DownloadEvent) {
@@ -217,21 +295,38 @@ internal class DownloadStateHolder(initialState: DownloadUiState = DownloadUiSta
                 observedLinkText = ""
                 linkFieldState.clearText()
                 validationMessage = null
+                clearReadySelection()
                 state = DownloadUiState.Empty
             }
 
             is DownloadEvent.ShowResolving -> {
                 replaceLink(event.fixture.sourceUrl)
                 validationMessage = null
+                clearReadySelection()
                 state = DownloadUiState.Resolving(event.fixture, completesAutomatically = false)
             }
 
             is DownloadEvent.ShowReady -> {
                 replaceLink(event.fixture.sourceUrl)
                 validationMessage = null
+                prepareReady(event.fixture)
                 state = DownloadUiState.Ready(event.fixture)
             }
         }
+    }
+
+    private fun prepareReady(fixture: DownloadFixture) {
+        selectedMode = DownloadMode.Video
+        selectedQualityIndex = 0
+        destination = fixture.destination
+        readyFeedback = null
+    }
+
+    private fun clearReadySelection() {
+        selectedMode = DownloadMode.Video
+        selectedQualityIndex = 0
+        destination = ""
+        readyFeedback = null
     }
 
     private fun replaceLink(text: String) {

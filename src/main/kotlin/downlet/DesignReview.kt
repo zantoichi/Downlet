@@ -63,8 +63,8 @@ private fun ControllerWindow(
     val windowState =
         rememberWindowState(
             position = WindowPosition(800.dp, 48.dp),
-            width = 380.dp,
-            height = 260.dp,
+            width = 560.dp,
+            height = 360.dp,
         )
 
     IntUiTheme(
@@ -100,7 +100,27 @@ private fun ControllerWindow(
                             Text("Ready")
                         }
                     }
-                    Text("Current state: ${state.label}")
+                    Text("Ready fixtures")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.normal)) }) {
+                            Text("Normal")
+                        }
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.longTitle)) }) {
+                            Text("Long title")
+                        }
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.missingThumbnail)) }) {
+                            Text("No preview")
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.longDestination)) }) {
+                            Text("Long path")
+                        }
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.disabledAction)) }) {
+                            Text("Disabled")
+                        }
+                    }
+                    Text("Current state: ${state.label} ${(state as? DownloadUiState.Ready)?.fixture?.id.orEmpty()}")
 
                     Text("Product theme")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
