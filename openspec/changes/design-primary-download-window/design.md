@@ -173,23 +173,52 @@ The controller uses ordinary Jewel controls to force state, theme, and fixtures.
 
 Compose Hot Reload MCP must be configured through its `hotMcpServer` Gradle task during G1. Gate evidence targets the product window ID returned by `list_windows`; the controller window is excluded from product screenshots. Compose captures document the client area. A separate Codex Computer Use `Windows.Graphics.Capture` screenshot documents the complete product frame when title-bar behavior is under review.
 
-### 12. Preserve the four-gate implementation topology
+### 12. Make OpenSpec authoritative and keep gate proof lean
 
-The root task owns OpenSpec, dispatch packets, integration, and human gates. Actual Kotlin implementation and any independent review are dispatched only to explicit top-level Codex tasks using GPT-5.6 Sol with High reasoning. Project subagents are not used.
+The repository OpenSpec proposal, design, capability specs, tasks, and approved gate artifacts are the sole planning source of truth. The retired external initial prompt is not required after this decision.
 
-Each coded gate records an exact commit and is rejected as NOT READY unless IntelliJ MCP inspection/build, relevant tests, run configuration, Compose MCP connection, screenshots, semantic trees, interactions, resize checks, UI errors, and logs all agree on that commit.
+The root task owns planning, integration, and human gates but does not edit application code. Actual Kotlin implementation and independent review run only in explicit top-level Codex tasks using GPT-5.6 Sol with High reasoning. Project subagents are not used. Work remains sequential on shared `main` unless the user changes that decision.
 
-Planned implementation packet order:
+Fine-grained OpenSpec task IDs are traceability units, not thread or commit boundaries. One top-level implementation task may receive a small coherent set of task IDs. Its dispatch message contains the exact base commit, change name, task IDs, goal, required context, in-scope and out-of-scope boundaries, IntelliJ and Compose checks, tests, and return contract. The task starts immediately when `main` is clean at the expected commit; a second task-ID-record commit and READY/RELEASE handshake are unnecessary. A mismatch or dirty tree stops the task before mutation.
 
-1. `01-g1-scaffold.md` — tasks 2.2–2.3.
-2. `02-g1-foundation.md` — tasks 2.5–2.9.
-3. `03-g1-url-flow.md` — tasks 3.2–3.6.
-4. `04-g1-ready-surface.md` — tasks 3.8–3.14.
-5. `07-g1-modern-polish-revision.md` — task 3.20.
-6. `05-g2-state-system.md` — tasks 4.2–4.9.
-7. `06-g3-hardening.md` — tasks 5.2–5.11.
+Verification has one owner at each phase:
 
-Review tasks run separately at GPT-5.6 Sol High and are read-only. A concrete defect reopens its owning implementation task IDs; the root then dispatches a separate top-level Sol High implementation task from the last accepted commit. Reviewers and the root do not edit application code.
+- The implementation task inspects changed files, runs the relevant tests and IntelliJ build, launches the affected run configuration, and captures only the affected Compose states at its exact commit.
+- The root verifies the commit, clean tree, artifact completeness, and any missing or risk-sensitive claim; it does not repeat a green full suite by default.
+- One read-only Sol High reviewer combines technical review with the required Impeccable critique. It reuses exact-commit implementation evidence and reruns only checks needed to reproduce a finding or replace stale/incomplete proof.
+- The final evidence task runs the complete coded-gate proof once after review and any correction: IntelliJ inspections/build, tests, launch, Compose connection, screenshots, semantic trees, interactions, resize checks, UI-error/log checks, reproducible run configuration, and native Windows frame proof where Compose cannot capture title chrome.
+
+Batch all reviewer findings before correction. Each gate allows at most one coherent correction task. A micro-correction may use targeted verification when it changes no dependency, API, state behavior, layout, or interaction and touches at most ten source lines; complete gate evidence is still recaptured once afterward. Larger changes use the normal implementation path.
+
+Known tooling failures are not blind retry loops. Attempt a known-stalling product semantic-tree capture at most once per exact commit; final evidence must either obtain the required proof or mark the gate NOT READY. Before every screenshot, foreground and verify the exact launched product PID/window, reject any occluded capture, and keep controller windows out of product evidence.
+
+Human gates remain G0 Direction, G1 Core Surface, G2 Full State System, and G3 Hardened Final Design. Stop at each gate until the user explicitly sends `APPROVE G0`, `APPROVE G1`, `APPROVE G2`, or `APPROVE G3`; revision feedback reopens only the owning tasks.
+
+### 13. Prioritize code health before G1 final review
+
+Tasks 3.24–3.28 are the immediate implementation priority. Do not resume G1 final review, evidence capture, or packaging until their exact-commit verification passes.
+
+File length is a diagnostic signal, not a quality target. Do not enforce a 100-line maximum or split cohesive files into shallow wrappers. Split when a file has multiple stable reasons to change, leaks ownership, or forces unrelated code to be read together. Keep `DesignReview.kt` intact while it remains one coherent controller responsibility.
+
+Refactor the current mixed responsibilities without changing behavior:
+
+- keep application startup, theme selection, and the decorated product window together;
+- isolate link-field effects, automatic resolution orchestration, and general state-body composition;
+- isolate Ready-specific form and media composition;
+- separate immutable product models and deterministic fixtures from mutable state transitions;
+- align tests with those ownership boundaries only where the split improves navigation.
+
+Do not add repositories, services, interfaces, dependency injection, a generic component framework, or public abstractions. Preserve internal behavior, timing, focus, semantics, visual output, run configurations, and the existing deterministic tests.
+
+Add one formatter and one analyzer:
+
+- `.editorconfig` and the `org.jlleitschuh.gradle.ktlint` plugin enforce Kotlin official style and expose check/format tasks;
+- the official Detekt Gradle plugin runs maintainability analysis with default rules plus Compose-aware narrow exceptions and generated/build directories excluded;
+- pin compatible non-dynamic plugin and engine versions; prefer stable releases, but if no stable Detekt release supports the existing Kotlin/Gradle/JDK stack, use the newest compatible official prerelease and record the compatibility evidence and rationale;
+- use no Detekt baseline in this greenfield repository and no file-wide suppression; fix findings or use the narrowest documented rule/symbol suppression;
+- wire formatter, analyzer, and tests into `gradlew.bat check`, which becomes the portable local quality gate and the future CI entry point.
+
+Alternative considered: enforce a universal file-length limit, add Git hooks, or create a CI-provider workflow now. Rejected because responsibility and complexity are stronger signals than raw line count, Git hooks are not reliably shared, and the repository has no configured remote or CI provider.
 
 ## Risks / Trade-offs
 

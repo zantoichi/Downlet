@@ -16,6 +16,8 @@ Downlet needs a codable, reviewable desktop direction before implementation begi
 - Add Codex Computer Use `Windows.Graphics.Capture` proof for title-bar theme and window controls because Compose MCP screenshots capture only the client area.
 - Establish four mandatory human gates: G0 direction, G1 first complete pass, G2 refined pass, and G3 final acceptance.
 - Stop after preparing G0 until the user explicitly says `APPROVE G0`; `REVISE G0: <feedback>` reopens direction work.
+- Make the repository OpenSpec artifacts the sole planning source of truth, replace repeated orchestration checks with explicit verification ownership, and run one final evidence pass only after review and correction.
+- Prioritize a behavior-preserving code-health tranche before G1 final review: split mixed-responsibility Kotlin files and add automated formatting and static analysis through the Gradle `check` lifecycle.
 - Keep all work design-only. Real yt-dlp, subprocess, network, ffmpeg, persistence, packaging, update, telemetry, and backend integration remain out of scope.
 
 ## Capabilities
@@ -37,4 +39,6 @@ None. This is a greenfield product with no existing capability specifications.
 - Separates JVM bytecode target 21 from the JBR 25 development/runtime JDK required by Jewel and Hot Reload.
 - Constrains implementation to a one-window, one-column desktop utility with deterministic fake state.
 - Requires actual UI implementation and independent review to run in explicit top-level Codex tasks using GPT-5.6 Sol High; the root task remains responsible for planning, integration, and gate decisions. Project subagents are not used.
+- Adds project-local `.editorconfig`, ktlint, and Detekt checks with pinned compatible versions; a Detekt prerelease is allowed only when the current Kotlin/Gradle/JDK stack has no supported stable release and the task records that rationale. No CI provider, Git-hook framework, quality baseline, or architecture framework is introduced.
+- Reorganizes existing Kotlin code by stable responsibility without changing product behavior, visuals, accessibility, or public integrations.
 - Does not affect external APIs, files, services, user data, or executable integrations.
