@@ -1,0 +1,40 @@
+{
+  "capturedOn": "2026-08-28",
+  "state": "Empty",
+  "theme": "Light",
+  "composeProductAttempt": {
+    "status": "timeout",
+    "attempts": 1,
+    "timeoutSeconds": 120,
+    "error": "tool call failed for compose_hot_reload/get_semantic_tree; timed out awaiting tools/call after 120s"
+  },
+  "controllerSemanticState": {
+    "windowId": "401bde98-22bd-4501-9a03-a61a8e291560",
+    "currentState": "Empty",
+    "currentTheme": "Light",
+    "stateActions": ["Empty", "Resolving", "Ready", "Reset"],
+    "fixtureActions": ["Normal", "Long title", "No preview", "Long path", "Disabled"],
+    "themeActions": ["Light", "Dark"]
+  },
+  "computerUseFallback": {
+    "window": {
+      "id": 34868352,
+      "title": "Downlet",
+      "app": "java.exe"
+    },
+    "accessibilityTree": "Window: \"Downlet\", App: java.exe.\n\t0 window Downlet Secondary Actions: Raise\n\t\t1 pane\n\t\t2 pane\n\t\t3 title bar\n\t\t\t4 menu bar System ID: MenuBar\n\t\t\t\t5 menu item System\n\t\t\t6 button Minimize\n\t\t\t7 button Maximize\n\t\t\t8 button Close",
+    "visibleLabelsAndActionsFromSameObservation": [
+      "YouTube link",
+      "Paste a YouTube link...",
+      "Paste",
+      "Paste a YouTube link to choose video or audio."
+    ],
+    "screenshot": {
+      "width": 706,
+      "height": 413,
+      "originX": 15,
+      "originY": 48
+    }
+  },
+  "limitation": "The Jewel product tree timed out and Windows UI Automation exposed only the native frame. Visible product labels/actions are transcribed from the same fresh Computer Use WGC observation; controller semantics provide deterministic state/theme proof."
+}
