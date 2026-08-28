@@ -46,6 +46,10 @@ internal object DesignReviewApp {
             state = stateHolder.state,
             theme = productTheme,
             onEvent = stateHolder::onEvent,
+            onReset = {
+                stateHolder.onEvent(DownloadEvent.Reset)
+                productTheme = DownletTheme.Light
+            },
             onThemeChange = { productTheme = it },
             onCloseRequest = ::exitApplication,
         )
@@ -57,6 +61,7 @@ private fun ControllerWindow(
     state: DownloadUiState,
     theme: DownletTheme,
     onEvent: (DownloadEvent) -> Unit,
+    onReset: () -> Unit,
     onThemeChange: (DownletTheme) -> Unit,
     onCloseRequest: () -> Unit,
 ) {
@@ -64,7 +69,7 @@ private fun ControllerWindow(
         rememberWindowState(
             position = WindowPosition(800.dp, 48.dp),
             width = 560.dp,
-            height = 360.dp,
+            height = 380.dp,
         )
 
     IntUiTheme(
@@ -90,7 +95,7 @@ private fun ControllerWindow(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Product state")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.Reset) }) {
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowEmpty) }) {
                             Text("Empty")
                         }
                         OutlinedButton(onClick = { onEvent(DownloadEvent.ShowResolving()) }) {
@@ -98,6 +103,9 @@ private fun ControllerWindow(
                         }
                         OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady()) }) {
                             Text("Ready")
+                        }
+                        OutlinedButton(onClick = onReset) {
+                            Text("Reset")
                         }
                     }
                     Text("Ready fixtures")

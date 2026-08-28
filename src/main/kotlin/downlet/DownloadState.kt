@@ -179,6 +179,8 @@ internal val DownloadUiState.label: String
 internal sealed interface DownloadEvent {
     data object Reset : DownloadEvent
 
+    data object ShowEmpty : DownloadEvent
+
     data class ShowResolving(val fixture: DownloadFixture = DownloadFixtures.normal) : DownloadEvent
 
     data class ShowReady(val fixture: DownloadFixture = DownloadFixtures.normal) : DownloadEvent
@@ -291,13 +293,9 @@ internal class DownloadStateHolder(initialState: DownloadUiState = DownloadUiSta
 
     fun onEvent(event: DownloadEvent) {
         when (event) {
-            DownloadEvent.Reset -> {
-                observedLinkText = ""
-                linkFieldState.clearText()
-                validationMessage = null
-                clearReadySelection()
-                state = DownloadUiState.Empty
-            }
+            DownloadEvent.Reset,
+            DownloadEvent.ShowEmpty,
+                -> resetToEmpty()
 
             is DownloadEvent.ShowResolving -> {
                 replaceLink(event.fixture.sourceUrl)
@@ -313,6 +311,14 @@ internal class DownloadStateHolder(initialState: DownloadUiState = DownloadUiSta
                 state = DownloadUiState.Ready(event.fixture)
             }
         }
+    }
+
+    private fun resetToEmpty() {
+        observedLinkText = ""
+        linkFieldState.clearText()
+        validationMessage = null
+        clearReadySelection()
+        state = DownloadUiState.Empty
     }
 
     private fun prepareReady(fixture: DownloadFixture) {

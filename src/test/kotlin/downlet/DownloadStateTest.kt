@@ -49,13 +49,22 @@ class DownloadStateTest {
     }
 
     @Test
+    fun `media semantics announce missing preview only when unavailable`() {
+        val available = mediaContentDescription(DownloadFixtures.normal, thumbnailAvailable = true)
+        val unavailable = mediaContentDescription(DownloadFixtures.missingThumbnail, thumbnailAvailable = false)
+
+        assertFalse(available.contains("Preview unavailable"))
+        assertTrue(unavailable.endsWith("Preview unavailable."))
+    }
+
+    @Test
     fun `state holder handles only explicit events`() {
         val holder = DownloadStateHolder()
 
         holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.longTitle))
         assertEquals(DownloadUiState.Ready(DownloadFixtures.longTitle), holder.state)
 
-        holder.onEvent(DownloadEvent.Reset)
+        holder.onEvent(DownloadEvent.ShowEmpty)
         assertEquals(DownloadUiState.Empty, holder.state)
     }
 
@@ -208,7 +217,14 @@ class DownloadStateTest {
 
         holder.onEvent(DownloadEvent.Reset)
         assertEquals(DownloadUiState.Empty, holder.state)
+        assertEquals(DownloadMode.Video, holder.selectedMode)
+        assertEquals(0, holder.selectedQualityIndex)
         assertEquals("", holder.destination)
         assertNull(holder.readyFeedback)
+
+        holder.onEvent(DownloadEvent.ShowReady())
+        assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
+        assertEquals("Best available — 2160p", holder.selectedQualityLabel)
+        assertEquals("Downloads", holder.destination)
     }
 }

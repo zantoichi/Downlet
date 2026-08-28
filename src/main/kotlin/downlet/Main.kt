@@ -422,7 +422,7 @@ private fun MediaIdentity(fixture: DownloadFixture, thumbnailWidth: androidx.com
             Modifier
                 .fillMaxWidth()
                 .semantics(mergeDescendants = true) {
-                    contentDescription = "Media: ${fixture.title}. ${fixture.channel} · ${fixture.duration} · YouTube."
+                    contentDescription = mediaContentDescription(fixture, thumbnailAvailable)
                 },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -460,6 +460,13 @@ private fun MediaIdentity(fixture: DownloadFixture, thumbnailWidth: androidx.com
         }
     }
 }
+
+internal fun mediaContentDescription(
+    fixture: DownloadFixture,
+    thumbnailAvailable: Boolean,
+): String =
+    "Media: ${fixture.title}. ${fixture.channel} · ${fixture.duration} · YouTube." +
+            if (thumbnailAvailable) "" else " Preview unavailable."
 
 private fun readWindowsClipboardText(): String? =
     try {
