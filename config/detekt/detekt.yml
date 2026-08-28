@@ -1,7 +1,4 @@
 complexity:
-  LongMethod:
-    excludes:
-      - '**/DesignReviewApp.kt'
   TooManyFunctions:
     ignoreAnnotatedFunctions:
       - Composable
@@ -9,8 +6,5 @@ complexity:
 naming:
   FunctionNaming:
     excludeClassPattern: '.*Test'
-    excludes:
-      - '**/DesignReviewApp.kt'
-      - '**/Main.kt'
-      - '**/ProductSurface.kt'
-      - '**/ReadyContent.kt'
+    ignoreAnnotated:
+      - Composable

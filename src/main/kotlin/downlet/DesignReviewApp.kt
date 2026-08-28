@@ -57,6 +57,7 @@ internal object DesignReviewApp {
         }
 }
 
+@Suppress("LongMethod")
 @Composable
 private fun ControllerWindow(
     state: DownloadUiState,
