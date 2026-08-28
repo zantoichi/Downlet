@@ -19,10 +19,14 @@ import org.jetbrains.jewel.intui.standalone.theme.darkThemeDefinition
 import org.jetbrains.jewel.intui.standalone.theme.default
 import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
 import org.jetbrains.jewel.intui.window.decoratedWindow
+import org.jetbrains.jewel.intui.window.styling.dark
+import org.jetbrains.jewel.intui.window.styling.light
 import org.jetbrains.jewel.ui.ComponentStyling
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
+import org.jetbrains.jewel.window.styling.DecoratedWindowStyle
+import org.jetbrains.jewel.window.styling.TitleBarStyle
 
 private const val ProductWindowTitle = "Downlet"
 private const val ProductWindowWidth = 720
@@ -60,7 +64,20 @@ internal fun ProductWindow(
                 DownletTheme.Light -> JewelTheme.lightThemeDefinition()
                 DownletTheme.Dark -> JewelTheme.darkThemeDefinition()
             },
-        styling = ComponentStyling.default().decoratedWindow(),
+        styling =
+            when (theme) {
+                DownletTheme.Light ->
+                    ComponentStyling.default().decoratedWindow(
+                        DecoratedWindowStyle.light(),
+                        TitleBarStyle.light(),
+                    )
+
+                DownletTheme.Dark ->
+                    ComponentStyling.default().decoratedWindow(
+                        DecoratedWindowStyle.dark(),
+                        TitleBarStyle.dark(),
+                    )
+            },
     ) {
         DecoratedWindow(
             onCloseRequest = onCloseRequest,
