@@ -28,32 +28,33 @@ import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
 
-private const val ControllerWindowTitle = "Design Review Controller"
+private const val CONTROLLER_WINDOW_TITLE = "Design Review Controller"
 
 internal object DesignReviewApp {
     @JvmStatic
-    fun main(args: Array<String>) = application {
-        val stateHolder = remember { DownloadStateHolder() }
-        var productTheme by remember { mutableStateOf(DownletTheme.Light) }
+    fun main(args: Array<String>) =
+        application {
+            val stateHolder = remember { DownloadStateHolder() }
+            var productTheme by remember { mutableStateOf(DownletTheme.Light) }
 
-        ProductWindow(
-            stateHolder = stateHolder,
-            theme = productTheme,
-            onCloseRequest = ::exitApplication,
-            initialPosition = WindowPosition(8.dp, 48.dp),
-        )
-        ControllerWindow(
-            state = stateHolder.state,
-            theme = productTheme,
-            onEvent = stateHolder::onEvent,
-            onReset = {
-                stateHolder.onEvent(DownloadEvent.Reset)
-                productTheme = DownletTheme.Light
-            },
-            onThemeChange = { productTheme = it },
-            onCloseRequest = ::exitApplication,
-        )
-    }
+            ProductWindow(
+                stateHolder = stateHolder,
+                theme = productTheme,
+                onCloseRequest = ::exitApplication,
+                initialPosition = WindowPosition(8.dp, 48.dp),
+            )
+            ControllerWindow(
+                state = stateHolder.state,
+                theme = productTheme,
+                onEvent = stateHolder::onEvent,
+                onReset = {
+                    stateHolder.onEvent(DownloadEvent.Reset)
+                    productTheme = DownletTheme.Light
+                },
+                onThemeChange = { productTheme = it },
+                onCloseRequest = ::exitApplication,
+            )
+        }
 }
 
 @Composable
@@ -79,10 +80,10 @@ private fun ControllerWindow(
         DecoratedWindow(
             onCloseRequest = onCloseRequest,
             state = windowState,
-            title = ControllerWindowTitle,
+            title = CONTROLLER_WINDOW_TITLE,
         ) {
             TitleBar {
-                Text(ControllerWindowTitle)
+                Text(CONTROLLER_WINDOW_TITLE)
             }
 
             Box(
@@ -90,7 +91,7 @@ private fun ControllerWindow(
                     Modifier
                         .fillMaxSize()
                         .background(JewelTheme.globalColors.panelBackground)
-                        .padding(16.dp)
+                        .padding(16.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Product state")
@@ -116,15 +117,21 @@ private fun ControllerWindow(
                         OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.longTitle)) }) {
                             Text("Long title")
                         }
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.missingThumbnail)) }) {
+                        OutlinedButton(
+                            onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.missingThumbnail)) },
+                        ) {
                             Text("No preview")
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.longDestination)) }) {
+                        OutlinedButton(
+                            onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.longDestination)) },
+                        ) {
                             Text("Long path")
                         }
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.disabledAction)) }) {
+                        OutlinedButton(
+                            onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.disabledAction)) },
+                        ) {
                             Text("Disabled")
                         }
                     }

@@ -3,18 +3,18 @@ package downlet
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadStateTest {
@@ -99,157 +99,163 @@ class DownloadStateTest {
     }
 
     @Test
-    fun `valid paste resolves immediately and paste intent is consumed once`() = runTest {
-        val holder = DownloadStateHolder()
-        var pasteIntent = true
-        backgroundScope.launch {
-            collectLinkEdits(
-                edits = snapshotFlow { holder.linkFieldState.text.toString() },
-                stateHolder = holder,
-                consumePasteIntent = { pasteIntent.also { pasteIntent = false } },
-            )
+    fun `valid paste resolves immediately and paste intent is consumed once`() =
+        runTest {
+            val holder = DownloadStateHolder()
+            var pasteIntent = true
+            backgroundScope.launch {
+                collectLinkEdits(
+                    edits = snapshotFlow { holder.linkFieldState.text.toString() },
+                    stateHolder = holder,
+                    consumePasteIntent = { pasteIntent.also { pasteIntent = false } },
+                )
+            }
+            runCurrent()
+
+            val pastedUrl = "https://youtu.be/pasted"
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd(pastedUrl)
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+            assertEquals(pastedUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
+
+            val typedUrl = "https://youtu.be/typed"
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd(typedUrl)
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+            advanceTimeBy(349.milliseconds)
+            assertEquals(DownloadUiState.Empty, holder.state)
+            advanceTimeBy(1.milliseconds)
+            runCurrent()
+            assertEquals(typedUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
         }
-        runCurrent()
-
-        val pastedUrl = "https://youtu.be/pasted"
-        holder.linkFieldState.setTextAndPlaceCursorAtEnd(pastedUrl)
-        Snapshot.sendApplyNotifications()
-        runCurrent()
-        assertEquals(pastedUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
-
-        val typedUrl = "https://youtu.be/typed"
-        holder.linkFieldState.setTextAndPlaceCursorAtEnd(typedUrl)
-        Snapshot.sendApplyNotifications()
-        runCurrent()
-        advanceTimeBy(349.milliseconds)
-        assertEquals(DownloadUiState.Empty, holder.state)
-        advanceTimeBy(1.milliseconds)
-        runCurrent()
-        assertEquals(typedUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
-    }
 
     @Test
-    fun `stale paste intent expires before a later typed edit`() = runTest {
-        val holder = DownloadStateHolder()
-        var pasteIntent = true
-        backgroundScope.launch {
-            collectLinkEdits(
-                edits = snapshotFlow { holder.linkFieldState.text.toString() },
-                stateHolder = holder,
-                consumePasteIntent = { pasteIntent.also { pasteIntent = false } },
-            )
+    fun `stale paste intent expires before a later typed edit`() =
+        runTest {
+            val holder = DownloadStateHolder()
+            var pasteIntent = true
+            backgroundScope.launch {
+                collectLinkEdits(
+                    edits = snapshotFlow { holder.linkFieldState.text.toString() },
+                    stateHolder = holder,
+                    consumePasteIntent = { pasteIntent.also { pasteIntent = false } },
+                )
+            }
+            backgroundScope.launch { expirePasteIntent { pasteIntent = false } }
+            runCurrent()
+
+            advanceTimeBy(PASTE_INTENT_LIFETIME_MILLIS.milliseconds)
+            val typedUrl = "https://youtu.be/after-stale-paste"
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd(typedUrl)
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+
+            advanceTimeBy(349.milliseconds)
+            assertEquals(DownloadUiState.Empty, holder.state)
+            advanceTimeBy(1.milliseconds)
+            runCurrent()
+            assertEquals(typedUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
         }
-        backgroundScope.launch { expirePasteIntent { pasteIntent = false } }
-        runCurrent()
-
-        advanceTimeBy(PasteIntentLifetimeMillis.milliseconds)
-        val typedUrl = "https://youtu.be/after-stale-paste"
-        holder.linkFieldState.setTextAndPlaceCursorAtEnd(typedUrl)
-        Snapshot.sendApplyNotifications()
-        runCurrent()
-
-        advanceTimeBy(349.milliseconds)
-        assertEquals(DownloadUiState.Empty, holder.state)
-        advanceTimeBy(1.milliseconds)
-        runCurrent()
-        assertEquals(typedUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
-    }
 
     @Test
-    fun `newer manual edit cancels prior debounce`() = runTest {
-        val holder = DownloadStateHolder()
-        backgroundScope.launch {
-            collectLinkEdits(
-                edits = snapshotFlow { holder.linkFieldState.text.toString() },
-                stateHolder = holder,
-                consumePasteIntent = { false },
-            )
+    fun `newer manual edit cancels prior debounce`() =
+        runTest {
+            val holder = DownloadStateHolder()
+            backgroundScope.launch {
+                collectLinkEdits(
+                    edits = snapshotFlow { holder.linkFieldState.text.toString() },
+                    stateHolder = holder,
+                    consumePasteIntent = { false },
+                )
+            }
+            runCurrent()
+
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd("https://youtu.be/first")
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+            advanceTimeBy(200.milliseconds)
+            val newerUrl = "https://youtu.be/newer"
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd(newerUrl)
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+
+            advanceTimeBy(349.milliseconds)
+            assertEquals(DownloadUiState.Empty, holder.state)
+            advanceTimeBy(1.milliseconds)
+            runCurrent()
+            assertEquals(newerUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
         }
-        runCurrent()
-
-        holder.linkFieldState.setTextAndPlaceCursorAtEnd("https://youtu.be/first")
-        Snapshot.sendApplyNotifications()
-        runCurrent()
-        advanceTimeBy(200.milliseconds)
-        val newerUrl = "https://youtu.be/newer"
-        holder.linkFieldState.setTextAndPlaceCursorAtEnd(newerUrl)
-        Snapshot.sendApplyNotifications()
-        runCurrent()
-
-        advanceTimeBy(349.milliseconds)
-        assertEquals(DownloadUiState.Empty, holder.state)
-        advanceTimeBy(1.milliseconds)
-        runCurrent()
-        assertEquals(newerUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
-    }
 
     @Test
-    fun `automatic resolution completes at 550 milliseconds`() = runTest {
-        val holder = DownloadStateHolder()
-        holder.beginResolution("https://youtu.be/automatic")
-        val resolving = holder.state as DownloadUiState.Resolving
-        backgroundScope.launch { completeAutomaticResolution(holder, resolving) }
-        runCurrent()
+    fun `automatic resolution completes at 550 milliseconds`() =
+        runTest {
+            val holder = DownloadStateHolder()
+            holder.beginResolution("https://youtu.be/automatic")
+            val resolving = holder.state as DownloadUiState.Resolving
+            backgroundScope.launch { completeAutomaticResolution(holder, resolving) }
+            runCurrent()
 
-        advanceTimeBy(549.milliseconds)
-        assertEquals(resolving, holder.state)
-        advanceTimeBy(1.milliseconds)
-        runCurrent()
-        assertEquals(DownloadUiState.Ready(resolving.fixture), holder.state)
-    }
-
-    @Test
-    fun `cancelled automatic resolution cannot restore stale ready content`() = runTest {
-        val holder = DownloadStateHolder()
-        holder.beginResolution("https://youtu.be/stale")
-        val resolving = holder.state as DownloadUiState.Resolving
-        val completion = backgroundScope.launch { completeAutomaticResolution(holder, resolving) }
-        runCurrent()
-        advanceTimeBy(200.milliseconds)
-
-        val newerUrl = "https://youtu.be/newer"
-        holder.linkFieldState.setTextAndPlaceCursorAtEnd(newerUrl)
-        holder.observeLinkEdit(newerUrl)
-        completion.cancel()
-        advanceTimeBy(FakeResolutionMillis.milliseconds)
-        runCurrent()
-
-        assertEquals(DownloadUiState.Empty, holder.state)
-        assertEquals(newerUrl, holder.linkFieldState.text.toString())
-    }
-
-    @Test
-    fun `native paste validation and fake resolution remain deterministic`() = runTest {
-        val holder = DownloadStateHolder()
-        var pasteIntent = true
-        backgroundScope.launch {
-            collectLinkEdits(
-                edits = snapshotFlow { holder.linkFieldState.text.toString() },
-                stateHolder = holder,
-                consumePasteIntent = { pasteIntent.also { pasteIntent = false } },
-            )
+            advanceTimeBy(549.milliseconds)
+            assertEquals(resolving, holder.state)
+            advanceTimeBy(1.milliseconds)
+            runCurrent()
+            assertEquals(DownloadUiState.Ready(resolving.fixture), holder.state)
         }
-        runCurrent()
-        val validUrl = "https://youtu.be/quiet-transfer"
 
-        holder.linkFieldState.setTextAndPlaceCursorAtEnd(validUrl)
-        Snapshot.sendApplyNotifications()
-        runCurrent()
-        val resolving = holder.state as DownloadUiState.Resolving
-        assertEquals(validUrl, holder.linkFieldState.text.toString())
-        assertEquals(validUrl, resolving.fixture.sourceUrl)
-        assertNull(holder.validationMessage)
+    @Test
+    fun `cancelled automatic resolution cannot restore stale ready content`() =
+        runTest {
+            val holder = DownloadStateHolder()
+            holder.beginResolution("https://youtu.be/stale")
+            val resolving = holder.state as DownloadUiState.Resolving
+            val completion = backgroundScope.launch { completeAutomaticResolution(holder, resolving) }
+            runCurrent()
+            advanceTimeBy(200.milliseconds)
 
-        holder.completeResolution(resolving.fixture)
-        assertEquals(DownloadUiState.Ready(resolving.fixture), holder.state)
+            val newerUrl = "https://youtu.be/newer"
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd(newerUrl)
+            holder.observeLinkEdit(newerUrl)
+            completion.cancel()
+            advanceTimeBy(FAKE_RESOLUTION_MILLIS.milliseconds)
+            runCurrent()
 
-        pasteIntent = true
-        holder.linkFieldState.setTextAndPlaceCursorAtEnd("not a url")
-        Snapshot.sendApplyNotifications()
-        runCurrent()
-        assertEquals(DownloadUiState.Empty, holder.state)
-        assertEquals(InvalidLinkMessage, holder.validationMessage)
-    }
+            assertEquals(DownloadUiState.Empty, holder.state)
+            assertEquals(newerUrl, holder.linkFieldState.text.toString())
+        }
+
+    @Test
+    fun `native paste validation and fake resolution remain deterministic`() =
+        runTest {
+            val holder = DownloadStateHolder()
+            var pasteIntent = true
+            backgroundScope.launch {
+                collectLinkEdits(
+                    edits = snapshotFlow { holder.linkFieldState.text.toString() },
+                    stateHolder = holder,
+                    consumePasteIntent = { pasteIntent.also { pasteIntent = false } },
+                )
+            }
+            runCurrent()
+            val validUrl = "https://youtu.be/quiet-transfer"
+
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd(validUrl)
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+            val resolving = holder.state as DownloadUiState.Resolving
+            assertEquals(validUrl, holder.linkFieldState.text.toString())
+            assertEquals(validUrl, resolving.fixture.sourceUrl)
+            assertNull(holder.validationMessage)
+
+            holder.completeResolution(resolving.fixture)
+            assertEquals(DownloadUiState.Ready(resolving.fixture), holder.state)
+
+            pasteIntent = true
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd("not a url")
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+            assertEquals(DownloadUiState.Empty, holder.state)
+            assertEquals(INVALID_LINK_MESSAGE, holder.validationMessage)
+        }
 
     @Test
     fun `editing clears stale resolved state and forced resolving bypasses completion`() {
@@ -272,7 +278,7 @@ class DownloadStateTest {
         holder.onEvent(DownloadEvent.ShowReady())
 
         assertEquals(DownloadMode.Video, holder.selectedMode)
-        assertEquals(VideoQualityOptions, holder.qualityOptions)
+        assertEquals(videoQualityOptions, holder.qualityOptions)
         assertEquals("Best available — 2160p", holder.selectedQualityLabel)
         assertEquals("Downloads", holder.destination)
         assertNull(holder.readyFeedback)
@@ -288,7 +294,7 @@ class DownloadStateTest {
 
         holder.selectMode(DownloadMode.Audio)
         assertEquals(DownloadMode.Audio, holder.selectedMode)
-        assertEquals(AudioQualityOptions, holder.qualityOptions)
+        assertEquals(audioQualityOptions, holder.qualityOptions)
         assertEquals("Best available — 251 kbps audio", holder.selectedQualityLabel)
 
         holder.selectQuality(1)
@@ -315,15 +321,15 @@ class DownloadStateTest {
         holder.onEvent(DownloadEvent.ShowReady())
 
         holder.download()
-        assertEquals(DownloadAcknowledgement, holder.readyFeedback)
+        assertEquals(DOWNLOAD_ACKNOWLEDGEMENT, holder.readyFeedback)
         assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
 
         holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.disabledAction))
         assertFalse(holder.downloadEnabled)
-        assertEquals(DownloadUnavailableMessage, holder.readyStatus)
+        assertEquals(DOWNLOAD_UNAVAILABLE_MESSAGE, holder.readyStatus)
         holder.download()
         assertNull(holder.readyFeedback)
-        assertEquals(DownloadUnavailableMessage, holder.readyStatus)
+        assertEquals(DOWNLOAD_UNAVAILABLE_MESSAGE, holder.readyStatus)
     }
 
     @Test

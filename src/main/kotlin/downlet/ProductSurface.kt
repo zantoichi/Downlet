@@ -1,0 +1,317 @@
+package downlet
+
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.Outline
+import org.jetbrains.jewel.ui.component.CircularProgressIndicator
+import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.TextField
+import kotlin.time.Duration.Companion.milliseconds
+
+@Composable
+internal fun ProductSurface(stateHolder: DownloadStateHolder) {
+    val linkFieldFocusRequester = remember { FocusRequester() }
+    var pasteIntent by remember { mutableStateOf(false) }
+
+    LinkEffects(
+        stateHolder = stateHolder,
+        linkFieldFocusRequester = linkFieldFocusRequester,
+        pasteIntent = pasteIntent,
+        consumePasteIntent = {
+            pasteIntent.also { pasteIntent = false }
+        },
+        clearPasteIntent = { pasteIntent = false },
+    )
+
+    BoxWithConstraints(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(JewelTheme.globalColors.panelBackground),
+    ) {
+        val compact = maxHeight < 330.dp
+        val outerPadding = if (compact) 16.dp else 20.dp
+        val majorGap = if (compact) 12.dp else 16.dp
+        val workPlaneShape = RoundedCornerShape(10.dp)
+        val accent = JewelTheme.globalColors.outlines.focused
+        val workPlaneFill = accent.copy(alpha = if (JewelTheme.isDark) 0.10f else 0.055f)
+        val workPlaneBorder = JewelTheme.globalColors.borders.normal
+
+        Column(
+            modifier = Modifier.fillMaxSize().padding(outerPadding),
+            verticalArrangement = Arrangement.spacedBy(majorGap),
+        ) {
+            LinkFieldRow(
+                stateHolder = stateHolder,
+                focusRequester = linkFieldFocusRequester,
+                onPasteIntent = { pasteIntent = true },
+            )
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(workPlaneShape)
+                        .background(workPlaneFill)
+                        .border(1.dp, workPlaneBorder, workPlaneShape)
+                        .padding(if (compact) 12.dp else 16.dp),
+            ) {
+                ProductBody(stateHolder, compact)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LinkEffects(
+    stateHolder: DownloadStateHolder,
+    linkFieldFocusRequester: FocusRequester,
+    pasteIntent: Boolean,
+    consumePasteIntent: () -> Boolean,
+    clearPasteIntent: () -> Unit,
+) {
+    val state = stateHolder.state
+    val linkFieldState = stateHolder.linkFieldState
+
+    LaunchedEffect(linkFieldState) {
+        collectLinkEdits(
+            edits = snapshotFlow { linkFieldState.text.toString() },
+            stateHolder = stateHolder,
+            consumePasteIntent = consumePasteIntent,
+        )
+    }
+    LaunchedEffect(pasteIntent) {
+        if (pasteIntent) {
+            expirePasteIntent(clearPasteIntent)
+        }
+    }
+    LaunchedEffect(state) {
+        if (state is DownloadUiState.Empty) {
+            withFrameNanos { }
+            linkFieldFocusRequester.requestFocus()
+        }
+    }
+    LaunchedEffect(state) {
+        if (state is DownloadUiState.Resolving) {
+            completeAutomaticResolution(stateHolder, state)
+        }
+    }
+}
+
+@Composable
+private fun LinkFieldRow(
+    stateHolder: DownloadStateHolder,
+    focusRequester: FocusRequester,
+    onPasteIntent: () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "YouTube link",
+            modifier =
+                Modifier
+                    .width(96.dp)
+                    .padding(top = 5.dp)
+                    .semantics { contentDescription = "YouTube link label" },
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            LinkTextField(
+                state = stateHolder.linkFieldState,
+                focusRequester = focusRequester,
+                hasValidationError = stateHolder.validationMessage != null,
+                onPasteIntent = onPasteIntent,
+            )
+            Box(modifier = Modifier.fillMaxWidth().height(20.dp).padding(top = 4.dp)) {
+                stateHolder.validationMessage?.let { message ->
+                    Text(
+                        text = message,
+                        modifier =
+                            Modifier.semantics {
+                                contentDescription = "Validation: $message"
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LinkTextField(
+    state: TextFieldState,
+    focusRequester: FocusRequester,
+    hasValidationError: Boolean,
+    onPasteIntent: () -> Unit,
+) {
+    TextField(
+        state = state,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                .onPreviewKeyEvent { event ->
+                    if (
+                        event.type == KeyEventType.KeyDown &&
+                        event.isCtrlPressed &&
+                        event.key == Key.V
+                    ) {
+                        onPasteIntent()
+                    }
+                    false
+                }.semantics { contentDescription = "YouTube link field" },
+        outline = if (hasValidationError) Outline.Error else Outline.None,
+        placeholder = { Text("Paste a YouTube link…") },
+    )
+}
+
+internal suspend fun collectLinkEdits(
+    edits: Flow<String>,
+    stateHolder: DownloadStateHolder,
+    consumePasteIntent: () -> Boolean,
+) {
+    edits.collectLatest { text ->
+        if (!stateHolder.observeLinkEdit(text)) return@collectLatest
+
+        when (val submission = linkSubmissionFor(text, consumePasteIntent())) {
+            LinkSubmission.None -> {
+                return@collectLatest
+            }
+
+            LinkSubmission.ResolveImmediately -> {
+                stateHolder.beginResolution(text)
+            }
+
+            is LinkSubmission.ResolveAfter -> {
+                delay(submission.delayMillis.milliseconds)
+                stateHolder.beginResolution(text)
+            }
+        }
+    }
+}
+
+internal suspend fun expirePasteIntent(clearPasteIntent: () -> Unit) {
+    delay(PASTE_INTENT_LIFETIME_MILLIS.milliseconds)
+    clearPasteIntent()
+}
+
+internal suspend fun completeAutomaticResolution(
+    stateHolder: DownloadStateHolder,
+    state: DownloadUiState.Resolving,
+) {
+    if (!state.completesAutomatically) return
+
+    delay(FAKE_RESOLUTION_MILLIS.milliseconds)
+    stateHolder.completeResolution(state.fixture)
+}
+
+@Composable
+private fun ProductBody(
+    stateHolder: DownloadStateHolder,
+    compact: Boolean,
+) {
+    val easing = remember { CubicBezierEasing(0.22f, 1f, 0.36f, 1f) }
+    val risePixels = with(LocalDensity.current) { 6.dp.roundToPx() }
+
+    AnimatedContent(
+        targetState = stateHolder.state,
+        transitionSpec = {
+            (
+                fadeIn(animationSpec = tween(durationMillis = 200, easing = easing)) +
+                    slideInVertically(
+                        animationSpec = tween(durationMillis = 200, easing = easing),
+                        initialOffsetY = { risePixels },
+                    )
+            ).togetherWith(fadeOut(animationSpec = tween(durationMillis = 150, easing = easing)))
+                .using(sizeTransform = null)
+        },
+        contentAlignment = Alignment.TopStart,
+        contentKey = { it::class },
+        label = "Downlet state body",
+    ) { state ->
+        when (state) {
+            DownloadUiState.Empty -> {
+                Text(
+                    text = "Paste or type a YouTube link. Downlet checks it automatically.",
+                    modifier =
+                        Modifier.semantics {
+                            contentDescription =
+                                "Status: Paste or type a YouTube link. Downlet checks it automatically."
+                        },
+                    style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.Medium),
+                )
+            }
+
+            is DownloadUiState.Resolving -> {
+                Row(
+                    modifier =
+                        Modifier.semantics(mergeDescendants = true) {
+                            contentDescription = "Status: Checking this YouTube link…"
+                            liveRegion = LiveRegionMode.Polite
+                        },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator()
+                    Text("Checking this YouTube link…")
+                }
+            }
+
+            is DownloadUiState.Ready -> {
+                ReadyContent(stateHolder, state.fixture, compact)
+            }
+
+            else -> {
+                Text(state.label)
+            }
+        }
+    }
+}
