@@ -1,5 +1,3 @@
-@file:Suppress("UnstableApiUsage", "UsePropertyAccessSyntax")
-
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.jvm.toolchain.JavaLanguageVersion
@@ -31,6 +29,7 @@ dependencies {
 kotlin {
     jvmToolchain {
         languageVersion = JavaLanguageVersion.of(25)
+        @Suppress("UnstableApiUsage")
         vendor = JvmVendorSpec.JETBRAINS
     }
     compilerOptions {
@@ -56,8 +55,10 @@ afterEvaluate {
     tasks.named<JavaExec>("run") {
         javaLauncher = javaToolchains.launcherFor {
             languageVersion = JavaLanguageVersion.of(25)
+            @Suppress("UnstableApiUsage")
             vendor = JvmVendorSpec.JETBRAINS
         }
+        @Suppress("UsePropertyAccessSyntax")
         setExecutable(javaLauncher.map { it.executablePath.asFile.absolutePath }.get())
     }
 }
