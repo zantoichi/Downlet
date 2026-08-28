@@ -21,6 +21,7 @@ import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
 import org.jetbrains.jewel.intui.window.decoratedWindow
 import org.jetbrains.jewel.intui.window.styling.dark
 import org.jetbrains.jewel.intui.window.styling.light
+import org.jetbrains.jewel.intui.window.styling.lightWithLightHeader
 import org.jetbrains.jewel.ui.ComponentStyling
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.window.DecoratedWindow
@@ -69,7 +70,7 @@ internal fun ProductWindow(
                 DownletTheme.Light ->
                     ComponentStyling.default().decoratedWindow(
                         DecoratedWindowStyle.light(),
-                        TitleBarStyle.light(),
+                        TitleBarStyle.lightWithLightHeader(),
                     )
 
                 DownletTheme.Dark ->
