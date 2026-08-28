@@ -73,7 +73,7 @@ internal data class DownloadFixture(
     val channel: String,
     val duration: String,
     val destination: String,
-    val thumbnailResource: String?,
+    val thumbnailAvailable: Boolean = true,
     val outcome: FakeDownloadOutcome = FakeDownloadOutcome.Success,
     val canDownload: Boolean = true,
 )
@@ -87,7 +87,6 @@ internal object DownloadFixtures {
             channel = "North Window",
             duration = "12:34",
             destination = "Downloads",
-            thumbnailResource = "thumbnail-normal.svg",
         )
 
     val longTitle =
@@ -100,7 +99,7 @@ internal object DownloadFixtures {
     val missingThumbnail =
         normal.copy(
             id = "missing-thumbnail",
-            thumbnailResource = null,
+            thumbnailAvailable = false,
         )
 
     val longDestination =

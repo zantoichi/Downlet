@@ -37,19 +37,22 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import downlet.generated.resources.Res
+import downlet.generated.resources.thumbnail_normal
 import java.awt.Dimension
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.theme.darkThemeDefinition
@@ -163,20 +166,13 @@ private fun ProductSurface(
     var pasteIntent by remember { mutableStateOf(false) }
 
     LaunchedEffect(linkFieldState) {
-        snapshotFlow { linkFieldState.text.toString() }.collectLatest { text ->
-            if (!stateHolder.observeLinkEdit(text)) return@collectLatest
-
-            val submission = linkSubmissionFor(text, pasteIntent)
-            pasteIntent = false
-            when (submission) {
-                LinkSubmission.None -> Unit
-                LinkSubmission.ResolveImmediately -> stateHolder.beginResolution(text)
-                is LinkSubmission.ResolveAfter -> {
-                    delay(submission.delayMillis.milliseconds)
-                    stateHolder.beginResolution(text)
-                }
-            }
-        }
+        collectLinkEdits(
+            edits = snapshotFlow { linkFieldState.text.toString() },
+            stateHolder = stateHolder,
+            consumePasteIntent = {
+                pasteIntent.also { pasteIntent = false }
+            },
+        )
     }
     LaunchedEffect(pasteIntent) {
         if (pasteIntent) {
@@ -185,9 +181,8 @@ private fun ProductSurface(
         }
     }
     LaunchedEffect(state) {
-        if (state is DownloadUiState.Resolving && state.completesAutomatically) {
-            delay(FakeResolutionMillis.milliseconds)
-            stateHolder.completeResolution(state.fixture)
+        if (state is DownloadUiState.Resolving) {
+            completeAutomaticResolution(stateHolder, state)
         }
     }
     BoxWithConstraints(
@@ -260,6 +255,35 @@ private fun ProductSurface(
             }
         }
     }
+}
+
+internal suspend fun collectLinkEdits(
+    edits: Flow<String>,
+    stateHolder: DownloadStateHolder,
+    consumePasteIntent: () -> Boolean,
+) {
+    edits.collectLatest { text ->
+        if (!stateHolder.observeLinkEdit(text)) return@collectLatest
+
+        when (val submission = linkSubmissionFor(text, consumePasteIntent())) {
+            LinkSubmission.None -> Unit
+            LinkSubmission.ResolveImmediately -> stateHolder.beginResolution(text)
+            is LinkSubmission.ResolveAfter -> {
+                delay(submission.delayMillis.milliseconds)
+                stateHolder.beginResolution(text)
+            }
+        }
+    }
+}
+
+internal suspend fun completeAutomaticResolution(
+    stateHolder: DownloadStateHolder,
+    state: DownloadUiState.Resolving,
+) {
+    if (!state.completesAutomatically) return
+
+    delay(FakeResolutionMillis.milliseconds)
+    stateHolder.completeResolution(state.fixture)
 }
 
 @Composable
@@ -407,28 +431,20 @@ private fun FormRow(
     }
 }
 
-@Suppress("DEPRECATION")
 @Composable
 private fun MediaIdentity(fixture: DownloadFixture, thumbnailWidth: androidx.compose.ui.unit.Dp) {
-    val thumbnailAvailable =
-        remember(fixture.thumbnailResource) {
-            fixture.thumbnailResource?.let { resource ->
-                DownloadStateHolder::class.java.classLoader.getResource(resource) != null
-            } == true
-        }
-
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .semantics(mergeDescendants = true) {
-                    contentDescription = mediaContentDescription(fixture, thumbnailAvailable)
+                    contentDescription = mediaContentDescription(fixture, fixture.thumbnailAvailable)
                 },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (thumbnailAvailable) {
+        if (fixture.thumbnailAvailable) {
             Image(
-                painter = painterResource(fixture.thumbnailResource!!),
+                painter = painterResource(Res.drawable.thumbnail_normal),
                 contentDescription = null,
                 modifier = Modifier.width(thumbnailWidth).aspectRatio(16f / 9f),
                 contentScale = ContentScale.Crop,

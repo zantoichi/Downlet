@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage", "UsePropertyAccessSyntax")
+
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.jvm.toolchain.JavaLanguageVersion
@@ -23,6 +25,7 @@ dependencies {
     implementation("org.jetbrains.jewel:jewel-int-ui-standalone:0.39.1-262.9437.29")
     implementation("org.jetbrains.jewel:jewel-int-ui-decorated-window:0.39.1-262.9437.29")
     testImplementation(kotlin("test"))
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }
 
 kotlin {
@@ -43,6 +46,10 @@ compose.desktop {
     application {
         mainClass = "downlet.MainKt"
     }
+}
+
+compose.resources {
+    generateResClass = always
 }
 
 afterEvaluate {
