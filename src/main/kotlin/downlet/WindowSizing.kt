@@ -121,6 +121,18 @@ internal fun boundsApproximatelyEqual(
         abs(first.width - second.width) <= tolerance &&
         abs(first.height - second.height) <= tolerance
 
+internal fun managedWindowWidth(
+    currentWidth: Int,
+    tier: WindowPresentationTier,
+): Int = if (currentWidth < tier.minimumWidth) tier.preferredWidth else currentWidth
+
+internal fun fitManagedWindowBounds(
+    current: WindowBounds,
+    workArea: WindowBounds,
+    targetHeight: Int,
+    tier: WindowPresentationTier,
+): WindowBounds = fitWindowBounds(current.copy(width = managedWindowWidth(current.width, tier)), workArea, targetHeight)
+
 internal fun isLikelySnapped(
     bounds: WindowBounds,
     workArea: WindowBounds,
@@ -144,7 +156,9 @@ private const val MAX_RECENT_APP_BOUNDS = 64
 private const val EXPAND_DURATION_MILLIS = 250
 private const val COLLAPSE_DURATION_MILLIS = 167
 
-private class WindowSizingCoordinator {
+internal class WindowSizingCoordinator(
+    private var awaitingInitialBounds: Boolean = false,
+) {
     var ownership by mutableStateOf(WindowSizingOwnership.AutoManaged)
         private set
 
@@ -171,11 +185,16 @@ private class WindowSizingCoordinator {
     ) {
         updatePlacement(placement)
         if (placement == WindowPlacementMode.PlatformManaged) return
-        if (recentAppBounds.any { boundsApproximatelyEqual(it, bounds) }) return
-
-        recentAppBounds.clear()
-        ownership = WindowSizingOwnership.UserManaged
-        revision += 1
+        if (recentAppBounds.none { boundsApproximatelyEqual(it, bounds) }) {
+            if (awaitingInitialBounds) {
+                awaitingInitialBounds = false
+                recordAppBounds(bounds)
+            } else {
+                recentAppBounds.clear()
+                ownership = WindowSizingOwnership.UserManaged
+                revision += 1
+            }
+        }
     }
 
     fun updatePlacement(value: WindowPlacementMode) {
@@ -203,7 +222,13 @@ internal fun ManageProductWindowSizing(
     restoreAutoManagedSignal: Int,
 ) {
     val density = LocalDensity.current
-    val coordinator = remember(window) { WindowSizingCoordinator() }
+    val coordinator =
+        remember(window) {
+            WindowSizingCoordinator(
+                awaitingInitialBounds =
+                    window.width < tier.minimumWidth || window.height < tier.minimumHeight,
+            )
+        }
     val animatedHeight = remember(window) { Animatable(window.height.toFloat()) }
 
     DisposableEffect(window, windowState.placement) {
@@ -246,7 +271,7 @@ internal fun ManageProductWindowSizing(
         }
 
         val targetHeight = (request as WindowSizingRequest.ResizeTo).height
-        val target = fitWindowBounds(current, activeWorkArea(window), targetHeight)
+        val target = fitManagedWindowBounds(current, activeWorkArea(window), targetHeight, tier)
         animatedHeight.snapTo(current.height.toFloat())
 
         suspend fun applyHeight(height: Int) {

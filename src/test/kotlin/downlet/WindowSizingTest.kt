@@ -122,4 +122,24 @@ class WindowSizingTest {
         assertEquals(true, boundsApproximatelyEqual(requested, WindowBounds(102, 78, 719, 421)))
         assertEquals(false, boundsApproximatelyEqual(requested, WindowBounds(103, 80, 720, 420)))
     }
+
+    @Test
+    fun `startup sizing replaces the native placeholder width`() {
+        assertEquals(720, managedWindowWidth(136, WindowPresentationTier.Compact))
+        assertEquals(680, managedWindowWidth(680, WindowPresentationTier.Compact))
+    }
+
+    @Test
+    fun `first observed resize establishes the startup baseline`() {
+        val coordinator = WindowSizingCoordinator(awaitingInitialBounds = true)
+        coordinator.acceptCurrentBounds(WindowBounds(0, 0, 136, 39))
+
+        coordinator.observeBounds(WindowBounds(0, 0, 720, 168), WindowPlacementMode.Floating)
+
+        assertEquals(WindowSizingOwnership.AutoManaged, coordinator.ownership)
+
+        coordinator.observeBounds(WindowBounds(0, 0, 720, 250), WindowPlacementMode.Floating)
+
+        assertEquals(WindowSizingOwnership.UserManaged, coordinator.ownership)
+    }
 }
