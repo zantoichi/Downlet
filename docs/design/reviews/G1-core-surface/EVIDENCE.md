@@ -1,104 +1,85 @@
-# G1 — Evidence
+# G1 — Final Evidence
 
-Gate: G1  
-Status: SUPERSEDED_BY_APPROVED_G1_REVISION
-Date: 2026-08-28  
-Reviewed product commit: `4444ee7949e29b8c8432f3274e186addb9267164`  
-Evidence source commit: `c80f48c03b64db26221d5a9c18a3f026a65b30a7`  
-Final evidence correction commit: `28a140cd7b01655266deb927076a0776a4d58107`  
-Review orchestration base: `69b01ade0ecb80c9a7110871b2f127e436c1b7af`
+Date: 2026-08-29
+Reviewed product commit: `4fd87b6fa40b25981bdd0ec02a5253a48db61bc1`
+Status: PASS WITH DOCUMENTED READY-SEMANTICS TOOLING LIMITATION
 
-The evidence source and later documentation commits contain no application, resource, build, or run-configuration difference from the reviewed product commit. This remains an accurate historical record, but it cannot be used as final G1 evidence after the approved visual/interaction revision.
+## Build and code health
 
-## Relevant product files
-
-- `.run/Downlet.run.xml`
-- `.run/Design Review.run.xml`
-- `settings.gradle.kts`
-- `build.gradle.kts`
-- `gradle.properties`
-- `gradle/wrapper/gradle-wrapper.jar`
-- `gradle/wrapper/gradle-wrapper.properties`
-- `src/main/kotlin/downlet/Main.kt`
-- `src/main/kotlin/downlet/DesignReview.kt`
-- `src/main/kotlin/downlet/DownloadState.kt`
-- `src/main/composeResources/drawable/thumbnail_normal.svg`
-- `src/main/resources/chevron-down.svg`
-- `src/test/kotlin/downlet/DownloadStateTest.kt`
-
-## IntelliJ, build, tests, and launch
-
-- IntelliJ inspections: zero problems in production Kotlin, focused tests, and `build.gradle.kts` at the final reviewed product commit.
-- Formatting: clean.
-- IntelliJ `build_project`: PASS with zero problems.
-- `DownloadStateTest`: 17/17 PASS, exit `0`.
-- `Downlet` run configuration: PASS, exactly one product window.
-- `Design Review` run configuration: PASS, product window plus controller.
+- `gradlew.bat check`: PASS.
+- Ktlint: PASS.
+- Detekt: PASS with narrow Compose exceptions only.
+- `DownloadStateTest`: 18 passed, 0 failed, 0 skipped.
+- IntelliJ `ProductSurface.kt` inspection: zero problems.
+- IntelliJ focused build: PASS, zero problems.
 - Strict OpenSpec validation: PASS.
 
-## Compose MCP
+Current production sources:
 
-- Connection: `connected=true`.
-- Reload state: `ok`; `lastError=null`; zero failed reloads.
-- Product/controller `get_ui_error`: `hasError=false`.
-- Logs: expected state/theme, resize, capture, and semantic activity only; no unexplained application failure.
-- Final product window ID: `78134800-5984-45f8-af50-0707afbcf2ce`.
-- Final controller window ID: `c408aa0a-c27f-423a-9b25-faeac2d8a222`.
+- `src/main/kotlin/downlet/Main.kt`
+- `src/main/kotlin/downlet/ProductSurface.kt`
+- `src/main/kotlin/downlet/ReadyContent.kt`
+- `src/main/kotlin/downlet/DownloadModels.kt`
+- `src/main/kotlin/downlet/DownloadStateHolder.kt`
+- `src/main/kotlin/downlet/DesignReviewApp.kt`
+- `src/main/composeResources/drawable/thumbnail_normal.svg`
+- `src/test/kotlin/downlet/DownloadStateTest.kt`
 
-## Screenshots
+## Runtime
 
-Primary client-area evidence:
+- Run configuration: `Design Review`.
+- Product window: Downlet, 720×420 default and 620×350 minimum evidence sizes.
+- Controller window: Design Review Controller.
+- Compose status: connected, reload state `ok`, no failed reload.
+- Product/controller UI errors: none.
+- Logs: expected reload, state/theme, resize, screenshot, and semantic actions only.
+
+Before final capture, four leaked completed-task `hotMcpServer` process trees were stopped. One verified project server remained. Each screen-backed Compose capture brought the exact Downlet HWND forward before saving; all accepted images were opened and visually checked.
+
+## Canonical screenshots
+
+Client/window-content evidence:
 
 - `docs/design/evidence/G1/g1-empty-light-720x420.png`
 - `docs/design/evidence/G1/g1-empty-dark-720x420.png`
 - `docs/design/evidence/G1/g1-ready-light-720x420.png`
 - `docs/design/evidence/G1/g1-ready-dark-720x420.png`
 - `docs/design/evidence/G1/g1-ready-light-620x350.png`
+- `docs/design/evidence/G1/g1-missing-preview-light-620x350.png`
+- `docs/design/evidence/G1/g1-disabled-light-620x350.png`
 
-Native Windows frame evidence:
+Exact-current native full-window evidence:
 
 - `docs/design/evidence/G1/g1-native-empty-light-full-window.png`
 - `docs/design/evidence/G1/g1-native-ready-dark-full-window.png`
 
-Additional integrated edge evidence:
+No generated mockup or controller screenshot is used as product evidence.
 
-- `docs/design/evidence/G1/g1-integration-ready-light-720x420.png`
-- `docs/design/evidence/G1/g1-integration-missing-preview-light-620x350.png`
+## Semantics
 
-No generated image is used as G1 evidence.
+- `docs/design/evidence/G1/g1-empty-semantics.json`: PASS. The Empty product tree returned in under two seconds. The link field is focused and named; its decorative placeholder is pruned; status text remains available.
+- `docs/design/evidence/G1/g1-ready-semantics.json`: DOCUMENTED TOOLING LIMITATION. Ready did not return within the strict five-second final cutoff on one verified server. Earlier isolated calls reached Hot Reload's 120-second timeout. Controller semantics and same-commit visual/interaction evidence cover Ready.
 
-## Semantic evidence
+## Interaction matrix
 
+- No visible Paste action: source and screenshots PASS.
+- Paste starts resolution immediately: focused tests PASS.
+- Typing starts resolution after 350 ms: focused tests PASS.
+- Automatic fake resolution completes after 550 ms: focused tests PASS.
+- Superseded/cancelled work does not complete stale state: focused tests PASS.
+- Initial/reset focus: Empty semantic tree PASS.
+- Video/Audio and matching quality models: focused state tests and Ready visuals PASS.
+- Missing preview: minimum-size screenshot PASS.
+- Disabled Download: minimum-size screenshot and explicit reason PASS.
+- Light/dark parity: default-size screenshots PASS.
+- Native title bar and controls: full-window screenshots PASS.
+
+## Evidence index
+
+- `docs/design/evidence/G1/product-evidence.md`
+- `docs/design/evidence/G1/g1-revision-review.md`
+- `docs/design/evidence/G1/g1-code-health-review.md`
 - `docs/design/evidence/G1/g1-empty-semantics.json`
 - `docs/design/evidence/G1/g1-ready-semantics.json`
 
-The product `get_semantic_tree` call timed out once in Empty and once in Ready after 120 seconds because of the known Jewel text-editor stall. No retry was made. The JSON files preserve that exact result and record controller semantics, native frame accessibility, and visually verified product labels/actions from the same observed states. Windows UI Automation exposed the native frame but not Jewel-rendered content. This is a documented tooling limitation, not a successful product-tree serialization claim.
-
-## Tested sizes
-
-- Product outer bounds: 720×420 in Empty/Ready and Light/Dark.
-- Product outer bounds: 620×350 in Ready and edge fixtures.
-- Compose client-area rasters: 704×412 and 604×342 respectively.
-- Native restored frame: 706×413.
-- Native maximized frame: 2560×1392.
-
-## Tested interactions
-
-- Paste button with deterministic valid and invalid clipboard inputs.
-- Native `Ctrl+V` starts Resolving immediately and requires no Enter.
-- Manual typing resolves after the 350 ms idle debounce and requires no Enter.
-- Automatic Resolving completes after 550 ms; stale and superseded work cancels.
-- Video/Audio selection and matching quality choices.
-- Destination Change cycles deterministic fixtures and shows acknowledgement.
-- Download shows the G1 design-preview acknowledgement without leaving Ready.
-- Long title, long path, missing preview, and disabled Download at 620×350.
-- Native drag, maximize, restore, minimize/maximize/close visibility, and post-restore input.
-
-## Review records
-
-- `docs/design/evidence/G1/foundation-window-proof.md`
-- `docs/design/evidence/G1/integrated-review.md`
-- `docs/design/evidence/G1/product-evidence.md`
-- `docs/design/evidence/G1/impeccable-review.md`
-
-The Impeccable review returned `READY WITH DOCUMENTED P2/P3`, score 32/40. No P0/P1 finding exists; no correction pass was dispatched. Follow-ups are assigned to tasks `5.3`, `5.4`, and `5.7`.
+AWAITING USER: APPROVE G1 or REVISE G1: <feedback>

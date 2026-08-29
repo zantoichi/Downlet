@@ -1,32 +1,27 @@
 {
-  "capturedOn": "2026-08-28",
+  "capturedOn": "2026-08-29",
+  "reviewedProductCommit": "4fd87b6fa40b25981bdd0ec02a5253a48db61bc1",
   "state": "Ready normal",
-  "theme": "Light and Dark evidence",
+  "theme": "Light",
   "composeProductAttempt": {
-    "status": "timeout",
+    "status": "no_response_within_cutoff",
     "attempts": 1,
-    "timeoutSeconds": 120,
-    "error": "tool call failed for compose_hot_reload/get_semantic_tree; timed out awaiting tools/call after 120s"
+    "cutoffSeconds": 5,
+    "windowId": "14553b5b-870b-47c0-a129-f69732ad9170",
+    "serverTopology": "one verified Downlet hotMcpServer pair"
   },
   "controllerSemanticState": {
-    "captureWindowId": "401bde98-22bd-4501-9a03-a61a8e291560",
-    "recaptureWindowId": "c408aa0a-c27f-423a-9b25-faeac2d8a222",
+    "windowId": "695bb2b8-5826-4765-80a8-f376a0f81e64",
+    "status": "pass",
+    "duration": "under 1 second",
     "currentState": "Ready normal",
-    "verifiedThemes": ["Light", "Dark"],
     "stateActions": ["Empty", "Resolving", "Ready", "Reset"],
     "fixtureActions": ["Normal", "Long title", "No preview", "Long path", "Disabled"],
     "themeActions": ["Light", "Dark"]
   },
-  "computerUseFallback": {
-    "window": {
-      "id": 31918586,
-      "title": "Downlet",
-      "app": "java.exe"
-    },
-    "accessibilityTree": "Window: \"Downlet\", App: java.exe.\n\t0 window Downlet Secondary Actions: Raise\n\t\t1 pane\n\t\t2 pane\n\t\t3 title bar\n\t\t\t4 menu bar System ID: MenuBar\n\t\t\t\t9 menu item System\n\t\t\t6 button Minimize\n\t\t\t7 button Maximize\n\t\t\t8 button Close",
-    "visibleLabelsAndActionsFromSameObservation": [
+  "sameCommitVisualAndInteractionEvidence": {
+    "visibleLabelsAndActions": [
       "YouTube link",
-      "Paste",
       "A calm walk through the city after rain",
       "North Window · 12:34 · YouTube",
       "Download as",
@@ -39,12 +34,14 @@
       "Change...",
       "Download"
     ],
-    "screenshot": {
-      "width": 706,
-      "height": 413,
-      "originX": 15,
-      "originY": 48
-    }
+    "screenshots": [
+      "docs/design/evidence/G1/g1-ready-light-720x420.png",
+      "docs/design/evidence/G1/g1-ready-dark-720x420.png",
+      "docs/design/evidence/G1/g1-ready-light-620x350.png",
+      "docs/design/evidence/G1/g1-native-ready-dark-full-window.png"
+    ],
+    "uiErrors": false,
+    "logs": "clean"
   },
-  "limitation": "The Jewel product tree timed out and Windows UI Automation exposed only the native frame. Visible product labels/actions are transcribed from the same fresh Computer Use WGC observation; controller semantics provide deterministic state/theme proof."
+  "limitation": "Compose Hot Reload 1.2.0 still does not serialize the Ready product tree promptly. Empty product semantics now passes after pruning only the decorative placeholder node. Ready remains covered by controller semantics, exact-commit visuals, interaction tests, UI-error checks, and logs; no successful Ready product-tree claim is made."
 }

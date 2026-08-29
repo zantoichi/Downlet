@@ -1,40 +1,71 @@
 {
-  "capturedOn": "2026-08-28",
+  "capturedOn": "2026-08-29",
+  "reviewedProductCommit": "4fd87b6fa40b25981bdd0ec02a5253a48db61bc1",
   "state": "Empty",
   "theme": "Light",
   "composeProductAttempt": {
-    "status": "timeout",
+    "status": "pass",
     "attempts": 1,
-    "timeoutSeconds": 120,
-    "error": "tool call failed for compose_hot_reload/get_semantic_tree; timed out awaiting tools/call after 120s"
+    "duration": "under 2 seconds",
+    "windowId": "14553b5b-870b-47c0-a129-f69732ad9170"
   },
-  "controllerSemanticState": {
-    "windowId": "401bde98-22bd-4501-9a03-a61a8e291560",
-    "currentState": "Empty",
-    "currentTheme": "Light",
-    "stateActions": ["Empty", "Resolving", "Ready", "Reset"],
-    "fixtureActions": ["Normal", "Long title", "No preview", "Long path", "Disabled"],
-    "themeActions": ["Light", "Dark"]
+  "verified": {
+    "linkLabel": "YouTube link",
+    "fieldContentDescription": "YouTube link field",
+    "fieldFocused": true,
+    "fieldActions": ["onClick", "onLongClick"],
+    "decorativePlaceholderExcluded": true,
+    "status": "Paste or type a YouTube link. Downlet checks it automatically."
   },
-  "computerUseFallback": {
-    "window": {
-      "id": 34868352,
-      "title": "Downlet",
-      "app": "java.exe"
-    },
-    "accessibilityTree": "Window: \"Downlet\", App: java.exe.\n\t0 window Downlet Secondary Actions: Raise\n\t\t1 pane\n\t\t2 pane\n\t\t3 title bar\n\t\t\t4 menu bar System ID: MenuBar\n\t\t\t\t5 menu item System\n\t\t\t6 button Minimize\n\t\t\t7 button Maximize\n\t\t\t8 button Close",
-    "visibleLabelsAndActionsFromSameObservation": [
-      "YouTube link",
-      "Paste a YouTube link...",
-      "Paste",
-      "Paste a YouTube link to choose video or audio."
-    ],
-    "screenshot": {
-      "width": 706,
-      "height": 413,
-      "originX": 15,
-      "originY": 48
-    }
-  },
-  "limitation": "The Jewel product tree timed out and Windows UI Automation exposed only the native frame. Visible product labels/actions are transcribed from the same fresh Computer Use WGC observation; controller semantics provide deterministic state/theme proof."
+  "tree": {
+    "id": 1,
+    "bounds": {"x": 0, "y": 0, "width": 704, "height": 412},
+    "children": [
+      {
+        "id": 6,
+        "bounds": {"x": 0, "y": 0, "width": 704, "height": 40},
+        "children": [
+          {"id": 9, "text": "Downlet", "bounds": {"x": 326, "y": 12, "width": 51, "height": 16}}
+        ]
+      },
+      {"id": 10, "bounds": {"x": 0, "y": 40, "width": 704, "height": 1}},
+      {
+        "id": 11,
+        "bounds": {"x": 0, "y": 41, "width": 704, "height": 371},
+        "children": [
+          {
+            "id": 18,
+            "text": "YouTube link",
+            "contentDescription": "YouTube link label",
+            "bounds": {"x": 20, "y": 66, "width": 96, "height": 16}
+          },
+          {
+            "id": 20,
+            "contentDescription": "YouTube link field",
+            "focused": true,
+            "actions": ["onClick", "onLongClick"],
+            "bounds": {"x": 116, "y": 61, "width": 568, "height": 28}
+          },
+          {
+            "id": 29,
+            "bounds": {"x": 36, "y": 141, "width": 632, "height": 235},
+            "children": [
+              {
+                "id": 31,
+                "bounds": {"x": 36, "y": 141, "width": 384, "height": 16},
+                "children": [
+                  {
+                    "id": 32,
+                    "text": "Paste or type a YouTube link. Downlet checks it automatically.",
+                    "contentDescription": "Status: Paste or type a YouTube link. Downlet checks it automatically.",
+                    "bounds": {"x": 36, "y": 141, "width": 384, "height": 16}
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
 }
