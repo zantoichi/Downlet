@@ -1,3 +1,6 @@
+[agents]
+enabled = false
+
 [mcp_servers.compose_hot_reload]
 command = "cmd.exe"
 args = ["/d", "/s", "/c", "gradlew.bat --no-daemon --quiet --console=plain hotMcpServer"]
