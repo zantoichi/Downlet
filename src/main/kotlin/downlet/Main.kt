@@ -2,7 +2,6 @@ package downlet
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.unit.dp
@@ -27,13 +26,8 @@ import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
 import org.jetbrains.jewel.window.styling.DecoratedWindowStyle
 import org.jetbrains.jewel.window.styling.TitleBarStyle
-import java.awt.Dimension
 
 private const val PRODUCT_WINDOW_TITLE = "Downlet"
-private const val PRODUCT_WINDOW_WIDTH = 720
-private const val PRODUCT_WINDOW_HEIGHT = 420
-private const val PRODUCT_WINDOW_MINIMUM_WIDTH = 620
-private const val PRODUCT_WINDOW_MINIMUM_HEIGHT = 350
 
 fun main() =
     application {
@@ -55,12 +49,15 @@ internal fun ProductWindow(
     theme: DownletTheme,
     onCloseRequest: () -> Unit,
     initialPosition: WindowPosition = WindowPosition.PlatformDefault,
+    motionDurationScale: Float = 1f,
+    restoreAutoManagedSignal: Int = 0,
 ) {
+    val initialTier = WindowPresentationTier.Compact
     val windowState =
         rememberWindowState(
             position = initialPosition,
-            width = PRODUCT_WINDOW_WIDTH.dp,
-            height = PRODUCT_WINDOW_HEIGHT.dp,
+            width = initialTier.preferredWidth.dp,
+            height = initialTier.preferredHeight.dp,
         )
 
     IntUiTheme(
@@ -93,16 +90,22 @@ internal fun ProductWindow(
             title = PRODUCT_WINDOW_TITLE,
             icon = appIcon,
         ) {
-            DisposableEffect(window) {
-                window.minimumSize = Dimension(PRODUCT_WINDOW_MINIMUM_WIDTH, PRODUCT_WINDOW_MINIMUM_HEIGHT)
-                onDispose {}
-            }
+            ManageProductWindowSizing(
+                window = window,
+                windowState = windowState,
+                tier = stateHolder.state.windowPresentationTier,
+                motionDurationScale = motionDurationScale,
+                restoreAutoManagedSignal = restoreAutoManagedSignal,
+            )
 
             TitleBar {
                 Text(PRODUCT_WINDOW_TITLE)
             }
 
-            ProductSurface(stateHolder = stateHolder)
+            ProductSurface(
+                stateHolder = stateHolder,
+                motionDurationScale = motionDurationScale,
+            )
         }
     }
 }
