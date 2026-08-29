@@ -22,8 +22,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -63,7 +65,10 @@ import org.jetbrains.jewel.ui.component.TextField
 import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
-internal fun ProductSurface(stateHolder: DownloadStateHolder) {
+internal fun ProductSurface(
+    stateHolder: DownloadStateHolder,
+    motionDurationScale: Float = 1f,
+) {
     val linkFieldFocusRequester = remember { FocusRequester() }
     var pasteIntent by remember { mutableStateOf(false) }
 
@@ -110,6 +115,7 @@ internal fun ProductSurface(stateHolder: DownloadStateHolder) {
                 workPlaneShape = workPlaneShape,
                 workPlaneFill = workPlaneFill,
                 workPlaneBorder = workPlaneBorder,
+                motionDurationScale = motionDurationScale,
             )
         }
     }
@@ -253,6 +259,7 @@ private fun ColumnScope.ProductBody(
     workPlaneShape: RoundedCornerShape,
     workPlaneFill: androidx.compose.ui.graphics.Color,
     workPlaneBorder: androidx.compose.ui.graphics.Color,
+    motionDurationScale: Float,
 ) {
     val easing = remember { CubicBezierEasing(0.22f, 1f, 0.36f, 1f) }
     val risePixels = with(LocalDensity.current) { 6.dp.roundToPx() }
@@ -265,7 +272,9 @@ private fun ColumnScope.ProductBody(
                 .fillMaxWidth()
                 .then(if (showsWorkPlane) Modifier.weight(1f) else Modifier),
         transitionSpec = {
-            if (!initialState.isWorkPlaneState && targetState.isWorkPlaneState) {
+            if (motionDurationScale <= 0f) {
+                (EnterTransition.None togetherWith ExitTransition.None).using(sizeTransform = null)
+            } else if (!initialState.isWorkPlaneState && targetState.isWorkPlaneState) {
                 (
                     fadeIn(animationSpec = tween(durationMillis = 200, easing = easing)) +
                         slideInVertically(
@@ -343,6 +352,7 @@ private fun WorkPlane(
                 .clip(shape)
                 .background(fill)
                 .border(1.dp, border, shape)
+                .verticalScroll(rememberScrollState())
                 .padding(if (compact) 12.dp else 16.dp),
     ) {
         content()

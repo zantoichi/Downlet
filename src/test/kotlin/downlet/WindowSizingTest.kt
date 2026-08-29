@@ -75,4 +75,51 @@ class WindowSizingTest {
             ),
         )
     }
+
+    @Test
+    fun `work area fit preserves origin when possible and shifts only overflow`() {
+        val workArea = WindowBounds(x = 0, y = 0, width = 1000, height = 800)
+
+        assertEquals(
+            WindowBounds(x = 100, y = 100, width = 720, height = 420),
+            fitWindowBounds(
+                current = WindowBounds(x = 100, y = 100, width = 720, height = 168),
+                workArea = workArea,
+                targetHeight = 420,
+            ),
+        )
+        assertEquals(
+            WindowBounds(x = 280, y = 380, width = 720, height = 420),
+            fitWindowBounds(
+                current = WindowBounds(x = 500, y = 700, width = 720, height = 168),
+                workArea = workArea,
+                targetHeight = 420,
+            ),
+        )
+        assertEquals(
+            WindowBounds(x = 0, y = 0, width = 1000, height = 800),
+            fitWindowBounds(
+                current = WindowBounds(x = 0, y = 0, width = 1200, height = 168),
+                workArea = workArea,
+                targetHeight = 900,
+            ),
+        )
+    }
+
+    @Test
+    fun `snap detection recognizes standard work area regions`() {
+        val workArea = WindowBounds(x = 0, y = 0, width = 1200, height = 900)
+
+        assertEquals(true, isLikelySnapped(WindowBounds(0, 0, 600, 900), workArea))
+        assertEquals(true, isLikelySnapped(WindowBounds(600, 450, 600, 450), workArea))
+        assertEquals(false, isLikelySnapped(WindowBounds(40, 40, 720, 420), workArea))
+    }
+
+    @Test
+    fun `app bounds tolerate ordinary native rounding`() {
+        val requested = WindowBounds(x = 100, y = 80, width = 720, height = 420)
+
+        assertEquals(true, boundsApproximatelyEqual(requested, WindowBounds(102, 78, 719, 421)))
+        assertEquals(false, boundsApproximatelyEqual(requested, WindowBounds(103, 80, 720, 420)))
+    }
 }
