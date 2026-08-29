@@ -18,7 +18,7 @@ Research reviewed on August 29, 2026:
 
 - Make normal launch visibly link-first with no reserved work-plane height.
 - Grow and shrink the native outer window at meaningful task-stage boundaries.
-- Keep window motion calm, interruptible, accessible, and subordinate to user window management.
+- Keep window motion calm, interruptible, accessible, and deterministic inside an app-owned non-resizable window.
 - Reuse the current state model, Jewel composition, Compose animation APIs, and review harness.
 - Produce deterministic automated and native-window evidence for all behavior.
 
@@ -28,6 +28,7 @@ Research reviewed on August 29, 2026:
 - Different outer sizes for every one of the six states.
 - Persisting window bounds or sizing ownership across launches.
 - Animating width during automatic tier changes.
+- Manual window resizing, maximize/full-screen enlargement, or snap-resize behavior.
 - Real media resolution/download integration or any backend work.
 
 ## Decisions
@@ -47,9 +48,9 @@ This is the smallest mapping that meets staged disclosure without producing dist
 
 ### 2. Preserve width and animate height only
 
-Automatic tier changes preserve the current width. G0 calibrates one preferred width and compact/expanded height profiles against actual Jewel metrics; existing `620–720 dp` widths and `420 dp` expanded height are useful starting evidence, not requirements. Each profile also owns its minimum usable height.
+Tier changes preserve one calibrated fixed width. G0 calibrates that width and compact/expanded heights against actual Jewel metrics; existing `620–720 dp` widths and `420 dp` expanded height are useful starting evidence, not requirements.
 
-The upper-left content origin remains fixed, so normal growth moves the bottom edge downward and leaves the URL field in place. Width remains user-resizable and the existing compact-height branch continues to adapt spacing.
+The upper-left content origin remains fixed, so normal growth moves the bottom edge downward and leaves the URL field in place. The primary window is non-resizable; only app-owned height changes are allowed.
 
 Alternative rejected: animate both width and height. It reflows the URL, media title, destination, and controls while adding motion that provides no extra task information.
 
@@ -57,7 +58,7 @@ Alternative rejected: animate both width and height. It reflows the URL, media t
 
 `ProductWindow` continues to own `DecoratedWindow` and the existing `WindowState`. Add the minimum sizing policy beside this owner rather than in `DownloadStateHolder`; download state remains product behavior, while outer bounds remain window presentation.
 
-Use one tiny pure policy mapping current UI state plus sizing ownership to a target tier/bounds request. No interface, factory, service, or new module is needed. A separate file is warranted only if the pure policy and its focused test would otherwise make `Main.kt` mixed-responsibility again.
+Use one tiny pure policy mapping current UI state to a target tier height. No ownership model, interface, factory, service, or generic window manager is needed. A separate file is warranted only if the pure mapping and its focused test would otherwise make `Main.kt` mixed-responsibility again.
 
 Alternative rejected: migrate to experimental Window API v2 now. Its intrinsic sizing is useful, but Jewel compatibility and migration add unrelated risk when the current mutable state already supports the required size changes.
 
@@ -71,19 +72,13 @@ When the effective Compose motion-duration scale is zero, snap both outer bounds
 
 Alternative rejected: an AWT timer or custom frame loop. Compose already provides lifecycle-aware cancellation, retargeting, and duration scaling.
 
-### 5. Track automatic versus user sizing ownership
+### 5. Keep the primary window app-owned and non-resizable
 
-Sizing starts `AutoManaged` on each launch. The window owner records its latest app-issued bounds and observes actual floating-window bounds after initialization and after animations settle.
+Set the primary Jewel window non-resizable. Do not install native resize listeners, sizing ownership state, maximize/restore reconciliation, snap detection, or full-screen handling. The existing title bar keeps minimize and close; maximize is disabled or unavailable through the non-resizable window contract.
 
-- A non-app size change switches ownership to `UserManaged`.
-- `AutoManaged` tier changes animate to the calibrated profile.
-- `UserManaged` tier changes never shrink. They preserve current bounds, growing only to the target tier's minimum if required for essential content.
-- A manual resize during animation cancels the animation and switches to `UserManaged`.
-- Maximized, snapped, or full-screen placement suspends floating-bound requests. Restoring reconciles to the current tier only when ownership is still automatic.
+The state tier is the sole sizing authority. Every compact/expanded transition therefore converges to the calibrated fixed width and target height without racing native resize events.
 
-Use a small tolerance for platform rounding and DPI conversion so app-issued bounds are not misclassified as manual input. Ownership is intentionally not persisted; relaunch restores the product's compact default.
-
-Alternative rejected: always force the state target. It would override a user's chosen workspace and could pull a maximized/snapped window back to floating bounds.
+Alternative rejected: retain manual resize and platform-placement precedence. It adds ownership/event-order machinery that is unnecessary for this focused utility and made the required clear-link collapse nondeterministic.
 
 ### 6. Bound targets to the active Windows work area
 
@@ -91,19 +86,19 @@ Use the current `ComposeWindow`/AWT graphics configuration and screen insets to 
 
 If a preferred target fits, preserve position. If growth would cross the bottom or right work-area edge, shift the window only enough to keep it visible. If the available work area cannot hold the tier's preferred or minimum height, cap the bounds and enable a vertical overflow path inside the product surface so all essential controls remain reachable.
 
-Normal compact and expanded targets should not scroll. Overflow exists only for constrained screens, high scaling, or user-managed undersizing.
+Normal compact and expanded targets should not scroll. Overflow exists only for constrained screens or high scaling.
 
 Alternative rejected: recenter on every tier change. Repositioning the whole window would break spatial continuity and move the user's pointer target.
 
-### 7. Keep minimum-size changes synchronized with tiers
+### 7. Apply exact tier bounds without user-resize minimums
 
-Compact needs a smaller native minimum than today's `620 × 350`. Before collapse, lower the native minimum so the animation can complete. During expansion, animate first and raise the expanded minimum after reaching the target, avoiding an operating-system jump to the minimum. When the work area is smaller than the desired minimum, use the bounded overflow fallback instead of requesting impossible dimensions.
+Because the primary window is non-resizable, each tier applies its exact calibrated fixed width and target height. No dynamic native minimum-size ordering or user undersize recovery is needed. When the work area is smaller than the preferred expanded height, cap to the available work area and use the bounded overflow fallback.
 
-Alternative rejected: one compact global minimum for all states. It would allow the expanded work surface to be resized into an unusable sliver during ordinary operation.
+Alternative rejected: retain dynamic minimum-size coordination. It exists only to support user resizing and creates extra native geometry events without product value.
 
 ### 8. Preserve current Jewel and Compose components
 
-- Title bar and native controls: existing Jewel `DecoratedWindow` and `TitleBar`.
+- Title bar and native controls: existing Jewel `DecoratedWindow` and `TitleBar`, with resize/maximize unavailable and minimize/close retained.
 - Link input: existing Jewel `TextField`, label, validation text, and resolving indicator.
 - Expanded surface: existing Compose `Box` work plane and Jewel media choices/actions.
 - Motion: Compose animation core only.
@@ -113,9 +108,9 @@ No new card, page, dialog, route, or decorative element is added.
 
 ### 9. Extend review controls only for deterministic proof
 
-Existing forced-state controls already cover tier mapping. Add only the smallest development-only seams needed to force normal versus zero-duration motion and reset sizing ownership. Manual resize, maximize/restore, screen-edge behavior, and title-bar/window controls remain native interaction checks rather than simulated product controls.
+Existing forced-state controls already cover tier mapping. Add only the smallest development-only seam needed to force normal versus zero-duration motion. Fixed-width/non-resizable behavior and title-bar controls remain native interaction checks rather than simulated product controls.
 
-Automated checks cover pure state-to-tier and ownership policy plus existing product-flow regressions. Compose Hot Reload evidence covers client layout, state transitions, focus, semantics, constrained overflow, themes, and scaling. Codex Computer Use `Windows.Graphics.Capture` covers native outer bounds, title bar, manual resize, maximize/restore, and on-screen placement from the same exact commit.
+Automated checks cover pure state-to-tier policy plus existing product-flow regressions. Compose Hot Reload evidence covers client layout, state transitions, focus, semantics, constrained overflow, themes, and scaling. Codex Computer Use `Windows.Graphics.Capture` covers native outer bounds, title bar, unavailable resize/maximize behavior, available minimize/close controls, and on-screen placement from the same exact commit.
 
 ### 10. Reconcile the active fixed-window change before code
 
@@ -124,17 +119,16 @@ Before implementation, update `PRODUCT.md`, `DESIGN.md`, and the active `design-
 ## Risks / Trade-offs
 
 - [Native bounds updates may look stepped on some Windows/JBR combinations] → Use one Compose animation driver, round consistently, inspect frame behavior on the target JBR, and fall back to the shortest acceptable transition if per-frame resizing is visibly poor.
-- [Platform rounding or DPI changes may look like manual resizing] → Compare actual and issued bounds with a small tolerance and ignore initialization/active-animation events.
-- [Changing native minimum size at the wrong moment can force a jump] → Lower before collapse; raise only after expansion completes; cover both orders in focused tests and native interaction evidence.
+- [Platform rounding or DPI conversion may miss the exact target] → Convert in one place, round consistently, and verify final fixed-width bounds at representative scaling.
 - [A window near a work-area edge may need to move] → Preserve the upper-left anchor by default and apply only the minimum corrective shift required for visibility.
-- [Automatic shrinking can surprise users] → Shrink only while ownership remains automatic; any manual resize disables later auto-shrink for that launch.
+- [Removing manual resize reduces workspace flexibility] → Prefer deterministic staged disclosure for this focused utility; revisit only if real product usage requires persistent larger workspaces.
 - [Client and outer-window animations can drift] → Drive both from the same tier and motion constants; keep only one owner for geometric height.
 - [Research guidance targets several UI stacks] → Apply platform-level principles, then verify actual Compose Desktop/Jewel behavior on Windows rather than assuming WinUI mechanics.
 
 ## Migration Plan
 
 1. Reconcile conflicting planning and design statements, then prepare G0 adaptive-window evidence and stop for `APPROVE G0`.
-2. Implement the pure tier/ownership policy and focused tests without visual changes.
-3. Wire compact launch and interruptible height changes into `ProductWindow`; adjust `ProductSurface` only enough to remove reserved height and support constrained overflow.
+2. Implement the pure state-to-tier policy and focused tests without ownership or platform-placement machinery.
+3. Make the primary window non-resizable, wire compact launch and interruptible height changes into `ProductWindow`, and adjust `ProductSurface` only enough to remove reserved height and support constrained overflow.
 4. Extend the review harness, run G1/G2 review and correction, then capture final G3 evidence once.
 5. Rollback, if needed, removes the sizing coordinator and restores the prior fixed target/minimum constants; no data or backend migration exists.

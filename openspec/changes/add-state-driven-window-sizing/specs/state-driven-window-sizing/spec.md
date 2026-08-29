@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines how Downlet's primary desktop window fits the current task stage while preserving Windows window-management expectations, accessibility, and deterministic reviewability.
+Defines how Downlet's fixed-width, non-resizable primary desktop window fits the current task stage while preserving accessibility and deterministic reviewability.
 
 ## ADDED Requirements
 
@@ -17,7 +17,7 @@ The primary window SHALL use exactly two automatic presentation tiers. Empty and
 - **THEN** the helper is replaced by the compact resolving status without expanding the outer window
 
 #### Scenario: Successful resolution expands once
-- **WHEN** Resolving transitions to Ready while automatic sizing owns the floating window
+- **WHEN** Resolving transitions to Ready
 - **THEN** the primary window grows to the expanded tier and reveals the media work surface
 
 #### Scenario: Later states keep stable outer geometry
@@ -25,11 +25,11 @@ The primary window SHALL use exactly two automatic presentation tiers. Empty and
 - **THEN** the outer window remains in the expanded tier and only state-specific content changes
 
 #### Scenario: Return to link entry shrinks
-- **WHEN** Reset, Download Another, or a new link edit returns an automatically managed expanded window to Empty
+- **WHEN** Reset, Download Another, or a new link edit returns an expanded window to Empty
 - **THEN** the primary window shrinks to the compact tier
 
 ### Requirement: Content-fit automatic bounds
-Automatic tier changes SHALL preserve the current usable width and adjust height to the designed content for the target tier. Preferred and minimum bounds MUST be derived from current Jewel content, standard spacing, title-bar insets, scaling, and available work area rather than treating prior `720×420` or `620×350` dimensions as fixed product requirements.
+The primary window SHALL use one calibrated, non-user-resizable width and adjust only height for the target tier. Preferred bounds MUST be derived from current Jewel content, standard spacing, title-bar insets, scaling, and available work area rather than treating prior `720×420` or `620×350` dimensions as fixed product requirements.
 
 #### Scenario: Compact content fit
 - **WHEN** the compact tier reaches its final bounds at ordinary Windows scaling
@@ -39,9 +39,9 @@ Automatic tier changes SHALL preserve the current usable width and adjust height
 - **WHEN** the expanded tier reaches its final preferred bounds
 - **THEN** the visible media identity, choices, destination, status, and actions fit without unnecessary empty vertical space or scrolling under normal conditions
 
-#### Scenario: Width remains stable during an automatic tier change
+#### Scenario: Width remains fixed during a tier change
 - **WHEN** the app grows or shrinks the window between tiers
-- **THEN** the current window width is preserved and the URL field does not reflow because of app-driven horizontal resizing
+- **THEN** the calibrated window width is unchanged and the URL field does not reflow
 
 ### Requirement: Stable anchor and on-screen placement
 Automatic resizing SHALL keep the URL field and upper-left content origin at a stable screen position whenever the target bounds fit the active monitor work area. If they do not fit, the window MUST make the smallest position or size adjustment needed to remain usable and visible.
@@ -75,25 +75,21 @@ App-driven tier changes SHALL use one brief, non-bouncy size transition coordina
 - **WHEN** the effective motion-duration scale is zero
 - **THEN** the final tier bounds and content are applied immediately without spatial animation
 
-### Requirement: User window control takes precedence
-The app SHALL distinguish app-managed bounds from user-managed bounds. A manual resize of a floating window MUST prevent later state changes from forcibly shrinking that window. Maximized, snapped, or full-screen placement MUST not be replaced by app-requested floating bounds.
+### Requirement: App-owned non-resizable window
+The primary window SHALL remain non-resizable and app-owned. Manual resizing, maximize, snap-resize, and full-screen enlargement SHALL be unavailable so state transitions always converge to the current tier's bounds. Ordinary minimize and close behavior SHALL remain available.
 
-#### Scenario: User manually enlarges the window
-- **WHEN** the user resizes a floating window and a later state requires less space
-- **THEN** the app preserves the user-selected bounds and does not shrink the window automatically
+#### Scenario: Manual resize is unavailable
+- **WHEN** the user points at an edge or corner of the primary window
+- **THEN** the window does not expose a resize affordance and its width or height cannot be dragged
 
-#### Scenario: User-selected bounds are too small for a new tier
-- **WHEN** a user-managed floating window enters a tier whose minimum usable height exceeds the current height
-- **THEN** the app grows only enough to keep required content usable or provides reachable overflow
-- **THEN** ownership remains user-managed and later transitions do not auto-shrink it
+#### Scenario: Maximize is unavailable
+- **WHEN** the user inspects or activates the title-bar window controls
+- **THEN** maximize/full-screen enlargement is disabled or absent
+- **THEN** minimize and close remain available
 
-#### Scenario: Non-floating placement
-- **WHEN** the window is maximized, snapped, or full-screen during a state transition
-- **THEN** the app leaves platform placement intact and adapts content within the available bounds
-
-#### Scenario: Manual resize interrupts app motion
-- **WHEN** the user starts resizing during an app-driven tier transition
-- **THEN** user input wins, automatic motion stops, and the resulting floating bounds become user-managed
+#### Scenario: Tier sizing remains deterministic
+- **WHEN** the state changes between Compact and Expanded repeatedly
+- **THEN** the app reaches the calibrated fixed width and target tier height without ownership or platform-placement overrides
 
 ### Requirement: Focus, semantics, and status remain stable
 Window resizing MUST NOT remove keyboard focus, reorder the logical task flow, or become the only indication of a state change. Existing visible text and semantics SHALL continue to communicate validation, resolving, progress, completion, and errors.
@@ -124,5 +120,5 @@ The design-review harness SHALL reproduce both tiers and all transitions without
 
 #### Scenario: Evidence package
 - **WHEN** a coded gate is prepared for human review
-- **THEN** evidence records exact window bounds, placement, theme, scale, motion mode, ownership mode, screenshots, semantics, interactions, UI errors, logs, tests, and the reviewed commit
-- **THEN** native Windows full-window captures prove title bar, outer bounds, and platform window-control behavior that client-area captures cannot show
+- **THEN** evidence records exact window bounds, theme, scale, motion mode, fixed-window behavior, screenshots, semantics, interactions, UI errors, logs, tests, and the reviewed commit
+- **THEN** native Windows full-window captures prove title bar, outer bounds, disabled resize/maximize behavior, and available minimize/close controls that client-area captures cannot show
