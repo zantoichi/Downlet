@@ -7,14 +7,35 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import ru.nsk.kstatemachine.event.Event
+import ru.nsk.kstatemachine.state.State
+import ru.nsk.kstatemachine.state.initialState
+import ru.nsk.kstatemachine.state.state
+import ru.nsk.kstatemachine.state.transitionOn
+import ru.nsk.kstatemachine.statemachine.StateMachine
+import ru.nsk.kstatemachine.statemachine.createStateMachineBlocking
+import ru.nsk.kstatemachine.statemachine.destroy
+import ru.nsk.kstatemachine.transition.onComplete
+import kotlin.time.Duration.Companion.milliseconds
 
 @Stable
+@Suppress("TooManyFunctions")
 internal class DownloadStateHolder(
-    initialState: DownloadUiState = DownloadUiState.Empty,
+    scope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob()),
+    machineDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     val linkFieldState = TextFieldState()
 
-    var state by mutableStateOf(initialState)
+    var state by mutableStateOf<DownloadUiState>(DownloadUiState.Empty)
         private set
 
     var validationMessage by mutableStateOf<String?>(null)
@@ -50,6 +71,10 @@ internal class DownloadStateHolder(
                 if (fixture.canDownload) readyFeedback else DOWNLOAD_UNAVAILABLE_MESSAGE
             }
 
+    private val machineJob = SupervisorJob(scope.coroutineContext[Job])
+    private val machineScope = CoroutineScope(machineDispatcher + machineJob)
+    private val machine = createDownloadMachine()
+    private var resolutionJob: Job? = null
     private var observedLinkText = ""
 
     fun observeLinkEdit(text: String): Boolean {
@@ -58,7 +83,8 @@ internal class DownloadStateHolder(
         observedLinkText = text
         validationMessage = text.takeIf { it.isNotBlank() && !isValidYouTubeUrl(it) }?.let { INVALID_LINK_MESSAGE }
         clearReadySelection()
-        state = DownloadUiState.Empty
+        resolutionJob?.cancel()
+        process(MachineEvent.LinkEdited)
         return true
     }
 
@@ -69,15 +95,18 @@ internal class DownloadStateHolder(
         replaceLink(value)
         validationMessage = null
         clearReadySelection()
-        state = DownloadUiState.Resolving(DownloadFixtures.normal.copy(sourceUrl = value))
+        val fixture = DownloadFixtures.normal.copy(sourceUrl = value)
+        resolutionJob?.cancel()
+        resolutionJob =
+            machineScope.launch {
+                machine.processEvent(MachineEvent.Resolve(fixture))
+                delay(FAKE_RESOLUTION_MILLIS.milliseconds)
+                machine.processEvent(MachineEvent.ResolutionCompleted(fixture))
+            }
     }
 
-    fun completeResolution(fixture: DownloadFixture) {
-        val current = state
-        if (current is DownloadUiState.Resolving && current.completesAutomatically && current.fixture == fixture) {
-            prepareReady(fixture)
-            state = DownloadUiState.Ready(fixture)
-        }
+    internal fun completeResolution(fixture: DownloadFixture) {
+        process(MachineEvent.ResolutionCompleted(fixture))
     }
 
     fun selectMode(mode: DownloadMode) {
@@ -108,6 +137,7 @@ internal class DownloadStateHolder(
     }
 
     fun onEvent(event: DownloadEvent) {
+        resolutionJob?.cancel()
         when (event) {
             DownloadEvent.Reset,
             DownloadEvent.ShowEmpty,
@@ -116,23 +146,103 @@ internal class DownloadStateHolder(
                 linkFieldState.clearText()
                 validationMessage = null
                 clearReadySelection()
-                state = DownloadUiState.Empty
+                process(MachineEvent.ForceEmpty)
             }
 
             is DownloadEvent.ShowResolving -> {
                 replaceLink(event.fixture.sourceUrl)
                 validationMessage = null
                 clearReadySelection()
-                state = DownloadUiState.Resolving(event.fixture, completesAutomatically = false)
+                process(MachineEvent.ForceResolving(event.fixture))
             }
 
             is DownloadEvent.ShowReady -> {
                 replaceLink(event.fixture.sourceUrl)
                 validationMessage = null
-                prepareReady(event.fixture)
-                state = DownloadUiState.Ready(event.fixture)
+                process(MachineEvent.ForceReady(event.fixture))
             }
         }
+    }
+
+    fun close() {
+        resolutionJob?.cancel()
+        machineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                machine.destroy()
+            } finally {
+                machineScope.cancel()
+            }
+        }
+    }
+
+    private fun createDownloadMachine(): StateMachine {
+        lateinit var empty: State
+        lateinit var resolving: State
+        lateinit var ready: State
+
+        fun State.routeEvents() {
+            transitionOn<MachineEvent> {
+                targetState = {
+                    when (event.target) {
+                        MachinePhase.Empty -> empty
+                        MachinePhase.Resolving -> resolving
+                        MachinePhase.Ready -> ready
+                    }
+                }
+                guard = {
+                    val event = event
+                    val resolvingState = state as? DownloadUiState.Resolving
+                    event !is MachineEvent.ResolutionCompleted ||
+                        (resolvingState?.completesAutomatically == true && resolvingState.fixture == event.fixture)
+                }
+                onComplete { _, params -> applyMachineEvent(params.event) }
+            }
+        }
+
+        return createStateMachineBlocking(machineScope, name = "Download flow") {
+            empty = initialState("Empty")
+            resolving = state("Resolving")
+            ready = state("Ready")
+            empty.routeEvents()
+            resolving.routeEvents()
+            ready.routeEvents()
+        }
+    }
+
+    private fun applyMachineEvent(event: MachineEvent) {
+        state =
+            when (event) {
+                MachineEvent.LinkEdited,
+                MachineEvent.ForceEmpty,
+                -> {
+                    DownloadUiState.Empty
+                }
+
+                is MachineEvent.Resolve -> {
+                    DownloadUiState.Resolving(event.fixture)
+                }
+
+                is MachineEvent.ForceResolving -> {
+                    DownloadUiState.Resolving(
+                        event.fixture,
+                        completesAutomatically = false,
+                    )
+                }
+
+                is MachineEvent.ResolutionCompleted -> {
+                    prepareReady(event.fixture)
+                    DownloadUiState.Ready(event.fixture)
+                }
+
+                is MachineEvent.ForceReady -> {
+                    prepareReady(event.fixture)
+                    DownloadUiState.Ready(event.fixture)
+                }
+            }
+    }
+
+    private fun process(event: MachineEvent) {
+        machineScope.launch { machine.processEvent(event) }
     }
 
     private fun prepareReady(fixture: DownloadFixture) {
@@ -154,5 +264,47 @@ internal class DownloadStateHolder(
         if (linkFieldState.text.toString() != text) {
             linkFieldState.setTextAndPlaceCursorAtEnd(text)
         }
+    }
+}
+
+private enum class MachinePhase {
+    Empty,
+    Resolving,
+    Ready,
+}
+
+private sealed interface MachineEvent : Event {
+    val target: MachinePhase
+
+    data object LinkEdited : MachineEvent {
+        override val target = MachinePhase.Empty
+    }
+
+    data class Resolve(
+        val fixture: DownloadFixture,
+    ) : MachineEvent {
+        override val target = MachinePhase.Resolving
+    }
+
+    data class ResolutionCompleted(
+        val fixture: DownloadFixture,
+    ) : MachineEvent {
+        override val target = MachinePhase.Ready
+    }
+
+    data object ForceEmpty : MachineEvent {
+        override val target = MachinePhase.Empty
+    }
+
+    data class ForceResolving(
+        val fixture: DownloadFixture,
+    ) : MachineEvent {
+        override val target = MachinePhase.Resolving
+    }
+
+    data class ForceReady(
+        val fixture: DownloadFixture,
+    ) : MachineEvent {
+        override val target = MachinePhase.Ready
     }
 }

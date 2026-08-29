@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +63,10 @@ import kotlin.time.Duration.Companion.milliseconds
 internal fun ProductSurface(stateHolder: DownloadStateHolder) {
     val linkFieldFocusRequester = remember { FocusRequester() }
     var pasteIntent by remember { mutableStateOf(false) }
+
+    DisposableEffect(stateHolder) {
+        onDispose(stateHolder::close)
+    }
 
     LinkEffects(
         stateHolder = stateHolder,
@@ -139,11 +144,6 @@ private fun LinkEffects(
         if (state is DownloadUiState.Empty) {
             withFrameNanos { }
             linkFieldFocusRequester.requestFocus()
-        }
-    }
-    LaunchedEffect(state) {
-        if (state is DownloadUiState.Resolving) {
-            completeAutomaticResolution(stateHolder, state)
         }
     }
 }
@@ -242,16 +242,6 @@ internal suspend fun collectLinkEdits(
 internal suspend fun expirePasteIntent(clearPasteIntent: () -> Unit) {
     delay(PASTE_INTENT_LIFETIME_MILLIS.milliseconds)
     clearPasteIntent()
-}
-
-internal suspend fun completeAutomaticResolution(
-    stateHolder: DownloadStateHolder,
-    state: DownloadUiState.Resolving,
-) {
-    if (!state.completesAutomatically) return
-
-    delay(FAKE_RESOLUTION_MILLIS.milliseconds)
-    stateHolder.completeResolution(state.fixture)
 }
 
 @Composable

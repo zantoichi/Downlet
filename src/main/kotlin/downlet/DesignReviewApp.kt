@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -34,7 +35,8 @@ internal object DesignReviewApp {
     @JvmStatic
     fun main(args: Array<String>) =
         application {
-            val stateHolder = remember { DownloadStateHolder() }
+            val scope = rememberCoroutineScope()
+            val stateHolder = remember(scope) { DownloadStateHolder(scope) }
             var productTheme by remember { mutableStateOf(DownletTheme.Light) }
 
             ProductWindow(

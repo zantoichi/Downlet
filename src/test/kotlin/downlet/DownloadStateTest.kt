@@ -3,8 +3,12 @@ package downlet
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -18,6 +22,16 @@ import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadStateTest {
+    private fun TestScope.testHolder() =
+        UnconfinedTestDispatcher(testScheduler).let { dispatcher ->
+            DownloadStateHolder(
+                CoroutineScope(backgroundScope.coroutineContext + dispatcher),
+                machineDispatcher = dispatcher,
+            )
+        }
+
+    private fun immediateHolder() = DownloadStateHolder(machineDispatcher = Dispatchers.Unconfined)
+
     @Test
     fun `all six states are explicit`() {
         val normal = DownloadFixtures.normal
@@ -69,7 +83,7 @@ class DownloadStateTest {
 
     @Test
     fun `state holder handles only explicit events`() {
-        val holder = DownloadStateHolder()
+        val holder = immediateHolder()
 
         holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.longTitle))
         assertEquals(DownloadUiState.Ready(DownloadFixtures.longTitle), holder.state)
@@ -101,7 +115,7 @@ class DownloadStateTest {
     @Test
     fun `valid paste resolves immediately and paste intent is consumed once`() =
         runTest {
-            val holder = DownloadStateHolder()
+            val holder = testHolder()
             var pasteIntent = true
             backgroundScope.launch {
                 collectLinkEdits(
@@ -132,7 +146,7 @@ class DownloadStateTest {
     @Test
     fun `stale paste intent expires before a later typed edit`() =
         runTest {
-            val holder = DownloadStateHolder()
+            val holder = testHolder()
             var pasteIntent = true
             backgroundScope.launch {
                 collectLinkEdits(
@@ -160,7 +174,7 @@ class DownloadStateTest {
     @Test
     fun `newer manual edit cancels prior debounce`() =
         runTest {
-            val holder = DownloadStateHolder()
+            val holder = testHolder()
             backgroundScope.launch {
                 collectLinkEdits(
                     edits = snapshotFlow { holder.linkFieldState.text.toString() },
@@ -189,10 +203,9 @@ class DownloadStateTest {
     @Test
     fun `automatic resolution completes at 550 milliseconds`() =
         runTest {
-            val holder = DownloadStateHolder()
+            val holder = testHolder()
             holder.beginResolution("https://youtu.be/automatic")
             val resolving = holder.state as DownloadUiState.Resolving
-            backgroundScope.launch { completeAutomaticResolution(holder, resolving) }
             runCurrent()
 
             advanceTimeBy(549.milliseconds)
@@ -205,17 +218,14 @@ class DownloadStateTest {
     @Test
     fun `cancelled automatic resolution cannot restore stale ready content`() =
         runTest {
-            val holder = DownloadStateHolder()
+            val holder = testHolder()
             holder.beginResolution("https://youtu.be/stale")
-            val resolving = holder.state as DownloadUiState.Resolving
-            val completion = backgroundScope.launch { completeAutomaticResolution(holder, resolving) }
             runCurrent()
             advanceTimeBy(200.milliseconds)
 
             val newerUrl = "https://youtu.be/newer"
             holder.linkFieldState.setTextAndPlaceCursorAtEnd(newerUrl)
             holder.observeLinkEdit(newerUrl)
-            completion.cancel()
             advanceTimeBy(FAKE_RESOLUTION_MILLIS.milliseconds)
             runCurrent()
 
@@ -224,9 +234,23 @@ class DownloadStateTest {
         }
 
     @Test
+    fun `closing state holder cancels pending resolution completion`() =
+        runTest {
+            val holder = testHolder()
+            holder.beginResolution("https://youtu.be/closing")
+            val resolving = holder.state
+
+            holder.close()
+            advanceTimeBy(FAKE_RESOLUTION_MILLIS.milliseconds)
+            runCurrent()
+
+            assertEquals(resolving, holder.state)
+        }
+
+    @Test
     fun `native paste validation and fake resolution remain deterministic`() =
         runTest {
-            val holder = DownloadStateHolder()
+            val holder = testHolder()
             var pasteIntent = true
             backgroundScope.launch {
                 collectLinkEdits(
@@ -259,7 +283,7 @@ class DownloadStateTest {
 
     @Test
     fun `editing clears stale resolved state and forced resolving bypasses completion`() {
-        val holder = DownloadStateHolder()
+        val holder = immediateHolder()
         holder.onEvent(DownloadEvent.ShowReady())
 
         assertTrue(holder.observeLinkEdit("https://youtube.com/watch?v=new"))
@@ -273,7 +297,7 @@ class DownloadStateTest {
 
     @Test
     fun `fresh ready defaults to video and resolved best quality`() {
-        val holder = DownloadStateHolder()
+        val holder = immediateHolder()
 
         holder.onEvent(DownloadEvent.ShowReady())
 
@@ -286,7 +310,7 @@ class DownloadStateTest {
 
     @Test
     fun `mode and quality changes stay mutually exclusive and reset best quality`() {
-        val holder = DownloadStateHolder()
+        val holder = immediateHolder()
         holder.onEvent(DownloadEvent.ShowReady())
 
         holder.selectQuality(2)
@@ -306,7 +330,7 @@ class DownloadStateTest {
 
     @Test
     fun `destination cycles deterministic fixtures and acknowledges the visible value`() {
-        val holder = DownloadStateHolder()
+        val holder = immediateHolder()
         holder.onEvent(DownloadEvent.ShowReady())
 
         holder.changeDestination()
@@ -317,7 +341,7 @@ class DownloadStateTest {
 
     @Test
     fun `download acknowledgement stays ready and disabled fixture ignores activation`() {
-        val holder = DownloadStateHolder()
+        val holder = immediateHolder()
         holder.onEvent(DownloadEvent.ShowReady())
 
         holder.download()
@@ -334,7 +358,7 @@ class DownloadStateTest {
 
     @Test
     fun `source resolution fixture and reset clear stale ready choices and feedback`() {
-        val holder = DownloadStateHolder()
+        val holder = immediateHolder()
         holder.onEvent(DownloadEvent.ShowReady())
         holder.selectMode(DownloadMode.Audio)
         holder.selectQuality(1)

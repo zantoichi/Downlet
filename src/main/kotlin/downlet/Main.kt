@@ -4,6 +4,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
@@ -33,7 +34,8 @@ private const val PRODUCT_WINDOW_MINIMUM_HEIGHT = 350
 
 fun main() =
     application {
-        val stateHolder = remember { DownloadStateHolder() }
+        val scope = rememberCoroutineScope()
+        val stateHolder = remember(scope) { DownloadStateHolder(scope) }
         val detectedDarkTheme = isSystemInDarkTheme()
         val startupTheme = remember { if (detectedDarkTheme) DownletTheme.Dark else DownletTheme.Light }
 
