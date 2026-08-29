@@ -6,6 +6,7 @@ Date: 2026-08-29
 
 - `491de88` — pure presentation-tier and ownership policy (task 2.2)
 - `205e85f` — runtime sizing, motion, review controls, and regression coverage (tasks 2.3–2.8)
+- `932c2f7` — startup ownership correction after real-product clear-link reproduction
 
 ## Approved bounds and motion
 
@@ -43,6 +44,14 @@ Date: 2026-08-29
 - Dragging to the left edge produced a `1280 × 696` native half-screen capture; Ready and Empty did not replace that placement.
 - Dragging away from the edge restored the floating `720 × 168` bounds.
 - Near-bottom/right Ready growth produced a `706 × 393` native client capture at origin `1807,992`, matching the `720 × 400` outer minimum and work-area correction.
+
+### Clear-link correction
+
+- The first real-product pass after integration reproduced the user report: clearing the resolved URL restored Empty content but preserved the expanded height.
+- Root cause: startup animation copied the transient native `136 × 39` placeholder width; Windows clamped it to the `620` minimum and that app-caused resize was classified as user ownership.
+- The correction preserves the intended `720` startup width and accepts the first native startup bounds before classifying later unmatched bounds as user-driven.
+- Computer Use repeated the real `Downlet` flow twice on native window `6817238`: `706 × 161` client → `706 × 413` → `706 × 161`.
+- Focus remained in the URL field after deletion. No temporary diagnostic logging remains.
 
 Native Computer Use screenshots were point-in-time tool observations and were not written into the repository. Task 2.11 should recapture canonical full-window evidence after review.
 
