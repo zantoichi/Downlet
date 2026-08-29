@@ -35,8 +35,8 @@ Downlet should feel competent without feeling technical, restrained without feel
 ## Design Principles
 
 1. **Paste is intent.** A valid paste starts resolution immediately; the interface does not ask for a redundant Analyze or Enter action.
-2. **Reveal only what is useful now.** Empty stays quiet; metadata, choices, and destination appear only after resolution.
-3. **Keep context stable.** One window and one primary column persist across all states so progress never feels like navigation.
+2. **Reveal only what is useful now.** Empty and Resolving use a compact link-first window; metadata, choices, and destination appear only after resolution expands the existing window.
+3. **Keep context stable.** One window, one primary column, and one URL anchor persist across all states. Automatic sizing changes height only at task-stage boundaries, while user-selected window placement and size take precedence.
 4. **Let Jewel be the system.** Use Jewel controls, typography, focus behavior, metrics, and semantic colors before adding product-specific styling.
 5. **Prove the design in running code.** Generated concepts may guide G0, but coded gates use deterministic real Jewel UI evidence only.
 

@@ -42,7 +42,7 @@ Alternative considered: update every coordinate to its numerically newest releas
 
 ### 2. Use a plain Jewel-decorated Windows frame
 
-Use Jewel `DecoratedWindow` with a Compose `WindowState` near `720.dp × 420.dp`, then set the underlying window minimum size near `620 × 350` logical pixels. Configure the theme through the `IntUiTheme` styling overload with `ComponentStyling.default().decoratedWindow()`.
+Use Jewel `DecoratedWindow` with one Compose `WindowState` and two content-driven height profiles. Preferred width is `720.dp`, with `620.dp` as the minimum usable width. Compact is `168.dp` preferred / `156.dp` minimum for Empty and Resolving; Expanded is `420.dp` preferred / `400.dp` minimum for Ready, Downloading, Completed, and Error. Configure the theme through the `IntUiTheme` styling overload with `ComponentStyling.default().decoratedWindow()`.
 
 The title bar contains only the Downlet title and Jewel/JBR-managed Windows controls. Do not add a project stripe, menu, toolbar, breadcrumbs, or IDE actions. This keeps the whole frame in sync when the design-review harness forces light or dark mode while relying on Jewel's JBR-backed drag, resize, maximize, minimize, and close behavior.
 
@@ -80,13 +80,13 @@ The product content is a single `Column` with a persistent link field and state-
 2. Resolving keeps the field fixed and reveals one compact status row directly beneath it.
 3. Ready, Downloading, Completed, and Error reveal one subtly bounded, inset tonal work plane for useful media and action content.
 
-The work plane is a single grouping surface, not a card grid or nested-card system. It uses theme-aware low-chroma cool neutrals, a thin boundary, and no decorative shadow. Once visible, its geometry remains stable while later state content changes in place. The window and URL field never move.
+The work plane is a single grouping surface, not a card grid or nested-card system. It uses theme-aware low-chroma cool neutrals, a thin boundary, and no decorative shadow. Once visible, its geometry remains stable while later state content changes in place. Automatic tier changes adjust height only and preserve the upper-left content origin and URL-field anchor whenever the active work area permits.
 
-Default metrics use approximately 20 dp outer padding, 16 dp major gaps, 8 dp control gaps, and a 96 dp label column. Below roughly 380 dp of client height, one `BoxWithConstraints` branch reduces outer padding and major gaps to 16/12 dp and reduces the media thumbnail while preserving the same information hierarchy. This is desktop resize hardening, not a mobile layout.
+Default metrics use approximately 20 dp outer padding, 16 dp major gaps, 8 dp control gaps, and a 96 dp label column. The Compact profile uses 16 dp outer padding and 12 dp major gaps so the link row plus helper, validation, or resolving status define the whole body. Expanded keeps the existing compact-height metric branch where needed while preserving the same information hierarchy. This is desktop resize hardening, not a mobile layout.
 
-If common Windows scaling causes true overflow, the body may use a simple vertical scroll state so essential actions remain reachable. No scrollbar or adaptive branch should appear at the default window and font settings.
+If the active monitor work area, Windows scaling, or user-managed bounds cannot hold the Expanded minimum, the body may use a simple vertical scroll state so essential actions remain reachable. No scrollbar or adaptive branch should appear at either preferred profile under ordinary conditions.
 
-Alternative considered: allow the minimum-size view to clip or force window expansion. Rejected because the minimum size is an explicit review requirement.
+Alternative considered: keep one fixed minimum or allow constrained content to clip. Rejected because each tier needs its own usable minimum and impossible work-area cases need reachable overflow.
 
 ### 6. Keep the YouTube-link row direct and automatic
 
@@ -257,7 +257,7 @@ Do not ship AI-rendered text, glass/noise backgrounds, giant illustrations, copi
 - **Custom decoration can expose platform-specific drag, scale, or window-control defects** → Use Jewel's JBR-backed `DecoratedWindow` and `TitleBar` without custom hit regions, then prove drag, maximize/restore, 125/150 percent scaling, and light/dark frame parity on Windows before a coded gate passes.
 - **Compose MCP screenshots omit title chrome** → Treat them as client-area evidence and add a same-commit Codex Computer Use `Windows.Graphics.Capture` screenshot plus manual Windows interaction record for title-bar checks.
 - **Compose 1.11 does not need to promise live Windows theme updates** → Read `isSystemInDarkTheme()` at normal launch, fall back to light, and require restart after the OS preference changes; the review controller supplies deterministic overrides.
-- **Minimum height is tight in Ready** → Use one compact-height metric branch and prove exactly 620 by 350 through Compose MCP before G1 review.
+- **Later-state content has different minimum-height pressure** → Use `400` logical pixels as the Expanded minimum because Error clips its Retry action at `380`; use constrained overflow only when the work area cannot hold that minimum.
 - **Paste intent and text-field edits can race** → Keep one short-lived key-intent flag, clear it after the next edit, never read the clipboard proactively, and retain focused tests for paste-immediate versus type-debounced behavior.
 - **Long path truncation can hide useful context** → Preserve the full path in semantics and deterministic fixtures while keeping Change visibly reachable.
 - **Hot Reload MCP is not available before a Gradle app exists** → G0 records the configuration target only; G1 is blocked from review, not from coding, until the server connects to the running app.
@@ -274,7 +274,8 @@ Do not ship AI-rendered text, glass/noise backgrounds, giant illustrations, copi
 2. Implement and approve G1.
 3. Run one Sol Medium technical-foundation tranche for compatible upgrades, KStateMachine, warning cleanup, configuration-cache proof, and the fast smoke path.
 4. Use one Sol High G2 task for generated-resource direction, progressive disclosure, and the complete fake state system, then stop for `APPROVE G2`.
-5. Harden edge cases and accessibility for G3, then stop for `APPROVE G3`.
-6. Archive/synchronize this design change only after G3 approval.
+5. Complete and approve the P0 `add-state-driven-window-sizing` change before resuming this change's remaining G3 work.
+6. Harden edge cases and accessibility for G3, then stop for `APPROVE G3`.
+7. Archive/synchronize this design change only after G3 approval.
 
 Rollback is commit-based: reject or revert the narrow implementation tranche that diverges from the last approved gate. Real yt-dlp integration belongs to a separate future OpenSpec change.

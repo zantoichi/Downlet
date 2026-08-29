@@ -1,22 +1,22 @@
 ## Purpose
 
-Defines the complete visible journey for downloading YouTube audio or video through one compact, stable Windows desktop window.
+Defines the complete visible journey for downloading YouTube audio or video through one stable Windows desktop window with compact and expanded task-stage heights.
 
 ## ADDED Requirements
 
 ### Requirement: Stable primary window
 
-The product SHALL present one primary Jewel `DecoratedWindow` with one content column. Its plain title bar SHALL contain only the Downlet title and standard window controls. Its initial size SHALL be approximately 720 by 420 logical pixels, its minimum usable size SHALL be approximately 620 by 350 logical pixels, and changing product state SHALL NOT open another product screen or change the window geometry automatically.
+The product SHALL present one primary Jewel `DecoratedWindow` with one content column. Its plain title bar SHALL contain only the Downlet title and standard window controls. Empty and Resolving SHALL use the Compact profile near 720 by 168 logical pixels; Ready, Downloading, Completed, and Error SHALL use the Expanded profile near 720 by 420 logical pixels. Minimum usable width SHALL be approximately 620 logical pixels, with tier minimum heights near 156 and 400 logical pixels. Changing product state SHALL NOT open another product screen; detailed automatic sizing, ownership, motion, and work-area behavior is owned by `add-state-driven-window-sizing`.
 
 #### Scenario: Application starts
 
 - **WHEN** the product launches normally
-- **THEN** one primary window opens near 720 by 420 logical pixels with the Empty state visible
+- **THEN** one primary window opens in the Compact profile near 720 by 168 logical pixels with the Empty state visible
 
-#### Scenario: Window reaches minimum size
+#### Scenario: Window reaches a tier minimum
 
-- **WHEN** the user resizes the primary window to approximately 620 by 350 logical pixels
-- **THEN** all essential controls remain reachable and long content truncates or wraps without expanding the window
+- **WHEN** the primary window reaches approximately 620 by 156 logical pixels in Compact or 620 by 400 logical pixels in Expanded
+- **THEN** all essential controls remain reachable and long content truncates, wraps, or uses the constrained overflow path without creating a new product screen
 
 #### Scenario: Product state changes
 
@@ -82,12 +82,12 @@ The Resolving state SHALL preserve the YouTube-link row, show `Checking this You
 
 ### Requirement: State changes use restrained motion
 
-State disclosure SHALL keep the URL field and window geometry fixed. Empty-to-Resolving SHALL reveal only compact status; Resolving-to-Ready SHALL reveal the single tonal work plane. Each change SHALL use a short `180–220 ms` fade and at most `6` logical pixels of vertical rise. Motion SHALL use standard Compose duration scaling, SHALL NOT block interaction, and SHALL NOT bounce, loop decoratively, or carry status meaning by itself.
+State disclosure SHALL keep the URL field anchored. Empty-to-Resolving SHALL remain Compact and reveal only compact status; Resolving-to-Ready SHALL expand once and reveal the single tonal work plane. Later-state changes SHALL remain Expanded. Body content SHALL use a short `180–220 ms` fade and at most `6` logical pixels of vertical rise, coordinated with `250 ms` expansion and `167 ms` collapse. Motion SHALL use standard Compose duration scaling, SHALL NOT block interaction, and SHALL NOT bounce, loop decoratively, or carry status meaning by itself.
 
 #### Scenario: Product state changes with normal animation scale
 
 - **WHEN** Empty, Resolving, or Ready replaces the prior state body
-- **THEN** one coordinated fade-and-rise transition reveals only the content useful to the new state without moving the persistent URL field or window geometry
+- **THEN** one coordinated content and height transition reveals only the content useful to the new state without moving the persistent URL-field anchor
 
 #### Scenario: System animation scale is zero
 

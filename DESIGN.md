@@ -20,7 +20,7 @@ The interface combines JetBrains New UI precision with familiar Windows utility 
 - Compact but comfortable
 - Quiet until information is useful
 - Precise alignment and hierarchy
-- Stable geometry across states
+- Stable geometry within two task-stage tiers
 - Keyboard-aware and semantically explicit
 
 ## Colors
@@ -58,7 +58,7 @@ Jewel components are the visual and behavioral source of truth. The YouTube fiel
 
 ## Motion
 
-State-body replacement uses one `180–220 ms` fade with at most `6.dp` of vertical rise and `CubicBezierEasing(0.22f, 1f, 0.36f, 1f)`. Focus, paste, and status feedback may reuse this timing. Respect Compose duration scaling so zero scale produces the instant final state.
+State-body replacement uses one `180–220 ms` fade with at most `6.dp` of vertical rise and `CubicBezierEasing(0.22f, 1f, 0.36f, 1f)`. Automatic Compact→Expanded height motion uses `250 ms`; Expanded→Compact uses `167 ms`. Width stays fixed, the URL anchor stays stable, and zero duration applies final content and bounds immediately.
 
 No bounce, spring overshoot, staggered choreography, infinite decorative loop, or motion that blocks interaction. Motion never carries status meaning without persistent text or control-state changes.
 
@@ -67,7 +67,7 @@ No bounce, spring overshoot, staggered choreography, infinite decorative loop, o
 ### Do:
 
 - **Do** use `IntUiTheme`, Jewel typography, native controls, semantic colors, focus behavior, and desktop metrics before custom styling.
-- **Do** keep one primary content column and stable window geometry near 720 × 420, with a usable minimum near 620 × 350.
+- **Do** keep one primary content column with a `720` logical-pixel preferred width and `620` minimum width. Use Compact `720 × 168` preferred / `620 × 156` minimum for Empty and Resolving, and Expanded `720 × 420` preferred / `620 × 400` minimum for Ready, Downloading, Completed, and Error.
 - **Do** reveal quality, destination, and download controls only when media is Ready.
 - **Do** use the single tonal work plane, rounded bordered preview, and compact state transition to make Ready feel finished without adding more containers.
 - **Do** preserve media identity while Downloading, Completed, or showing a recoverable error.

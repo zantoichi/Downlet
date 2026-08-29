@@ -4,7 +4,7 @@ Downlet needs a codable, reviewable desktop direction before implementation begi
 
 ## What Changes
 
-- Define one compact, stable primary window for the complete download journey.
+- Define one stable primary window with compact and expanded task-stage heights for the complete download journey.
 - Define Empty, Resolving, Ready, Downloading, Completed, and Error as in-place states rather than separate screens.
 - Make a valid pasted or typed link start resolution automatically; no visible Paste, Analyze, or Enter action is introduced.
 - Progressively reveal the coded surface: Empty stays link-first, Resolving adds compact status, and Ready or later states reveal one low-chroma cool tonal work plane with restrained motion.
@@ -22,6 +22,7 @@ Downlet needs a codable, reviewable desktop direction before implementation begi
 - Add one fast local Compose smoke command that exercises the real product composition and deterministic state flow while reporting a basic elapsed-time metric.
 - Use generated visual concepts only as source material for a small app icon, deterministic thumbnail fixture, and themeable missing-preview mark; do not ship raw generated screens or AI-rendered text.
 - Keep all work design-only. Real yt-dlp, subprocess, network, ffmpeg, persistence, packaging, update, telemetry, and backend integration remain out of scope.
+- Treat `add-state-driven-window-sizing` as the P0 dependency ahead of this change's remaining G3 work. That change owns automatic bounds, motion, sizing ownership, and work-area behavior; this change continues to own the product surface and state content.
 
 ## Capabilities
 
