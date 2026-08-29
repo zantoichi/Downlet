@@ -55,4 +55,11 @@ class WindowSizingTest {
             ),
         )
     }
+
+    @Test
+    fun `logical tier dimensions scale to native device pixels`() {
+        assertEquals(720, logicalPixelsToDevicePixels(720, density = 1f))
+        assertEquals(900, logicalPixelsToDevicePixels(720, density = 1.25f))
+        assertEquals(1080, logicalPixelsToDevicePixels(720, density = 1.5f))
+    }
 }

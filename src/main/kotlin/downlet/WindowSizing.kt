@@ -68,6 +68,11 @@ internal fun fitWindowBounds(
     )
 }
 
+internal fun logicalPixelsToDevicePixels(
+    logicalPixels: Int,
+    density: Float,
+): Int = (logicalPixels * density).roundToInt()
+
 private const val EXPAND_DURATION_MILLIS = 250
 private const val COLLAPSE_DURATION_MILLIS = 167
 
@@ -79,16 +84,17 @@ internal fun ManageProductWindowSizing(
     motionDurationScale: Float,
 ) {
     val density = LocalDensity.current
+    val densityScale = density.density
     val animatedHeight = remember(window) { Animatable(window.height.toFloat()) }
 
-    LaunchedEffect(tier, motionDurationScale) {
+    LaunchedEffect(tier, motionDurationScale, densityScale) {
         val current = window.bounds.toWindowBounds()
         val target =
             fitWindowBounds(
                 current = current,
                 workArea = activeWorkArea(window),
-                targetWidth = tier.preferredWidth,
-                targetHeight = tier.preferredHeight,
+                targetWidth = logicalPixelsToDevicePixels(tier.preferredWidth, densityScale),
+                targetHeight = logicalPixelsToDevicePixels(tier.preferredHeight, densityScale),
             )
         animatedHeight.snapTo(current.height.toFloat())
 
