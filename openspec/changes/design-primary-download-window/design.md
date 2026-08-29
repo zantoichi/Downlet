@@ -42,15 +42,15 @@ Alternative considered: update every coordinate to its numerically newest releas
 
 ### 2. Use a plain Jewel-decorated Windows frame
 
-Use Jewel `DecoratedWindow` with one Compose `WindowState` and two content-driven height profiles. Preferred width is `720.dp`, with `620.dp` as the minimum usable width. Compact is `168.dp` preferred / `156.dp` minimum for Empty and Resolving; Expanded is `420.dp` preferred / `400.dp` minimum for Ready, Downloading, Completed, and Error. Configure the theme through the `IntUiTheme` styling overload with `ComponentStyling.default().decoratedWindow()`.
+Use Jewel `DecoratedWindow` with one Compose `WindowState` and two content-driven height profiles. The primary window is non-resizable at a calibrated `720.dp` width. Compact is `168.dp` for Empty and Resolving; Expanded is `420.dp` for Ready, Downloading, Completed, and Error. Configure the theme through the `IntUiTheme` styling overload with `ComponentStyling.default().decoratedWindow()`.
 
-The title bar contains only the Downlet title and Jewel/JBR-managed Windows controls. Do not add a project stripe, menu, toolbar, breadcrumbs, or IDE actions. This keeps the whole frame in sync when the design-review harness forces light or dark mode while relying on Jewel's JBR-backed drag, resize, maximize, minimize, and close behavior.
+The title bar contains only the Downlet title and Jewel/JBR-managed Windows controls. Do not add a project stripe, menu, toolbar, breadcrumbs, or IDE actions. The primary window keeps native drag, minimize, and close behavior; edge resizing and maximize are disabled by the non-resizable window contract.
 
 Alternative considered: Compose Desktop `Window` with native OS chrome. Rejected because the review harness must switch the complete app frame between light and dark independently of the current Windows theme; native chrome can leave a light title bar around dark Jewel content.
 
 Normal launch reads `androidx.compose.foundation.isSystemInDarkTheme()` and uses that value as its initial `IntUiTheme` selection. If the platform value is unavailable, Downlet uses light. Live switching after the Windows setting changes is not required in this design change; restarting reads the setting again. The Design Review entry point supplies an explicit Light or Dark override.
 
-Compose Hot Reload 1.2.0 screenshots intentionally exclude window-title chrome. Compose MCP remains authoritative for the client area, semantics, interactions, and resize bounds. Each coded gate that judges title-bar parity also records one Codex Computer Use `Windows.Graphics.Capture` screenshot of the real running Downlet window and a manual Windows check for theme, controls, drag, and maximize/restore at the same commit.
+Compose Hot Reload 1.2.0 screenshots intentionally exclude window-title chrome. Compose MCP remains authoritative for the client area, semantics, interactions, and tier bounds. Each coded gate that judges title-bar parity also records one Codex Computer Use `Windows.Graphics.Capture` screenshot of the real running Downlet window and a manual Windows check for theme, drag, unavailable resize/maximize, and available minimize/close at the same commit.
 
 ### 3. Keep one pure product surface and one KStateMachine-backed state holder
 
@@ -82,9 +82,9 @@ The product content is a single `Column` with a persistent link field and state-
 
 The work plane is a single grouping surface, not a card grid or nested-card system. It uses theme-aware low-chroma cool neutrals, a thin boundary, and no decorative shadow. Once visible, its geometry remains stable while later state content changes in place. Automatic tier changes adjust height only and preserve the upper-left content origin and URL-field anchor whenever the active work area permits.
 
-Default metrics use approximately 20 dp outer padding, 16 dp major gaps, 8 dp control gaps, and a 96 dp label column. The Compact profile uses 16 dp outer padding and 12 dp major gaps so the link row plus helper, validation, or resolving status define the whole body. Expanded keeps the existing compact-height metric branch where needed while preserving the same information hierarchy. This is desktop resize hardening, not a mobile layout.
+Default metrics use approximately 20 dp outer padding, 16 dp major gaps, 8 dp control gaps, and a 96 dp label column. The Compact profile uses 16 dp outer padding and 12 dp major gaps so the link row plus helper, validation, or resolving status define the whole body. Expanded keeps the existing compact-height metric branch where needed while preserving the same information hierarchy. This is desktop fixed-window hardening, not a mobile layout.
 
-If the active monitor work area, Windows scaling, or user-managed bounds cannot hold the Expanded minimum, the body may use a simple vertical scroll state so essential actions remain reachable. No scrollbar or adaptive branch should appear at either preferred profile under ordinary conditions.
+If the active monitor work area or Windows scaling cannot hold the Expanded target, the body may use a simple vertical scroll state so essential actions remain reachable. No scrollbar or adaptive branch should appear at either profile under ordinary conditions.
 
 Alternative considered: keep one fixed minimum or allow constrained content to clip. Rejected because each tier needs its own usable minimum and impossible work-area cases need reachable overflow.
 
@@ -254,10 +254,10 @@ Do not ship AI-rendered text, glass/noise backgrounds, giant illustrations, copi
 
 - **Jewel 0.40 is newer than the standalone artifact** → Pin the published 0.39.1 standalone coordinate and use its extracted source signatures for G0; make G1's first task a minimal IntelliJ build smoke test.
 - **JBR 25 can be mistaken for the project bytecode level** → Run Gradle and Downlet on JBR 25 but set Kotlin `JvmTarget.JVM_21` and Java `--release 21` explicitly.
-- **Custom decoration can expose platform-specific drag, scale, or window-control defects** → Use Jewel's JBR-backed `DecoratedWindow` and `TitleBar` without custom hit regions, then prove drag, maximize/restore, 125/150 percent scaling, and light/dark frame parity on Windows before a coded gate passes.
+- **Custom decoration can expose platform-specific drag, scale, or window-control defects** → Use Jewel's JBR-backed `DecoratedWindow` and `TitleBar` without custom hit regions, then prove drag, unavailable resize/maximize, available minimize/close, 125/150 percent scaling, and light/dark frame parity on Windows before a coded gate passes.
 - **Compose MCP screenshots omit title chrome** → Treat them as client-area evidence and add a same-commit Codex Computer Use `Windows.Graphics.Capture` screenshot plus manual Windows interaction record for title-bar checks.
 - **Compose 1.11 does not need to promise live Windows theme updates** → Read `isSystemInDarkTheme()` at normal launch, fall back to light, and require restart after the OS preference changes; the review controller supplies deterministic overrides.
-- **Later-state content has different minimum-height pressure** → Use `400` logical pixels as the Expanded minimum because Error clips its Retry action at `380`; use constrained overflow only when the work area cannot hold that minimum.
+- **Later-state content can exceed constrained work areas** → Keep `420` logical pixels as the normal Expanded target and use constrained overflow only when the active work area cannot hold it.
 - **Paste intent and text-field edits can race** → Keep one short-lived key-intent flag, clear it after the next edit, never read the clipboard proactively, and retain focused tests for paste-immediate versus type-debounced behavior.
 - **Long path truncation can hide useful context** → Preserve the full path in semantics and deterministic fixtures while keeping Change visibly reachable.
 - **Hot Reload MCP is not available before a Gradle app exists** → G0 records the configuration target only; G1 is blocked from review, not from coding, until the server connects to the running app.

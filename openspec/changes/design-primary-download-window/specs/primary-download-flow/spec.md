@@ -6,17 +6,17 @@ Defines the complete visible journey for downloading YouTube audio or video thro
 
 ### Requirement: Stable primary window
 
-The product SHALL present one primary Jewel `DecoratedWindow` with one content column. Its plain title bar SHALL contain only the Downlet title and standard window controls. Empty and Resolving SHALL use the Compact profile near 720 by 168 logical pixels; Ready, Downloading, Completed, and Error SHALL use the Expanded profile near 720 by 420 logical pixels. Minimum usable width SHALL be approximately 620 logical pixels, with tier minimum heights near 156 and 400 logical pixels. Changing product state SHALL NOT open another product screen; detailed automatic sizing, ownership, motion, and work-area behavior is owned by `add-state-driven-window-sizing`.
+The product SHALL present one primary non-resizable Jewel `DecoratedWindow` with one content column. Its plain title bar SHALL contain only the Downlet title and standard window controls, with resize/maximize unavailable and minimize/close available. Empty and Resolving SHALL use the Compact profile near 720 by 168 logical pixels; Ready, Downloading, Completed, and Error SHALL use the Expanded profile near 720 by 420 logical pixels. Changing product state SHALL NOT open another product screen; detailed automatic sizing, motion, and work-area behavior is owned by `add-state-driven-window-sizing`.
 
 #### Scenario: Application starts
 
 - **WHEN** the product launches normally
 - **THEN** one primary window opens in the Compact profile near 720 by 168 logical pixels with the Empty state visible
 
-#### Scenario: Window reaches a tier minimum
+#### Scenario: Window reaches a tier target
 
-- **WHEN** the primary window reaches approximately 620 by 156 logical pixels in Compact or 620 by 400 logical pixels in Expanded
-- **THEN** all essential controls remain reachable and long content truncates, wraps, or uses the constrained overflow path without creating a new product screen
+- **WHEN** the primary window reaches approximately 720 by 168 logical pixels in Compact or 720 by 420 logical pixels in Expanded
+- **THEN** all essential controls remain reachable and long content truncates, wraps, or uses the constrained overflow path without creating a new product screen or enabling manual resize
 
 #### Scenario: Product state changes
 
