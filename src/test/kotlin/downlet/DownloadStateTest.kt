@@ -7,11 +7,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -19,6 +22,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadStateTest {
@@ -31,6 +35,14 @@ class DownloadStateTest {
         }
 
     private fun immediateHolder() = DownloadStateHolder(machineDispatcher = Dispatchers.Unconfined)
+
+    private suspend fun DownloadStateHolder.awaitState(expected: DownloadUiState) {
+        withTimeout(5.seconds) {
+            while (state != expected) {
+                yield()
+            }
+        }
+    }
 
     @Test
     fun `all six states are explicit`() {
@@ -516,6 +528,34 @@ class DownloadStateTest {
             assertEquals(DownloadMode.Video, holder.selectedMode)
             assertEquals(0, holder.selectedQualityIndex)
             assertEquals(DownloadFixtures.normal.destination, holder.destination)
+        }
+
+    @Test
+    fun `queued stale progress cannot overwrite same fixture forced downloading`() =
+        runBlocking {
+            val holder = DownloadStateHolder(machineDispatcher = Dispatchers.Default.limitedParallelism(1))
+            val ready = DownloadUiState.Ready(DownloadFixtures.normal)
+            val downloading = DownloadUiState.Downloading(DownloadFixtures.normal, 0)
+            val forced = DownloadUiState.Downloading(DownloadFixtures.normal, 87)
+            try {
+                holder.onEvent(DownloadEvent.ShowReady())
+                holder.awaitState(ready)
+                holder.download()
+                holder.awaitState(downloading)
+                val submitStaleProgress =
+                    holder.captureProgressSubmissionForTest(
+                        fixture = DownloadFixtures.normal,
+                        progressPercent = 18,
+                    )
+
+                holder.onEvent(DownloadEvent.ShowDownloading(progressPercent = 87))
+                holder.awaitState(forced)
+                submitStaleProgress()
+
+                assertEquals(forced, holder.state)
+            } finally {
+                holder.close()
+            }
         }
 
     @Test

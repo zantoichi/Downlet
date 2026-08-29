@@ -1,6 +1,8 @@
 package downlet
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -263,17 +265,21 @@ private fun ColumnScope.ProductBody(
                 .fillMaxWidth()
                 .then(if (showsWorkPlane) Modifier.weight(1f) else Modifier),
         transitionSpec = {
-            (
-                fadeIn(animationSpec = tween(durationMillis = 200, easing = easing)) +
-                    slideInVertically(
-                        animationSpec = tween(durationMillis = 200, easing = easing),
-                        initialOffsetY = { risePixels },
-                    )
-            ).togetherWith(fadeOut(animationSpec = tween(durationMillis = 150, easing = easing)))
-                .using(sizeTransform = null)
+            if (!initialState.isWorkPlaneState && targetState.isWorkPlaneState) {
+                (
+                    fadeIn(animationSpec = tween(durationMillis = 200, easing = easing)) +
+                        slideInVertically(
+                            animationSpec = tween(durationMillis = 200, easing = easing),
+                            initialOffsetY = { risePixels },
+                        )
+                ).togetherWith(fadeOut(animationSpec = tween(durationMillis = 150, easing = easing)))
+                    .using(sizeTransform = null)
+            } else {
+                (EnterTransition.None togetherWith ExitTransition.None).using(sizeTransform = null)
+            }
         },
         contentAlignment = Alignment.TopStart,
-        contentKey = { it::class },
+        contentKey = { it.isWorkPlaneState },
         label = "Downlet state body",
     ) { state ->
         when (state) {
@@ -304,17 +310,7 @@ private fun ColumnScope.ProductBody(
                 }
             }
 
-            is DownloadUiState.Ready -> {
-                WorkPlane(
-                    shape = workPlaneShape,
-                    fill = workPlaneFill,
-                    border = workPlaneBorder,
-                    compact = compact,
-                ) {
-                    DownloadWorkPlaneContent(stateHolder, state, compact)
-                }
-            }
-
+            is DownloadUiState.Ready,
             is DownloadUiState.Downloading,
             is DownloadUiState.Completed,
             is DownloadUiState.Error,

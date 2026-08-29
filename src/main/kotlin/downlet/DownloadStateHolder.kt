@@ -16,6 +16,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import ru.nsk.kstatemachine.event.Event
 import ru.nsk.kstatemachine.state.State
 import ru.nsk.kstatemachine.state.initialState
@@ -25,6 +26,7 @@ import ru.nsk.kstatemachine.statemachine.StateMachine
 import ru.nsk.kstatemachine.statemachine.createStateMachineBlocking
 import ru.nsk.kstatemachine.statemachine.destroy
 import ru.nsk.kstatemachine.transition.onComplete
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.milliseconds
 
 @Stable
@@ -80,6 +82,8 @@ internal class DownloadStateHolder(
     private val machineJob = SupervisorJob(scope.coroutineContext[Job])
     private val machineScope = CoroutineScope(machineDispatcher + machineJob)
     private val machine = createDownloadMachine()
+    private val machineEventMutex = Mutex()
+    private val downloadGeneration = AtomicLong()
     private var resolutionJob: Job? = null
     private var progressJob: Job? = null
     private var observedLinkText = ""
@@ -106,9 +110,9 @@ internal class DownloadStateHolder(
         cancelTimers()
         resolutionJob =
             machineScope.launch {
-                machine.processEvent(MachineEvent.Resolve(fixture))
+                submitMachineEvent(MachineEvent.Resolve(fixture))
                 delay(FAKE_RESOLUTION_MILLIS.milliseconds)
-                machine.processEvent(MachineEvent.ResolutionCompleted(fixture))
+                submitMachineEvent(MachineEvent.ResolutionCompleted(fixture))
             }
     }
 
@@ -148,8 +152,7 @@ internal class DownloadStateHolder(
 
     fun cancelDownload() {
         val fixture = (state as? DownloadUiState.Downloading)?.fixture ?: return
-        progressJob?.cancel()
-        progressJob = null
+        cancelTimers()
         process(MachineEvent.CancelDownload(fixture))
     }
 
@@ -334,11 +337,15 @@ internal class DownloadStateHolder(
                 is MachineEvent.Progress -> {
                     when (event.target) {
                         MachinePhase.Completed -> {
+                            invalidateDownloadGeneration()
+                            progressJob = null
                             completedFeedback = null
                             DownloadUiState.Completed(event.fixture)
                         }
 
                         MachinePhase.Error -> {
+                            invalidateDownloadGeneration()
+                            progressJob = null
                             DownloadUiState.Error(event.fixture)
                         }
 
@@ -392,7 +399,8 @@ internal class DownloadStateHolder(
             }
 
             is MachineEvent.Progress -> {
-                (state as? DownloadUiState.Downloading)?.fixture == event.fixture
+                event.generation == downloadGeneration.get() &&
+                    (state as? DownloadUiState.Downloading)?.fixture == event.fixture
             }
 
             is MachineEvent.CancelDownload -> {
@@ -405,7 +413,16 @@ internal class DownloadStateHolder(
         }
 
     private fun process(event: MachineEvent) {
-        machineScope.launch { machine.processEvent(event) }
+        machineScope.launch { submitMachineEvent(event) }
+    }
+
+    private suspend fun submitMachineEvent(event: MachineEvent) {
+        machineEventMutex.lock()
+        try {
+            machine.processEvent(event)
+        } finally {
+            machineEventMutex.unlock()
+        }
     }
 
     private fun prepareReady(fixture: DownloadFixture) {
@@ -429,12 +446,13 @@ internal class DownloadStateHolder(
         startEvent: MachineEvent,
     ) {
         progressJob?.cancel()
+        val generation = downloadGeneration.incrementAndGet()
         progressJob =
             machineScope.launch {
-                machine.processEvent(startEvent)
+                submitMachineEvent(startEvent)
                 for (progress in fakeProgressSteps) {
                     delay(FAKE_PROGRESS_INTERVAL_MILLIS.milliseconds)
-                    machine.processEvent(MachineEvent.Progress(fixture, progress))
+                    submitMachineEvent(MachineEvent.Progress(fixture, progress, generation))
                     if (
                         progress == COMPLETE_PROGRESS_PERCENT ||
                         fixture.outcome == FakeDownloadOutcome.Failure(progress)
@@ -446,10 +464,23 @@ internal class DownloadStateHolder(
     }
 
     private fun cancelTimers() {
+        invalidateDownloadGeneration()
         resolutionJob?.cancel()
         resolutionJob = null
         progressJob?.cancel()
         progressJob = null
+    }
+
+    private fun invalidateDownloadGeneration() {
+        downloadGeneration.incrementAndGet()
+    }
+
+    internal fun captureProgressSubmissionForTest(
+        fixture: DownloadFixture,
+        progressPercent: Int,
+    ): suspend () -> Unit {
+        val event = MachineEvent.Progress(fixture, progressPercent, downloadGeneration.get())
+        return { submitMachineEvent(event) }
     }
 
     private fun requestLinkFocus() {
@@ -517,6 +548,7 @@ private sealed interface MachineEvent : Event {
     data class Progress(
         val fixture: DownloadFixture,
         val progressPercent: Int,
+        val generation: Long,
     ) : MachineEvent {
         override val target =
             when {

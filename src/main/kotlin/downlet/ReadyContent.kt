@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -267,6 +268,7 @@ private fun ErrorActionRegion(stateHolder: DownloadStateHolder) {
     InlineErrorBanner(
         title = "Couldn't download this media.",
         icon = null,
+        linkActions = { action("Retry", stateHolder::retryDownload) },
         modifier =
             Modifier
                 .fillMaxWidth()
@@ -277,10 +279,7 @@ private fun ErrorActionRegion(stateHolder: DownloadStateHolder) {
                     liveRegion = LiveRegionMode.Polite
                 },
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Check that the YouTube link is available and try again.")
-            Link("Retry", stateHolder::retryDownload)
-        }
+        Text("Check that the YouTube link is available and try again.")
     }
 }
 
@@ -361,9 +360,12 @@ private fun MediaIdentity(
                     colorFilter = ColorFilter.tint(JewelTheme.contentColor),
                 )
                 Text(
-                    text = "No preview",
+                    text = "Preview unavailable",
+                    modifier = Modifier.padding(horizontal = 4.dp),
                     style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.Medium),
-                    maxLines = 1,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
             }
         }
