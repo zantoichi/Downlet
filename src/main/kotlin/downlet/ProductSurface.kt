@@ -42,6 +42,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -209,7 +210,7 @@ private fun LinkTextField(
                     false
                 }.semantics { contentDescription = "YouTube link field" },
         outline = if (hasValidationError) Outline.Error else Outline.None,
-        placeholder = { Text("Paste a YouTube link…") },
+        placeholder = { Text("Paste a YouTube link…", Modifier.clearAndSetSemantics {}) },
     )
 }
 
