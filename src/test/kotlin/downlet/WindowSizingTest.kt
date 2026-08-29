@@ -130,16 +130,36 @@ class WindowSizingTest {
     }
 
     @Test
-    fun `first observed resize establishes the startup baseline`() {
+    fun `startup sizing completes independently from matching resize events`() {
         val coordinator = WindowSizingCoordinator(awaitingInitialBounds = true)
         coordinator.acceptCurrentBounds(WindowBounds(0, 0, 136, 39))
+        val compactBounds = WindowBounds(0, 0, 720, 168)
 
-        coordinator.observeBounds(WindowBounds(0, 0, 720, 168), WindowPlacementMode.Floating)
+        coordinator.recordAppBounds(compactBounds)
+        coordinator.observeBounds(compactBounds, WindowPlacementMode.Floating)
+        coordinator.completeInitialSizing()
 
         assertEquals(WindowSizingOwnership.AutoManaged, coordinator.ownership)
 
         coordinator.observeBounds(WindowBounds(0, 0, 720, 250), WindowPlacementMode.Floating)
 
         assertEquals(WindowSizingOwnership.UserManaged, coordinator.ownership)
+    }
+
+    @Test
+    fun `platform placement suspends without changing prior ownership`() {
+        val automatic = WindowSizingCoordinator()
+
+        automatic.updatePlacement(WindowPlacementMode.PlatformManaged)
+        automatic.updatePlacement(WindowPlacementMode.Floating)
+
+        assertEquals(WindowSizingOwnership.AutoManaged, automatic.ownership)
+
+        val userManaged = WindowSizingCoordinator()
+        userManaged.observeBounds(WindowBounds(0, 0, 800, 560), WindowPlacementMode.Floating)
+        userManaged.updatePlacement(WindowPlacementMode.PlatformManaged)
+        userManaged.updatePlacement(WindowPlacementMode.Floating)
+
+        assertEquals(WindowSizingOwnership.UserManaged, userManaged.ownership)
     }
 }

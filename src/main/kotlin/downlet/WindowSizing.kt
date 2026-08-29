@@ -185,24 +185,22 @@ internal class WindowSizingCoordinator(
     ) {
         updatePlacement(placement)
         if (placement == WindowPlacementMode.PlatformManaged) return
-        if (recentAppBounds.none { boundsApproximatelyEqual(it, bounds) }) {
-            if (awaitingInitialBounds) {
-                awaitingInitialBounds = false
-                recordAppBounds(bounds)
-            } else {
-                recentAppBounds.clear()
-                ownership = WindowSizingOwnership.UserManaged
-                revision += 1
-            }
+        if (awaitingInitialBounds) {
+            recordAppBounds(bounds)
+        } else if (recentAppBounds.none { boundsApproximatelyEqual(it, bounds) }) {
+            recentAppBounds.clear()
+            ownership = WindowSizingOwnership.UserManaged
+            revision += 1
         }
+    }
+
+    fun completeInitialSizing() {
+        awaitingInitialBounds = false
     }
 
     fun updatePlacement(value: WindowPlacementMode) {
         if (placement == value) return
         placement = value
-        if (value == WindowPlacementMode.PlatformManaged) {
-            ownership = WindowSizingOwnership.UserManaged
-        }
         revision += 1
     }
 
@@ -225,8 +223,7 @@ internal fun ManageProductWindowSizing(
     val coordinator =
         remember(window) {
             WindowSizingCoordinator(
-                awaitingInitialBounds =
-                    window.width < tier.minimumWidth || window.height < tier.minimumHeight,
+                awaitingInitialBounds = window.width < tier.minimumWidth || window.height < tier.minimumHeight,
             )
         }
     val animatedHeight = remember(window) { Animatable(window.height.toFloat()) }
@@ -303,6 +300,7 @@ internal fun ManageProductWindowSizing(
             )
         }
         window.minimumSize = Dimension(tier.minimumWidth, tier.minimumHeight)
+        coordinator.completeInitialSizing()
     }
 }
 
