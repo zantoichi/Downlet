@@ -50,7 +50,6 @@ internal fun ProductWindow(
     onCloseRequest: () -> Unit,
     initialPosition: WindowPosition = WindowPosition.PlatformDefault,
     motionDurationScale: Float = 1f,
-    restoreAutoManagedSignal: Int = 0,
 ) {
     val initialTier = WindowPresentationTier.Compact
     val windowState =
@@ -89,13 +88,13 @@ internal fun ProductWindow(
             state = windowState,
             title = PRODUCT_WINDOW_TITLE,
             icon = appIcon,
+            resizable = false,
         ) {
             ManageProductWindowSizing(
                 window = window,
                 windowState = windowState,
                 tier = stateHolder.state.windowPresentationTier,
                 motionDurationScale = motionDurationScale,
-                restoreAutoManagedSignal = restoreAutoManagedSignal,
             )
 
             TitleBar {

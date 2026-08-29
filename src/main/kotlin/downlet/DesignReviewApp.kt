@@ -39,7 +39,6 @@ internal object DesignReviewApp {
             val stateHolder = remember(scope) { DownloadStateHolder(scope) }
             var productTheme by remember { mutableStateOf(DownletTheme.Light) }
             var motionDurationScale by remember { mutableStateOf(1f) }
-            var restoreAutoManagedSignal by remember { mutableStateOf(0) }
 
             ProductWindow(
                 stateHolder = stateHolder,
@@ -47,7 +46,6 @@ internal object DesignReviewApp {
                 onCloseRequest = ::exitApplication,
                 initialPosition = WindowPosition(8.dp, 48.dp),
                 motionDurationScale = motionDurationScale,
-                restoreAutoManagedSignal = restoreAutoManagedSignal,
             )
             ControllerWindow(
                 state = stateHolder.state,
@@ -57,12 +55,10 @@ internal object DesignReviewApp {
                     stateHolder.onEvent(DownloadEvent.Reset)
                     productTheme = DownletTheme.Light
                     motionDurationScale = 1f
-                    restoreAutoManagedSignal += 1
                 },
                 onThemeChange = { productTheme = it },
                 motionDurationScale = motionDurationScale,
                 onMotionDurationScaleChange = { motionDurationScale = it },
-                onRestoreAutoManaged = { restoreAutoManagedSignal += 1 },
                 onCloseRequest = ::exitApplication,
             )
         }
@@ -78,7 +74,6 @@ private fun ControllerWindow(
     onThemeChange: (DownletTheme) -> Unit,
     motionDurationScale: Float,
     onMotionDurationScaleChange: (Float) -> Unit,
-    onRestoreAutoManaged: () -> Unit,
     onCloseRequest: () -> Unit,
 ) {
     val windowState =
@@ -188,9 +183,6 @@ private fun ControllerWindow(
                         }
                         OutlinedButton(onClick = { onMotionDurationScaleChange(0f) }) {
                             Text("Zero duration")
-                        }
-                        OutlinedButton(onClick = onRestoreAutoManaged) {
-                            Text("Restore Auto sizing")
                         }
                     }
                     Text("Current motion: ${if (motionDurationScale == 0f) "Zero duration" else "Normal"}")
