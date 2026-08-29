@@ -11,7 +11,8 @@ Implement OpenSpec change `add-state-driven-window-sizing`, tasks 2.2–2.8 only
 - Approved package commit: `df93b1a`
 - Approval-record commit: `3a822a4`
 - Dispatch base: `0c2a0bf`
-- Dispatched client task ID: `client-new-thread:6c55ee1a-abdb-4f00-ac00-5c67f08710d9`
+- Dispatched task ID: `01a04d3d-28a4-7532-9b00-d547eb15b0a7`
+- Setup client ID: `client-new-thread:6c55ee1a-abdb-4f00-ac00-5c67f08710d9`
 - Project subagents: forbidden
 - Stop after tasks 2.2–2.8. Do not perform task 2.9 review or package G1 evidence.
 
