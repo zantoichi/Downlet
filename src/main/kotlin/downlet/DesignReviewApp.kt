@@ -73,7 +73,7 @@ private fun ControllerWindow(
         rememberWindowState(
             position = WindowPosition(800.dp, 48.dp),
             width = 560.dp,
-            height = 380.dp,
+            height = 520.dp,
         )
 
     IntUiTheme(
@@ -108,6 +108,17 @@ private fun ControllerWindow(
                         OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady()) }) {
                             Text("Ready")
                         }
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowDownloading()) }) {
+                            Text("Downloading")
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowCompleted()) }) {
+                            Text("Completed")
+                        }
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowError()) }) {
+                            Text("Error")
+                        }
                         OutlinedButton(onClick = onReset) {
                             Text("Reset")
                         }
@@ -137,8 +148,16 @@ private fun ControllerWindow(
                         ) {
                             Text("Disabled")
                         }
+                        OutlinedButton(
+                            onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.failure)) },
+                        ) {
+                            Text("Failure")
+                        }
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowInvalidInput) }) {
+                            Text("Invalid input")
+                        }
                     }
-                    Text("Current state: ${state.label} ${(state as? DownloadUiState.Ready)?.fixture?.id.orEmpty()}")
+                    Text("Current state: ${state.label} ${state.fixtureId}")
 
                     Text("Product theme")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -155,3 +174,14 @@ private fun ControllerWindow(
         }
     }
 }
+
+private val DownloadUiState.fixtureId: String
+    get() =
+        when (this) {
+            is DownloadUiState.Resolving -> fixture.id
+            is DownloadUiState.Ready -> fixture.id
+            is DownloadUiState.Downloading -> fixture.id
+            is DownloadUiState.Completed -> fixture.id
+            is DownloadUiState.Error -> fixture.id
+            DownloadUiState.Empty -> ""
+        }

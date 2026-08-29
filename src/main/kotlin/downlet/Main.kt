@@ -9,6 +9,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import downlet.generated.resources.Res
+import downlet.generated.resources.app_icon
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.theme.darkThemeDefinition
@@ -83,10 +86,12 @@ internal fun ProductWindow(
                 }
             },
     ) {
+        val appIcon = painterResource(Res.drawable.app_icon)
         DecoratedWindow(
             onCloseRequest = onCloseRequest,
             state = windowState,
             title = PRODUCT_WINDOW_TITLE,
+            icon = appIcon,
         ) {
             DisposableEffect(window) {
                 window.minimumSize = Dimension(PRODUCT_WINDOW_MINIMUM_WIDTH, PRODUCT_WINDOW_MINIMUM_HEIGHT)

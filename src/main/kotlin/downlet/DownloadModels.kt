@@ -7,9 +7,12 @@ import java.util.Locale
 internal const val MANUAL_LINK_DEBOUNCE_MILLIS = 350L
 internal const val FAKE_RESOLUTION_MILLIS = 550L
 internal const val PASTE_INTENT_LIFETIME_MILLIS = 1_000L
+internal const val FAKE_PROGRESS_INTERVAL_MILLIS = 350L
+internal const val COMPLETE_PROGRESS_PERCENT = 100
 internal const val INVALID_LINK_MESSAGE = "Enter a valid YouTube link."
-internal const val DOWNLOAD_ACKNOWLEDGEMENT = "Design preview: Download action received."
 internal const val DOWNLOAD_UNAVAILABLE_MESSAGE = "Download is unavailable for this item."
+internal const val OPEN_FOLDER_ACKNOWLEDGEMENT = "Folder opening is unavailable in this design preview."
+internal val fakeProgressSteps = listOf(18, 43, 68, 87, COMPLETE_PROGRESS_PERCENT)
 
 internal enum class DownloadMode {
     Video,
@@ -21,7 +24,6 @@ internal val audioQualityOptions = listOf("Best available — 251 kbps audio", "
 
 private val YOUTUBE_HOSTS = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be")
 private const val MAX_INCOMPLETE_PROGRESS = 99
-private const val MAX_PROGRESS = 100
 
 internal fun isValidYouTubeUrl(value: String): Boolean =
     try {
@@ -149,7 +151,7 @@ internal sealed interface DownloadUiState {
         val progressPercent: Int,
     ) : DownloadUiState {
         init {
-            require(progressPercent in 0..MAX_PROGRESS)
+            require(progressPercent in 0..COMPLETE_PROGRESS_PERCENT)
             val outcome = fixture.outcome
             if (outcome is FakeDownloadOutcome.Failure) {
                 require(progressPercent <= outcome.atPercent)
@@ -197,4 +199,19 @@ internal sealed interface DownloadEvent {
     data class ShowReady(
         val fixture: DownloadFixture = DownloadFixtures.normal,
     ) : DownloadEvent
+
+    data class ShowDownloading(
+        val fixture: DownloadFixture = DownloadFixtures.normal,
+        val progressPercent: Int = 43,
+    ) : DownloadEvent
+
+    data class ShowCompleted(
+        val fixture: DownloadFixture = DownloadFixtures.normal,
+    ) : DownloadEvent
+
+    data class ShowError(
+        val fixture: DownloadFixture = DownloadFixtures.failure,
+    ) : DownloadEvent
+
+    data object ShowInvalidInput : DownloadEvent
 }

@@ -340,14 +340,8 @@ class DownloadStateTest {
     }
 
     @Test
-    fun `download acknowledgement stays ready and disabled fixture ignores activation`() {
+    fun `disabled fixture ignores download activation`() {
         val holder = immediateHolder()
-        holder.onEvent(DownloadEvent.ShowReady())
-
-        holder.download()
-        assertEquals(DOWNLOAD_ACKNOWLEDGEMENT, holder.readyFeedback)
-        assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
-
         holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.disabledAction))
         assertFalse(holder.downloadEnabled)
         assertEquals(DOWNLOAD_UNAVAILABLE_MESSAGE, holder.readyStatus)
@@ -355,6 +349,174 @@ class DownloadStateTest {
         assertNull(holder.readyFeedback)
         assertEquals(DOWNLOAD_UNAVAILABLE_MESSAGE, holder.readyStatus)
     }
+
+    @Test
+    fun `success timeline advances on exact 350 millisecond boundaries`() =
+        runTest {
+            val holder = testHolder()
+            holder.onEvent(DownloadEvent.ShowReady())
+            holder.download()
+            runCurrent()
+            assertEquals(DownloadUiState.Downloading(DownloadFixtures.normal, 0), holder.state)
+
+            fakeProgressSteps.dropLast(1).forEach { expected ->
+                advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS - 1).milliseconds)
+                assertTrue((holder.state as DownloadUiState.Downloading).progressPercent < expected)
+                advanceTimeBy(1.milliseconds)
+                runCurrent()
+                assertEquals(DownloadUiState.Downloading(DownloadFixtures.normal, expected), holder.state)
+            }
+
+            advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS.milliseconds)
+            runCurrent()
+            assertEquals(DownloadUiState.Completed(DownloadFixtures.normal), holder.state)
+        }
+
+    @Test
+    fun `failure fixture enters error at 68 percent`() =
+        runTest {
+            val holder = testHolder()
+            holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.failure))
+            holder.download()
+            runCurrent()
+
+            repeat(2) {
+                advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS.milliseconds)
+                runCurrent()
+            }
+            assertEquals(DownloadUiState.Downloading(DownloadFixtures.failure, 43), holder.state)
+
+            advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS.milliseconds)
+            runCurrent()
+            assertEquals(DownloadUiState.Error(DownloadFixtures.failure), holder.state)
+        }
+
+    @Test
+    fun `cancel preserves choices destination url and media`() =
+        runTest {
+            val holder = testHolder()
+            holder.onEvent(DownloadEvent.ShowReady())
+            holder.selectMode(DownloadMode.Audio)
+            holder.selectQuality(1)
+            holder.changeDestination()
+            val destination = holder.destination
+
+            holder.download()
+            runCurrent()
+            holder.cancelDownload()
+            runCurrent()
+            advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 2).milliseconds)
+
+            assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
+            assertEquals(DownloadMode.Audio, holder.selectedMode)
+            assertEquals(1, holder.selectedQualityIndex)
+            assertEquals(destination, holder.destination)
+            assertEquals(DownloadFixtures.normal.sourceUrl, holder.linkFieldState.text.toString())
+        }
+
+    @Test
+    fun `retry restarts at zero with prior choices and cancels when forced`() =
+        runTest {
+            val holder = testHolder()
+            holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.failure))
+            holder.selectMode(DownloadMode.Audio)
+            holder.selectQuality(1)
+            holder.changeDestination()
+            val destination = holder.destination
+            holder.download()
+            runCurrent()
+            advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 3).milliseconds)
+            runCurrent()
+            assertEquals(DownloadUiState.Error(DownloadFixtures.failure), holder.state)
+
+            holder.retryDownload()
+            runCurrent()
+
+            assertEquals(DownloadUiState.Downloading(DownloadFixtures.failure, 0), holder.state)
+            assertEquals(DownloadMode.Audio, holder.selectedMode)
+            assertEquals(1, holder.selectedQualityIndex)
+            assertEquals(destination, holder.destination)
+
+            holder.onEvent(DownloadEvent.ShowReady())
+            runCurrent()
+            advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 2).milliseconds)
+            runCurrent()
+
+            assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
+        }
+
+    @Test
+    fun `open folder acknowledges without leaving completed and download another resets focus`() {
+        val holder = immediateHolder()
+        holder.onEvent(DownloadEvent.ShowCompleted())
+
+        holder.openFolder()
+        assertEquals(DownloadUiState.Completed(DownloadFixtures.normal), holder.state)
+        assertEquals(OPEN_FOLDER_ACKNOWLEDGEMENT, holder.completedFeedback)
+
+        val focusRequest = holder.linkFocusRequest
+        holder.downloadAnother()
+        assertEquals(DownloadUiState.Empty, holder.state)
+        assertEquals(focusRequest + 1, holder.linkFocusRequest)
+        assertEquals("", holder.linkFieldState.text.toString())
+        assertEquals("", holder.destination)
+    }
+
+    @Test
+    fun `link edit reset force and close cancel stale progress`() =
+        runTest {
+            val holder = testHolder()
+            holder.onEvent(DownloadEvent.ShowReady())
+            holder.download()
+            runCurrent()
+            holder.observeLinkEdit("https://youtu.be/new-link")
+            advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 6).milliseconds)
+            runCurrent()
+            assertEquals(DownloadUiState.Empty, holder.state)
+
+            holder.onEvent(DownloadEvent.ShowReady())
+            holder.download()
+            runCurrent()
+            holder.onEvent(DownloadEvent.Reset)
+            advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 6).milliseconds)
+            runCurrent()
+            assertEquals(DownloadUiState.Empty, holder.state)
+
+            holder.onEvent(DownloadEvent.ShowReady())
+            holder.download()
+            runCurrent()
+            holder.onEvent(DownloadEvent.ShowCompleted())
+            advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 6).milliseconds)
+            runCurrent()
+            assertEquals(DownloadUiState.Completed(DownloadFixtures.normal), holder.state)
+
+            holder.onEvent(DownloadEvent.ShowReady())
+            holder.download()
+            runCurrent()
+            val stateAtClose = holder.state
+            holder.close()
+            advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 6).milliseconds)
+            runCurrent()
+            assertEquals(stateAtClose, holder.state)
+        }
+
+    @Test
+    fun `forced downloading bypasses timers and locks choices`() =
+        runTest {
+            val holder = testHolder()
+            holder.onEvent(DownloadEvent.ShowDownloading(progressPercent = 43))
+            holder.selectMode(DownloadMode.Audio)
+            holder.selectQuality(2)
+            holder.changeDestination()
+
+            advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 6).milliseconds)
+            runCurrent()
+
+            assertEquals(DownloadUiState.Downloading(DownloadFixtures.normal, 43), holder.state)
+            assertEquals(DownloadMode.Video, holder.selectedMode)
+            assertEquals(0, holder.selectedQualityIndex)
+            assertEquals(DownloadFixtures.normal.destination, holder.destination)
+        }
 
     @Test
     fun `source resolution fixture and reset clear stale ready choices and feedback`() {

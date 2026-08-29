@@ -2,8 +2,10 @@ package downlet
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import kotlinx.coroutines.CoroutineScope
@@ -15,6 +17,7 @@ import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.theme.default
 import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
+import org.jetbrains.jewel.intui.window.decoratedWindow
 import org.jetbrains.jewel.ui.ComponentStyling
 import kotlin.test.Test
 import kotlin.time.Duration.Companion.nanoseconds
@@ -22,7 +25,7 @@ import kotlin.time.Duration.Companion.nanoseconds
 class ProductSmokeTest {
     @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
     @Test
-    fun `product reaches ready through accessible link field`() {
+    fun `happy product flow reaches completed`() {
         val startedAt = System.nanoTime()
         val machineScheduler = TestCoroutineScheduler()
         val machineDispatcher = UnconfinedTestDispatcher(machineScheduler)
@@ -36,7 +39,7 @@ class ProductSmokeTest {
                 setContent {
                     IntUiTheme(
                         theme = JewelTheme.lightThemeDefinition(),
-                        styling = ComponentStyling.default(),
+                        styling = ComponentStyling.default().decoratedWindow(),
                     ) {
                         ProductSurface(stateHolder)
                     }
@@ -64,12 +67,73 @@ class ProductSmokeTest {
                 onNodeWithContentDescription(
                     mediaContentDescription(DownloadFixtures.normal, thumbnailAvailable = true),
                 ).assertExists()
+
+                onNodeWithText("Download").performClick()
+                machineScheduler.runCurrent()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Cancel").assertExists()
+                linkField.assertIsNotEnabled()
+
+                machineScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS * fakeProgressSteps.size)
+                machineScheduler.runCurrent()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Saved to Downloads").assertExists()
+                onNodeWithText("Open Folder").assertIsEnabled()
+                onNodeWithText("Download Another").assertExists()
             }
         } finally {
+            stateHolder.close()
             val elapsed = (System.nanoTime() - startedAt).nanoseconds
             println("smokeTest wall time: $elapsed")
             if (elapsed.inWholeSeconds >= 10) {
                 println("smokeTest exceeded the informational 10-second warm target")
+            }
+        }
+    }
+
+    @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
+    @Test
+    fun `recoverable product flow retries from error`() {
+        val startedAt = System.nanoTime()
+        val machineScheduler = TestCoroutineScheduler()
+        val machineDispatcher = UnconfinedTestDispatcher(machineScheduler)
+        val stateHolder =
+            DownloadStateHolder(
+                CoroutineScope(machineDispatcher + SupervisorJob()),
+                machineDispatcher = machineDispatcher,
+            )
+        try {
+            stateHolder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.failure))
+            runComposeUiTest {
+                setContent {
+                    IntUiTheme(
+                        theme = JewelTheme.lightThemeDefinition(),
+                        styling = ComponentStyling.default().decoratedWindow(),
+                    ) {
+                        ProductSurface(stateHolder)
+                    }
+                }
+
+                onNodeWithText("Download").performClick()
+                machineScheduler.runCurrent()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Cancel").assertExists()
+
+                machineScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS * 3)
+                machineScheduler.runCurrent()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Couldn't download this media.").assertExists()
+                onNodeWithText("Retry").performClick()
+                machineScheduler.runCurrent()
+                mainClock.advanceTimeByFrame()
+                onNodeWithContentDescription("Downloading: 0%. Starting download…").assertExists()
+            }
+        } finally {
+            stateHolder.close()
+            val elapsed = (System.nanoTime() - startedAt).nanoseconds
+            println("smokeTest recoverable wall time: $elapsed")
+            if (elapsed.inWholeSeconds >= 10) {
+                println("smokeTest recoverable path exceeded the informational 10-second warm target")
             }
         }
     }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -84,7 +85,7 @@ internal fun ProductSurface(stateHolder: DownloadStateHolder) {
                 .fillMaxSize()
                 .background(JewelTheme.globalColors.panelBackground),
     ) {
-        val compact = maxHeight < 330.dp
+        val compact = maxHeight < 400.dp
         val outerPadding = if (compact) 16.dp else 20.dp
         val majorGap = if (compact) 12.dp else 16.dp
         val workPlaneShape = RoundedCornerShape(10.dp)
@@ -101,18 +102,13 @@ internal fun ProductSurface(stateHolder: DownloadStateHolder) {
                 focusRequester = linkFieldFocusRequester,
                 onPasteIntent = { pasteIntent = true },
             )
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clip(workPlaneShape)
-                        .background(workPlaneFill)
-                        .border(1.dp, workPlaneBorder, workPlaneShape)
-                        .padding(if (compact) 12.dp else 16.dp),
-            ) {
-                ProductBody(stateHolder, compact)
-            }
+            ProductBody(
+                stateHolder = stateHolder,
+                compact = compact,
+                workPlaneShape = workPlaneShape,
+                workPlaneFill = workPlaneFill,
+                workPlaneBorder = workPlaneBorder,
+            )
         }
     }
 }
@@ -140,7 +136,7 @@ private fun LinkEffects(
             expirePasteIntent(clearPasteIntent)
         }
     }
-    LaunchedEffect(state) {
+    LaunchedEffect(state, stateHolder.linkFocusRequest) {
         if (state is DownloadUiState.Empty) {
             withFrameNanos { }
             linkFieldFocusRequester.requestFocus()
@@ -168,6 +164,7 @@ private fun LinkFieldRow(
                 state = stateHolder.linkFieldState,
                 focusRequester = focusRequester,
                 hasValidationError = stateHolder.validationMessage != null,
+                enabled = stateHolder.state !is DownloadUiState.Downloading,
                 onPasteIntent = onPasteIntent,
             )
             Box(modifier = Modifier.fillMaxWidth().height(20.dp).padding(top = 4.dp)) {
@@ -191,6 +188,7 @@ private fun LinkTextField(
     state: TextFieldState,
     focusRequester: FocusRequester,
     hasValidationError: Boolean,
+    enabled: Boolean,
     onPasteIntent: () -> Unit,
 ) {
     TextField(
@@ -210,6 +208,7 @@ private fun LinkTextField(
                     false
                 }.semantics { contentDescription = "YouTube link field" },
         outline = if (hasValidationError) Outline.Error else Outline.None,
+        enabled = enabled,
         placeholder = { Text("Paste a YouTube link…", Modifier.clearAndSetSemantics {}) },
     )
 }
@@ -245,15 +244,24 @@ internal suspend fun expirePasteIntent(clearPasteIntent: () -> Unit) {
 }
 
 @Composable
-private fun ProductBody(
+@Suppress("LongMethod")
+private fun ColumnScope.ProductBody(
     stateHolder: DownloadStateHolder,
     compact: Boolean,
+    workPlaneShape: RoundedCornerShape,
+    workPlaneFill: androidx.compose.ui.graphics.Color,
+    workPlaneBorder: androidx.compose.ui.graphics.Color,
 ) {
     val easing = remember { CubicBezierEasing(0.22f, 1f, 0.36f, 1f) }
     val risePixels = with(LocalDensity.current) { 6.dp.roundToPx() }
+    val showsWorkPlane = stateHolder.state.isWorkPlaneState
 
     AnimatedContent(
         targetState = stateHolder.state,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .then(if (showsWorkPlane) Modifier.weight(1f) else Modifier),
         transitionSpec = {
             (
                 fadeIn(animationSpec = tween(durationMillis = 200, easing = easing)) +
@@ -297,12 +305,57 @@ private fun ProductBody(
             }
 
             is DownloadUiState.Ready -> {
-                ReadyContent(stateHolder, state.fixture, compact)
+                WorkPlane(
+                    shape = workPlaneShape,
+                    fill = workPlaneFill,
+                    border = workPlaneBorder,
+                    compact = compact,
+                ) {
+                    DownloadWorkPlaneContent(stateHolder, state, compact)
+                }
             }
 
-            else -> {
-                Text(state.label)
+            is DownloadUiState.Downloading,
+            is DownloadUiState.Completed,
+            is DownloadUiState.Error,
+            -> {
+                WorkPlane(
+                    shape = workPlaneShape,
+                    fill = workPlaneFill,
+                    border = workPlaneBorder,
+                    compact = compact,
+                ) {
+                    DownloadWorkPlaneContent(stateHolder, state, compact)
+                }
             }
         }
     }
 }
+
+@Composable
+private fun WorkPlane(
+    shape: RoundedCornerShape,
+    fill: androidx.compose.ui.graphics.Color,
+    border: androidx.compose.ui.graphics.Color,
+    compact: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .clip(shape)
+                .background(fill)
+                .border(1.dp, border, shape)
+                .padding(if (compact) 12.dp else 16.dp),
+    ) {
+        content()
+    }
+}
+
+private val DownloadUiState.isWorkPlaneState: Boolean
+    get() =
+        this is DownloadUiState.Ready ||
+            this is DownloadUiState.Downloading ||
+            this is DownloadUiState.Completed ||
+            this is DownloadUiState.Error
