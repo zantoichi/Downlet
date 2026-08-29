@@ -281,4 +281,6 @@ Return:
 
 ## Dispatch record
 
-Top-level task ID: root records this after task creation.
+Top-level task ID: `01a04b5e-6b24-7e22-be38-a9e773002575`
+Dispatched: `2026-08-29`
+Implementation commit: `97e25d586c61ae0dfdae1896048d3b2a72a30dc3`
