@@ -1,7 +1,7 @@
 # G2 Combined Implementation Review
 
 Date: 2026-08-29  
-Status: CORRECTION REQUIRED  
+Status: CORRECTED — READY FOR FINAL EVIDENCE
 Review task: `01a04b8b-9efe-7be0-a029-ef182814c326`  
 Reviewer: GPT-5.6 Sol High  
 Reviewed HEAD: `c0700e0921b84e6079e9a2cf3dcbe3247185b825`  
@@ -13,6 +13,23 @@ Brooks health score: 89/100
 ## Verdict
 
 Do not capture final G2 evidence or request G2 approval until the four findings below are corrected in one bounded Sol High implementation pass and focused regression checks pass. Optional items remain deferred to G3.
+
+## Correction outcome
+
+Correction task: `01a04ba2-9dba-7111-91a1-52606e0c225b`
+
+Correction commit: `bd683366a8deb04b737652809bf7bad24571ec77`
+Result: all four findings corrected in one implementation pass; tasks `4.2`, `4.3`, `4.3a`, `4.7`, `4.9`, and `4.11` rechecked.
+
+- State-machine submissions are mutex-serialized and progress events carry an atomic generation that is invalidated at every required boundary.
+- A production-like single-lane dispatcher regression proves stale same-fixture progress cannot overwrite a forced Downloading state.
+- Compose 1.12 `AnimatedContent.contentKey` now maps all work-plane states to one key, preserving one composition and suppressing later-state shell animation.
+- Retry uses Jewel `InlineErrorBanner.linkActions`.
+- Visible fallback copy is `Preview unavailable`, and the SVG now follows the selected monochrome frame-and-signal direction.
+
+Verification passed: 27/27 focused state tests, 2/2 smoke flows, `gradlew.bat check`, IntelliJ build and changed-file inspections, both IntelliJ launch configurations, strict OpenSpec validation, controller UI-error check, and runtime logs. Smoke timings were 2.922315700 seconds for the happy flow and 196.869700 milliseconds for recovery.
+
+Correction-only product screenshots were rejected because Compose MCP remained attached to an older stale product session while the current `Design Review` process owned both new native windows. No invalid screenshot is evidence. Task `4.12` must establish fresh exact-commit product attachment and visually prove the shared plane, Error action, and missing-preview fallback before G2 approval.
 
 ## Required findings
 
@@ -93,4 +110,4 @@ Required correction: restore visible copy to `Preview unavailable`, using two co
 
 ## Correction boundary
 
-Use one top-level GPT-5.6 Sol High implementation task. Fix only these four findings, run affected checks once, and stop. No second review loop, unrelated redesign, or final evidence capture belongs in the correction task.
+Completed in one top-level GPT-5.6 Sol High implementation task. No second review loop, unrelated redesign, or final evidence capture was used.
