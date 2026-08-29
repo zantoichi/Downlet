@@ -82,4 +82,4 @@ No generated mockup or controller screenshot is used as product evidence.
 - `docs/design/evidence/G1/g1-empty-semantics.json`
 - `docs/design/evidence/G1/g1-ready-semantics.json`
 
-AWAITING USER: APPROVE G1 or REVISE G1: <feedback>
+APPROVED: APPROVE G1

@@ -1,7 +1,7 @@
 {
   "gate": "G1",
   "name": "Core Surface",
-  "status": "AWAITING_USER_APPROVAL",
+  "status": "APPROVED",
   "date": "2026-08-29",
   "reviewedProductCommit": "4fd87b6fa40b25981bdd0ec02a5253a48db61bc1",
   "openspec": {
@@ -68,6 +68,8 @@
   "approval": {
     "approve": "APPROVE G1",
     "revise": "REVISE G1: <feedback>",
-    "finalLine": "AWAITING USER: APPROVE G1 or REVISE G1: <feedback>"
+    "decision": "APPROVE G1",
+    "decidedOn": "2026-08-29",
+    "finalLine": "APPROVED: APPROVE G1"
   }
 }

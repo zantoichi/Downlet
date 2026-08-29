@@ -64,30 +64,30 @@ The product SHALL keep a field visibly labeled `YouTube link` throughout the flo
 
 ### Requirement: Empty state remains quiet
 
-The Empty state SHALL show only the persistent YouTube-link row and the sentence `Paste or type a YouTube link. Downlet checks it automatically.` It SHALL NOT show media, format, quality, destination, progress, or download controls before they are useful.
+The Empty state SHALL show only the persistent YouTube-link row and the sentence `Paste or type a YouTube link. Downlet checks it automatically.` It SHALL NOT reserve or draw the tonal work plane and SHALL NOT show media, format, quality, destination, progress, or download controls before they are useful.
 
 #### Scenario: No URL has been submitted
 
 - **WHEN** the product is in Empty
-- **THEN** focus and visual emphasis are placed on the YouTube-link task, the fixed explanatory sentence is visible, and no illustration, cards, advanced options, or inactive downstream controls appear
+- **THEN** focus and visual emphasis are placed on the YouTube-link task, the fixed explanatory sentence is visible, and no work plane, illustration, cards, advanced options, or inactive downstream controls appear
 
 ### Requirement: Resolving preserves context
 
-The Resolving state SHALL preserve the YouTube-link row, show `Checking this YouTube link…` with a restrained activity treatment, and avoid disruptive reflow.
+The Resolving state SHALL preserve the YouTube-link row, show `Checking this YouTube link…` in one compact status row directly beneath it, keep the full work plane hidden, and avoid disruptive reflow.
 
 #### Scenario: Valid URL starts resolving
 
 - **WHEN** fake resolution begins
-- **THEN** the submitted URL remains visible and an indeterminate progress treatment plus `Checking this YouTube link…` replaces the quiet body region
+- **THEN** the submitted URL remains visible and an indeterminate progress treatment plus `Checking this YouTube link…` replaces the helper line without revealing media or downstream controls
 
 ### Requirement: State changes use restrained motion
 
-The state body SHALL change in place with a short `180–220 ms` fade and at most `6` logical pixels of vertical rise. Motion SHALL use standard Compose duration scaling, SHALL NOT block interaction, and SHALL NOT bounce, loop decoratively, or carry status meaning by itself.
+State disclosure SHALL keep the URL field and window geometry fixed. Empty-to-Resolving SHALL reveal only compact status; Resolving-to-Ready SHALL reveal the single tonal work plane. Each change SHALL use a short `180–220 ms` fade and at most `6` logical pixels of vertical rise. Motion SHALL use standard Compose duration scaling, SHALL NOT block interaction, and SHALL NOT bounce, loop decoratively, or carry status meaning by itself.
 
 #### Scenario: Product state changes with normal animation scale
 
 - **WHEN** Empty, Resolving, or Ready replaces the prior state body
-- **THEN** one restrained fade-and-rise transition clarifies the change without moving the persistent URL field or window geometry
+- **THEN** one coordinated fade-and-rise transition reveals only the content useful to the new state without moving the persistent URL field or window geometry
 
 #### Scenario: System animation scale is zero
 
@@ -96,7 +96,7 @@ The state body SHALL change in place with a short `180–220 ms` fade and at mos
 
 ### Requirement: Ready confirms media identity
 
-The Ready state SHALL identify the resolved item with a 16:9 thumbnail or missing-thumbnail fallback, title, channel, duration, and provider inside one subtly bounded, low-chroma tonal work plane. The thumbnail SHALL use a modest rounded clip and thin theme-aware boundary. The title SHALL support two lines before truncating, and low-value extractor or encoding metadata SHALL remain absent.
+The Ready state SHALL reveal one subtly bounded, low-chroma tonal work plane and identify the resolved item inside it with a 16:9 thumbnail or missing-thumbnail fallback, title, channel, duration, and provider. The thumbnail SHALL use a modest rounded clip and thin theme-aware boundary. The title SHALL support two lines before truncating, and low-value extractor or encoding metadata SHALL remain absent.
 
 #### Scenario: Typical media resolves
 

@@ -1,6 +1,6 @@
 ## Context
 
-See `proposal.md` for motivation and the three capability specs for observable behavior. G0 is approved and the repository now contains the coded G1 Jewel surface, deterministic review harness, focused state tests, and review evidence. The approved G1 revision removes the redundant visible Paste action and raises visual/motion polish before G1 is presented again.
+See `proposal.md` for motivation and the three capability specs for observable behavior. G0 and G1 are approved. The repository contains the coded G1 Jewel surface, deterministic review harness, focused state tests, automated code-health checks, and exact-commit review evidence. Before G2 visual work, one technical tranche modernizes the compatible stack, introduces KStateMachine, and adds a fast smoke path without changing approved G1 visuals.
 
 The recommended Impeccable direction is **The Quiet Transfer Desk**: a familiar Windows utility frame, one persistent YouTube-link row, and one restrained work area that reveals only the information required by the current state.
 
@@ -12,6 +12,8 @@ The recommended Impeccable direction is **The Quiet Transfer Desk**: a familiar 
 - Keep product state, fake behavior, and review fixtures deterministic enough for repeatable screenshots and semantic inspection.
 - Make Empty and Ready complete at G1, all states complete at G2, and resilience/polish complete at G3.
 - Keep the implementation small enough that later real integration can replace fake effects without redesigning the UI.
+- Progressively disclose only controls and surfaces useful to the current state.
+- Keep local verification fast enough for routine use and report basic smoke duration.
 
 **Non-Goals:**
 
@@ -22,20 +24,21 @@ The recommended Impeccable direction is **The Quiet Transfer Desk**: a familiar 
 
 ## Decisions
 
-### 1. Pin the current standalone-compatible stack
+### 1. Pin the latest stable, mutually compatible stack
 
-Use this G1 baseline unless a minimal scaffold build proves a hard incompatibility:
+Use this post-G1 target unless the implementation probe proves a hard Jewel compatibility issue:
 
-- Kotlin `2.3.20`
-- Compose Multiplatform `1.11.0`
+- Kotlin `2.4.10`
+- Compose Multiplatform `1.12.0`, falling back only to the newest verified compatible stable `1.11.x` release if current Jewel cannot build or launch against `1.12.0`
 - Jewel standalone `0.39.1-262.9437.29`
 - Compose Hot Reload `1.2.0`
+- Gradle `9.5.0`
 - JVM bytecode target `21`
 - JBR `25` as the development and application runtime
 
-Jewel `0.39.1` is the current published standalone line and fixes the standalone transitive icon dependencies. Jewel `0.40` exists for the IntelliJ Platform line but does not publish a standalone version in the current release table. Compose Hot Reload `1.2.0` supports Compose Multiplatform 1.10 or newer and exposes the MCP review tools required by the prompt. Hot Reload runs on JBR 25, while its official compatibility requirement keeps project bytecode at Java 21 or earlier; G1 therefore compiles Kotlin and any Java source to target 21 and launches the app on JBR 25.
+Kotlin `2.4.10` is the latest stable compiler line and is fully supported through Gradle `9.5.0`; use that fully supported pair instead of retaining the numerically newer but out-of-matrix Gradle `9.7.1`. Compose `1.12.0` is the current stable desktop line. Jewel `0.39.1` remains the published standalone artifact, so its compile and launch compatibility is the controlling probe. Hot Reload stays on stable `1.2.0`; do not adopt the `1.3.0` alpha. Keep the bytecode/runtime split: target Java 21 and launch on JBR 25.
 
-Alternative considered: follow Jewel `0.40` source APIs. Rejected because this product needs a published standalone artifact, not an IntelliJ Platform bridge.
+Alternative considered: update every coordinate to its numerically newest release, including prereleases or unsupported Gradle combinations. Rejected because a stable, fully supported matrix is more valuable than version-number maximalism.
 
 ### 2. Use a plain Jewel-decorated Windows frame
 
@@ -49,13 +52,15 @@ Normal launch reads `androidx.compose.foundation.isSystemInDarkTheme()` and uses
 
 Compose Hot Reload 1.2.0 screenshots intentionally exclude window-title chrome. Compose MCP remains authoritative for the client area, semantics, interactions, and resize bounds. Each coded gate that judges title-bar parity also records one Codex Computer Use `Windows.Graphics.Capture` screenshot of the real running Downlet window and a manual Windows check for theme, controls, drag, and maximize/restore at the same commit.
 
-### 3. Keep one pure product surface and one small state holder
+### 3. Keep one pure product surface and one KStateMachine-backed state holder
 
-Create one immutable `DownloadUiState` model with the six explicit product states and one small Compose-aware state holder that accepts UI events. Use sealed state/event types only where they make invalid combinations impossible; do not add repositories, services, factories, dependency injection, or a fake backend interface.
+Keep the immutable `DownloadUiState` render model with the six explicit product states and one small Compose-aware state holder. Add `io.github.nsk90:kstatemachine-coroutines:0.38.1` and let one machine own normal phase transitions. Existing UI events become machine events; resolution and download timers emit internal events. Context such as fixture, mode, quality, destination, and progress remains ordinary immutable or holder state rather than nested machine data structures.
+
+Use only flat states, guarded or conditional transitions where needed, and coroutine-aware event processing. Do not use hierarchical or parallel states, persistence/serialization, undo, export tooling, generated diagrams, a wrapper interface, or a second state-machine abstraction. The Design Review Controller may keep a deterministic forced-state override that bypasses timers; normal user flow must go through the machine.
 
 The product composable receives state and event callbacks and contains no AWT clipboard integration. Native text-field editing is the only clipboard surface.
 
-Alternative considered: MVVM plus service interfaces. Rejected as unnecessary for a single deterministic design surface.
+Alternative considered: MVVM, a handwritten reducer, or service interfaces. Rejected because the user selected KStateMachine and one direct machine now provides the transition contract without adding application layers.
 
 ### 4. Let the field handle paste and submit automatically
 
@@ -67,14 +72,15 @@ Supported fake-validation hosts are `youtube.com`, `www.youtube.com`, `m.youtube
 
 Alternative considered: resolve every valid edit immediately. Rejected because it would make manual typing feel jumpy and would not satisfy the agreed debounce behavior.
 
-### 5. Use a stable vertical composition with one quiet work plane
+### 5. Use a stable vertical composition with progressive disclosure
 
-The product content is a single `Column`:
+The product content is a single `Column` with a persistent link field and state-appropriate disclosure:
 
-1. Persistent URL form row.
-2. One subtly bounded, inset tonal work plane occupying the remaining space.
+1. Empty shows the URL form row and one helper line only; it does not reserve or draw the work plane.
+2. Resolving keeps the field fixed and reveals one compact status row directly beneath it.
+3. Ready, Downloading, Completed, and Error reveal one subtly bounded, inset tonal work plane for useful media and action content.
 
-The work plane is a single grouping surface, not a card grid or nested-card system. It uses theme-aware low-chroma cool neutrals, a thin boundary, and no decorative shadow. Its geometry remains stable while the state content changes in place.
+The work plane is a single grouping surface, not a card grid or nested-card system. It uses theme-aware low-chroma cool neutrals, a thin boundary, and no decorative shadow. Once visible, its geometry remains stable while later state content changes in place. The window and URL field never move.
 
 Default metrics use approximately 20 dp outer padding, 16 dp major gaps, 8 dp control gaps, and a 96 dp label column. Below roughly 380 dp of client height, one `BoxWithConstraints` branch reduces outer padding and major gaps to 16/12 dp and reduces the media thumbnail while preserving the same information hierarchy. This is desktop resize hardening, not a mobile layout.
 
@@ -134,7 +140,7 @@ Fake timing is fixed: resolution completes after `550 ms`; download progress adv
 
 Use Jewel typography, component metrics, semantic colors, icons, focus outlines, disabled appearance, and light/dark theme definitions. Add only one low-chroma cool secondary surface and one existing theme accent role. Do not add glass, neon, gradient text, bespoke shadows, or ornamental color.
 
-State-body replacement uses one short transition: a `180–220 ms` fade combined with at most `6.dp` of vertical rise and `CubicBezierEasing(0.22f, 1f, 0.36f, 1f)`. Focus, paste, and status feedback may reuse this restrained timing. There is no bounce, infinite decorative loop, staggered choreography, or motion that delays interaction. Compose duration scaling remains authoritative so a zero animation scale produces the instant end state.
+Disclosure and state-body replacement use one coordinated short transition: a `180–220 ms` fade combined with at most `6.dp` of vertical rise and `CubicBezierEasing(0.22f, 1f, 0.36f, 1f)`. Empty-to-Resolving reveals only compact status; Resolving-to-Ready reveals the work plane once. Focus, paste, and status feedback may reuse this restrained timing. There is no bounce, infinite decorative loop, staggered choreography, or motion that delays interaction. Compose duration scaling remains authoritative so a zero animation scale produces the instant end state.
 
 Product-specific values are limited to:
 
@@ -177,7 +183,7 @@ Compose Hot Reload MCP must be configured through its `hotMcpServer` Gradle task
 
 The repository OpenSpec proposal, design, capability specs, tasks, and approved gate artifacts are the sole planning source of truth. The retired external initial prompt is not required after this decision.
 
-The root task owns planning, integration, and human gates but does not edit application code. Actual Kotlin implementation and independent review run only in explicit top-level Codex tasks using GPT-5.6 Sol with High reasoning. Project subagents are not used. Work remains sequential on shared `main` unless the user changes that decision.
+The root task owns planning, integration, and human gates but does not edit application code. UI implementation and independent review run in explicit top-level GPT-5.6 Sol High tasks. Non-visual build, state-engine, and test tranches may use GPT-5.6 Sol Medium. Project subagents are not used. Work remains sequential on shared `main` unless the user changes that decision.
 
 Fine-grained OpenSpec task IDs are traceability units, not thread or commit boundaries. One top-level implementation task may receive a small coherent set of task IDs. Its dispatch message contains the exact base commit, change name, task IDs, goal, required context, in-scope and out-of-scope boundaries, IntelliJ and Compose checks, tests, and return contract. The task starts immediately when `main` is clean at the expected commit; a second task-ID-record commit and READY/RELEASE handshake are unnecessary. A mismatch or dirty tree stops the task before mutation.
 
@@ -194,9 +200,9 @@ Known tooling failures are not blind retry loops. Attempt a known-stalling produ
 
 Human gates remain G0 Direction, G1 Core Surface, G2 Full State System, and G3 Hardened Final Design. Stop at each gate until the user explicitly sends `APPROVE G0`, `APPROVE G1`, `APPROVE G2`, or `APPROVE G3`; revision feedback reopens only the owning tasks.
 
-### 13. Prioritize code health before G1 final review
+### 13. Keep code health as an enforceable baseline
 
-Tasks 3.24–3.28 are the immediate implementation priority. Do not resume G1 final review, evidence capture, or packaging until their exact-commit verification passes.
+Tasks 3.24–3.28 completed the first code-health tranche before G1 approval. Preserve their responsibility boundaries and automated checks through G2 and G3.
 
 File length is a diagnostic signal, not a quality target. Do not enforce a 100-line maximum or split cohesive files into shallow wrappers. Split when a file has multiple stable reasons to change, leaks ownership, or forces unrelated code to be read together. Keep `DesignReview.kt` intact while it remains one coherent controller responsibility.
 
@@ -220,6 +226,30 @@ Add one formatter and one analyzer:
 
 Alternative considered: enforce a universal file-length limit, add Git hooks, or create a CI-provider workflow now. Rejected because responsibility and complexity are stronger signals than raw line count, Git hooks are not reliably shared, and the repository has no configured remote or CI provider.
 
+### 14. Add one bounded technical foundation before G2 UI work
+
+Run one Sol Medium implementation tranche before G2 visual work:
+
+- upgrade to the stable compatible stack from Decision 1 and keep already-current ktlint, Detekt, coroutines, Foojay, Jewel, and Hot Reload versions unchanged;
+- add `--enable-native-access=ALL-UNNAMED` to application/test Java launches that load Skiko so JBR 25 does not warn about restricted native loading;
+- do not suppress Jewel's `sun.misc.Unsafe` warning or vendor Jewel; record it as an upstream standalone-release limitation until a published Jewel build contains the merged fix;
+- enable Gradle configuration cache only after two successful runs prove reuse for `check`, `smokeTest`, and the Hot Reload launch tasks without warning mode;
+- add one `smokeTest` command using the Compose desktop UI-test API against the real product composable, with virtual time for deterministic transitions and an elapsed-time report. Target a warm run under ten seconds on the reference Windows host, but keep host timing informational rather than a portable correctness failure.
+
+Keep `gradlew.bat check` as the portable formatter/analyzer/unit-test gate. `smokeTest` is the fast in-process product-flow gate used before implementation handoff and review. Do not add Git hooks, CI-provider files, Selenium/Appium, screenshot-golden infrastructure, a second test framework, or a persistent process-launch harness.
+
+### 15. Treat generated imagery as concept input, not a second visual system
+
+Before the G2 UI task, generate a small concept set for the selected **Quiet Signal Reveal** direction: Empty, Resolving, and Ready full-window references plus focused app-icon, thumbnail, and missing-preview studies. Generated full-window concepts are review inputs only and are not shipped.
+
+Distill the selected ideas into at most three production resource families:
+
+- a simple Downlet app icon based on a folded transfer ribbon or descending signal, without YouTube branding;
+- one polished deterministic 16:9 thumbnail fixture;
+- one minimal missing-preview mark redrawn as a themeable SVG or Compose vector.
+
+Do not ship AI-rendered text, glass/noise backgrounds, giant illustrations, copied YouTube marks, or multiple illustration styles. Prefer SVG/vector resources for iconography and one optimized bitmap only when the thumbnail benefits from raster detail.
+
 ## Risks / Trade-offs
 
 - **Jewel 0.40 is newer than the standalone artifact** → Pin the published 0.39.1 standalone coordinate and use its extracted source signatures for G0; make G1's first task a minimal IntelliJ build smoke test.
@@ -232,13 +262,19 @@ Alternative considered: enforce a universal file-length limit, add Git hooks, or
 - **Long path truncation can hide useful context** → Preserve the full path in semantics and deterministic fixtures while keeping Change visibly reachable.
 - **Hot Reload MCP is not available before a Gradle app exists** → G0 records the configuration target only; G1 is blocked from review, not from coding, until the server connects to the running app.
 - **Fake timing can make review flaky** → Controller-forced states bypass all delays and are the source for screenshot capture.
+- **Compose `1.12.0` may expose a Jewel standalone incompatibility** → Probe compile, launch, controls, and Hot Reload first; fall back only to the newest verified stable `1.11.x` and record the exact incompatibility.
+- **KStateMachine can become architecture theater** → Use one flat machine for phase transitions only; keep data models and effects ordinary and add no wrapper framework.
+- **Jewel still emits a JDK Unsafe warning** → Keep the published standalone artifact, track the merged upstream fix, and do not hide or vendor around the warning.
+- **Compose desktop UI testing is experimental** → Keep one narrow semantics-driven smoke path and ordinary state tests; do not build a broad UI-test framework.
+- **Generated concepts can introduce visual noise or branding risk** → Use them only for direction, redraw final resources, and reject generated text or provider marks.
 
 ## Migration Plan
 
 1. After `APPROVE G0`, create a minimal single-module Compose Desktop scaffold and prove the pinned stack through IntelliJ MCP.
-2. Implement G1 from narrow task packets, then stop for `APPROVE G1`.
-3. Add the complete fake state system for G2, then stop for `APPROVE G2`.
-4. Harden edge cases and accessibility for G3, then stop for `APPROVE G3`.
-5. Archive/synchronize this design change only after G3 approval.
+2. Implement and approve G1.
+3. Run one Sol Medium technical-foundation tranche for compatible upgrades, KStateMachine, warning cleanup, configuration-cache proof, and the fast smoke path.
+4. Use one Sol High G2 task for generated-resource direction, progressive disclosure, and the complete fake state system, then stop for `APPROVE G2`.
+5. Harden edge cases and accessibility for G3, then stop for `APPROVE G3`.
+6. Archive/synchronize this design change only after G3 approval.
 
 Rollback is commit-based: reject or revert the narrow implementation tranche that diverges from the last approved gate. Real yt-dlp integration belongs to a separate future OpenSpec change.

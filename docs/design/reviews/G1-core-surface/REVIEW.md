@@ -1,7 +1,7 @@
 # G1 — Core Surface
 
 Gate: G1
-Status: AWAITING_USER_APPROVAL
+Status: APPROVED
 Date: 2026-08-29
 Reviewed product commit: `4fd87b6fa40b25981bdd0ec02a5253a48db61bc1`
 OpenSpec change: `design-primary-download-window`
@@ -21,6 +21,10 @@ The approved revision is present:
 - Ktlint, Detekt, responsibility-focused source files, and 18 focused tests now enforce code health.
 
 No backend, yt-dlp, ffmpeg, network, filesystem transfer, packaging, G2, or G3 behavior is included.
+
+## Decision
+
+User decision recorded on 2026-08-29: `APPROVE G1`
 
 ## Verification
 
@@ -65,4 +69,4 @@ Request changes with:
 
 `REVISE G1: <feedback>`
 
-AWAITING USER: APPROVE G1 or REVISE G1: <feedback>
+APPROVED: APPROVE G1

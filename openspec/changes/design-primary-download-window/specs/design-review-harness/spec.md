@@ -73,6 +73,20 @@ Gate screenshots and semantic captures SHALL come from the running product windo
 - **WHEN** G1, G2, or G3 evidence is prepared
 - **THEN** the recorded commit, IntelliJ build result, tests, run configuration, Compose MCP state, client-area screenshots, semantic trees, resize cases, interactions, UI-error result, log result, and any required native full-window proof describe the same running code
 
+### Requirement: Fast local product smoke is available
+
+The project SHALL expose one local `smokeTest` command that renders the real product composition in-process, drives the normal Empty-to-Resolving-to-Ready path through semantics, checks deterministic state transitions with virtual time, performs no network or subprocess work, and reports elapsed wall time.
+
+#### Scenario: Developer runs the focused smoke path
+
+- **WHEN** `gradlew.bat smokeTest` runs on a warmed reference Windows development environment
+- **THEN** the product flow assertions pass, the actual elapsed time is reported, and a run above the ten-second target is clearly flagged for investigation without becoming a cross-machine correctness failure
+
+#### Scenario: Smoke path exercises fake behavior
+
+- **WHEN** the smoke test submits a valid link and advances virtual time
+- **THEN** the same product composition reaches Resolving and Ready with no real clipboard read, network request, process launch, file write, or controller dependency
+
 ### Requirement: Human gates stop implementation progress
 
 The workflow MUST stop for explicit user approval at G0, G1, G2, and G3.
