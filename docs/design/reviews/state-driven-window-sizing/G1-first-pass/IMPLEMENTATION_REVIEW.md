@@ -56,3 +56,14 @@ AWT bounds and work-area integers cross Compose density conversion during mutati
 - Defer visible constrained-overflow affordance to G2 refinement.
 - Defer 125%/150% DPI proof to G2 task 3.3.
 - Do not package final G1 evidence from `1eaaebd`.
+
+## Correction
+
+- Correction commit: `22aa700`.
+- Startup ownership now ends through an explicit sizing-completion signal, independent of matching native resize events.
+- Platform placement now suspends sizing without changing prior AutoManaged/UserManaged ownership.
+- Coordinator tests cover matching startup event order and ownership preservation across platform placement.
+- Native floating verification repeated four times: `706 × 161 → 706 × 413 → 706 × 161` each time.
+- Native `Ready → maximize → clear → restore` verification returned Empty at `706 × 161`.
+- `gradlew.bat check`, `gradlew.bat smokeTest`, IntelliJ build/inspections, and strict OpenSpec validation passed.
+- P1 findings: resolved. Corrected G1 candidate accepted for final evidence capture.

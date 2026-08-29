@@ -7,6 +7,7 @@ Date: 2026-08-29
 - `491de88` — pure presentation-tier and ownership policy (task 2.2)
 - `205e85f` — runtime sizing, motion, review controls, and regression coverage (tasks 2.3–2.8)
 - `932c2f7` — startup ownership correction after real-product clear-link reproduction
+- `22aa700` — review correction for startup event ordering and platform-placement ownership
 
 ## Approved bounds and motion
 
@@ -52,6 +53,8 @@ Date: 2026-08-29
 - The correction preserves the intended `720` startup width and accepts the first native startup bounds before classifying later unmatched bounds as user-driven.
 - Computer Use repeated the real `Downlet` flow twice on native window `6817238`: `706 × 161` client → `706 × 413` → `706 × 161`.
 - Focus remained in the URL field after deletion. No temporary diagnostic logging remains.
+- Independent review found the first correction remained timing-sensitive and that maximize/snap changed ownership permanently; `22aa700` supersedes `932c2f7` as the accepted code candidate.
+- Post-review Computer Use repeated floating collapse four times at `706 × 161 → 706 × 413 → 706 × 161` and verified `Ready → maximize → clear → restore` at `706 × 161`.
 
 Native Computer Use screenshots were point-in-time tool observations and were not written into the repository. Task 2.11 should recapture canonical full-window evidence after review.
 
