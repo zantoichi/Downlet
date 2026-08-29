@@ -1,6 +1,6 @@
 # G1 Implementation Packet: State-Driven Window Sizing
 
-Status: READY FOR DISPATCH
+Status: DISPATCHED
 
 ## Assignment
 
@@ -10,7 +10,8 @@ Implement OpenSpec change `add-state-driven-window-sizing`, tasks 2.2–2.8 only
 - Approval record: `docs/design/reviews/state-driven-window-sizing/G0-direction/DECISION.md`
 - Approved package commit: `df93b1a`
 - Approval-record commit: `3a822a4`
-- Dispatch base: the commit containing this packet
+- Dispatch base: `0c2a0bf`
+- Dispatched client task ID: `client-new-thread:6c55ee1a-abdb-4f00-ac00-5c67f08710d9`
 - Project subagents: forbidden
 - Stop after tasks 2.2–2.8. Do not perform task 2.9 review or package G1 evidence.
 
