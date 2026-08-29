@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "change": "add-state-driven-window-sizing",
+  "gate": "G0",
+  "status": "awaiting-user",
+  "date": "2026-08-29",
+  "profiles": {
+    "compact": {
+      "states": ["Empty", "InvalidEmpty", "Resolving"],
+      "preferred": {"width": 720, "height": 168},
+      "minimum": {"width": 620, "height": 156}
+    },
+    "expanded": {
+      "states": ["Ready", "Downloading", "Completed", "Error"],
+      "preferred": {"width": 720, "height": 420},
+      "minimum": {"width": 620, "height": 400}
+    }
+  },
+  "motionMs": {
+    "expand": 250,
+    "collapse": 167,
+    "zeroDurationSupported": true
+  },
+  "evidenceCommits": {
+    "reconciliation": "cd31877",
+    "measurements": "b4dc4c1",
+    "package": "git commit containing this manifest"
+  },
+  "artifacts": [
+    "CLAUSE_RECONCILIATION.md",
+    "DIRECTION.md",
+    "MEASUREMENTS.md",
+    "REVIEW.md",
+    "EVIDENCE.md",
+    "manifest.json"
+  ],
+  "captures": [
+    {"path": "captures/empty-light-native-720x420.jpg", "role": "empty-light-native"},
+    {"path": "captures/resolving-light-native-720x420.jpg", "role": "resolving-light-native"},
+    {"path": "captures/ready-light-native-720x420.jpg", "role": "ready-light-native"},
+    {"path": "captures/empty-dark-native-720x420.jpg", "role": "empty-dark-native"},
+    {"path": "captures/resolving-dark-native-720x420.jpg", "role": "resolving-dark-native"},
+    {"path": "captures/ready-dark-native-720x420.jpg", "role": "ready-dark-native"},
+    {"path": "captures/empty-light-720x420.png", "role": "empty-light-compose-client"},
+    {"path": "captures/ready-light-native-720x380.jpg", "role": "ready-height-probe"},
+    {"path": "captures/error-light-native-720x380.jpg", "role": "error-clipped-probe"},
+    {"path": "captures/error-light-native-720x400.jpg", "role": "error-minimum-height-probe"},
+    {"path": "captures/error-light-native-620x400.jpg", "role": "error-minimum-bounds-probe"},
+    {"path": "captures/error-light-native-720x420.jpg", "role": "error-preferred-bounds-probe"}
+  ],
+  "checks": [
+    "strict OpenSpec validation passed",
+    "IntelliJ planning inspections passed",
+    "unchanged Kotlin build passed",
+    "12 retained captures exist and decode",
+    "Compose runtime reported no product UI exception"
+  ],
+  "limitations": [
+    "125% and 150% profiles are calculated and require native verification",
+    "post-mutation Compose screenshot output was unreliable during G0",
+    "G0 contains no production implementation"
+  ],
+  "approval": {
+    "approve": "APPROVE G0",
+    "revise": "REVISE G0: <feedback>"
+  }
+}
