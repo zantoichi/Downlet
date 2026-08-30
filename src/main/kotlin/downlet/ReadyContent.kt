@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -43,11 +44,13 @@ import org.jetbrains.jewel.ui.component.CheckboxRow
 import org.jetbrains.jewel.ui.component.CircularProgressIndicator
 import org.jetbrains.jewel.ui.component.DefaultButton
 import org.jetbrains.jewel.ui.component.HorizontalProgressBar
+import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.InlineErrorBanner
 import org.jetbrains.jewel.ui.component.Link
 import org.jetbrains.jewel.ui.component.ListComboBox
 import org.jetbrains.jewel.ui.component.RadioButtonRow
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import kotlin.time.Duration
 
 @Composable
@@ -118,6 +121,8 @@ internal fun ToolSetupContent(
                     onClick = stateHolder::installTools,
                     enabled = stateHolder.toolSetupEnabled,
                 ) {
+                    Icon(AllIconsKeys.Actions.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text("Download and continue")
                 }
             }
@@ -134,7 +139,8 @@ internal fun LegalDetailsContent(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Link(
+        IconLink(
+            icon = AllIconsKeys.Actions.Back,
             text = if (state is DownloadUiState.Setup) "Back to setup" else "Back to download",
             onClick = stateHolder::hideLegalDetails,
         )
@@ -196,25 +202,35 @@ internal fun DownloadWorkPlaneContent(
     }
     val item = state.itemOrNull ?: return
     val controlsEnabled = state is DownloadUiState.Ready
-    val controlGap = if (compact) 8.dp else 10.dp
+    val controlGap = if (compact) 10.dp else 16.dp
     val thumbnailWidth = if (compact) 96.dp else 128.dp
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(controlGap),
     ) {
         MediaIdentity(item, thumbnailWidth)
-        DownloadModeRow(stateHolder, controlsEnabled)
-        QualityRow(stateHolder, compact, controlsEnabled)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            DownloadModeRow(stateHolder, controlsEnabled, Modifier.weight(1f))
+            QualityRow(stateHolder, controlsEnabled, Modifier.weight(QUALITY_COLUMN_WEIGHT))
+        }
         DestinationRow(stateHolder, controlsEnabled)
         if (state is DownloadUiState.Ready) DownloadAuthorizationRow(stateHolder)
+        Spacer(Modifier.weight(1f))
         StateActionRegion(stateHolder, state)
     }
 }
 
 @Composable
 private fun DownloadAuthorizationRow(stateHolder: DownloadStateHolder) {
-    FormRow("Permission") {
+    LabeledSection(
+        icon = AllIconsKeys.Nodes.Padlock,
+        label = "Permission",
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             CheckboxRow(
                 text = ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT,
@@ -232,8 +248,13 @@ private fun DownloadAuthorizationRow(stateHolder: DownloadStateHolder) {
 private fun DownloadModeRow(
     stateHolder: DownloadStateHolder,
     enabled: Boolean,
+    modifier: Modifier,
 ) {
-    FormRow("Download as") {
+    LabeledSection(
+        icon = AllIconsKeys.Actions.Download,
+        label = "Download as",
+        modifier = modifier,
+    ) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             RadioButtonRow(
                 text = "Video",
@@ -254,18 +275,22 @@ private fun DownloadModeRow(
 @Composable
 private fun QualityRow(
     stateHolder: DownloadStateHolder,
-    compact: Boolean,
     enabled: Boolean,
+    modifier: Modifier,
 ) {
     val label = if (stateHolder.selectedMode == DownloadMode.Audio) "Format & quality" else "Quality"
-    FormRow(label) {
+    LabeledSection(
+        icon = AllIconsKeys.General.Settings,
+        label = label,
+        modifier = modifier,
+    ) {
         ListComboBox(
             items = stateHolder.qualityOptions,
             selectedIndex = stateHolder.selectedQualityIndex,
             onSelectedItemChange = stateHolder::selectQuality,
             modifier =
                 Modifier
-                    .width(if (compact) 300.dp else 336.dp)
+                    .fillMaxWidth()
                     .semantics { contentDescription = "$label: ${stateHolder.selectedQualityLabel}" },
             enabled = enabled,
         )
@@ -278,13 +303,18 @@ private fun DestinationRow(
     enabled: Boolean,
 ) {
     val destination = stateHolder.destination?.toString().orEmpty()
-    FormRow("Save to") {
+    LabeledSection(
+        icon = AllIconsKeys.Nodes.Folder,
+        label = "Save to",
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = destination,
+                style = LocalDownletTypography.current.exactMetadata,
                 modifier =
                     Modifier
                         .weight(1f)
@@ -328,6 +358,8 @@ private fun ReadyActionRow(stateHolder: DownloadStateHolder) {
             onClick = stateHolder::download,
             enabled = stateHolder.downloadEnabled,
         ) {
+            Icon(AllIconsKeys.Actions.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
             Text("Download")
         }
     }
@@ -350,7 +382,7 @@ private fun DownloadingActionRegion(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
-            Text("Downloading")
+            Text("Downloading", style = LocalDownletTypography.current.formLabel)
             Spacer(Modifier.weight(1f))
             Text("${state.progress.percent}%", style = LocalDownletTypography.current.progressNumber)
         }
@@ -368,7 +400,7 @@ private fun DownloadingActionRegion(
                     },
         )
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(status)
+            Text(status, style = LocalDownletTypography.current.numericMetadata)
             Spacer(Modifier.weight(1f))
             Link("Cancel", onClick = stateHolder::cancelDownload)
         }
@@ -399,10 +431,16 @@ private fun CompletedActionRegion(stateHolder: DownloadStateHolder) {
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Link("Download Another", onClick = stateHolder::downloadAnother)
+            IconLink(
+                icon = AllIconsKeys.Actions.Restart,
+                text = "Download another",
+                onClick = stateHolder::downloadAnother,
+            )
             Spacer(Modifier.width(12.dp))
             DefaultButton(onClick = stateHolder::openFolder) {
-                Text("Open Folder")
+                Icon(AllIconsKeys.Nodes.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Open folder")
             }
         }
     }
@@ -445,6 +483,7 @@ private fun ErrorActionRegion(
 private fun StatusText(feedback: String) {
     Text(
         text = feedback,
+        style = LocalDownletTypography.current.metadata,
         modifier =
             Modifier
                 .widthIn(max = 430.dp)
@@ -458,16 +497,17 @@ private fun StatusText(feedback: String) {
 }
 
 @Composable
-private fun FormRow(
-    label: String,
-    content: @Composable () -> Unit,
+private fun IconLink(
+    icon: org.jetbrains.jewel.ui.icon.IconKey,
+    text: String,
+    onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, modifier = Modifier.width(96.dp), style = LocalDownletTypography.current.formLabel)
-        content()
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+        Link(text, onClick = onClick)
     }
 }
 
@@ -535,6 +575,7 @@ private fun MediaIdentity(
                 )
                 Text(
                     text = "Preview unavailable",
+                    style = LocalDownletTypography.current.metadata,
                     modifier = Modifier.padding(horizontal = 4.dp),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -609,6 +650,7 @@ internal fun formatMediaDuration(duration: Duration?): String {
 }
 
 private const val MAX_PROGRESS_BEFORE_FINISHING = 99
+private const val QUALITY_COLUMN_WEIGHT = 1.35f
 
 private fun List<String>.toReadableList(): String =
     when (size) {

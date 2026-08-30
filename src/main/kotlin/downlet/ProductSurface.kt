@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldState
@@ -54,7 +53,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -62,8 +60,10 @@ import kotlinx.coroutines.flow.collectLatest
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.Outline
 import org.jetbrains.jewel.ui.component.CircularProgressIndicator
+import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -99,8 +99,8 @@ internal fun ProductSurface(
                 .background(JewelTheme.globalColors.panelBackground),
     ) {
         val compact = maxHeight < 400.dp
-        val outerPadding = if (compact) 16.dp else 20.dp
-        val majorGap = if (compact) 12.dp else 16.dp
+        val outerPadding = if (compact) 18.dp else 22.dp
+        val majorGap = 16.dp
         val workPlaneShape = RoundedCornerShape(10.dp)
         val accent = JewelTheme.globalColors.outlines.focused
         val workPlaneFill = accent.copy(alpha = if (JewelTheme.isDark) 0.10f else 0.055f)
@@ -164,16 +164,12 @@ private fun LinkFieldRow(
     focusRequester: FocusRequester,
     onPasteIntent: () -> Unit,
 ) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "YouTube link",
-            modifier =
-                Modifier
-                    .width(96.dp)
-                    .padding(top = 5.dp)
-                    .semantics { contentDescription = "YouTube link label" },
-        )
-        Column(modifier = Modifier.weight(1f)) {
+    LabeledSection(
+        icon = AllIconsKeys.General.Web,
+        label = "YouTube link",
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             LinkTextField(
                 state = stateHolder.linkFieldState,
                 focusRequester = focusRequester,
@@ -217,6 +213,7 @@ private fun LinkTextField(
                 }.semantics { contentDescription = "YouTube link field" },
         outline = if (hasValidationError) Outline.Error else Outline.None,
         enabled = enabled,
+        textStyle = LocalDownletTypography.current.exactBody,
         placeholder = { Text("Paste a YouTube link…", Modifier.clearAndSetSemantics {}) },
     )
 }
