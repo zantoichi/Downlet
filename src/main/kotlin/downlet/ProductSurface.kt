@@ -365,7 +365,7 @@ private fun ColumnScope.ProductBody(
                         border = workPlaneBorder,
                         compact = compact,
                     ) {
-                        DownloadWorkPlaneContent(stateHolder, state, compact)
+                        DownloadWorkPlaneContent(stateHolder, state, compact, animationsEnabled)
                     }
                 }
             }

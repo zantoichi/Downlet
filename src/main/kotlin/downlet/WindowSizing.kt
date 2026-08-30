@@ -34,8 +34,8 @@ import kotlin.time.Duration.Companion.milliseconds
 internal enum class WindowPresentationTier(
     val preferredSize: DpSize,
 ) {
-    Compact(DpSize(width = 720.dp, height = 168.dp)),
-    Expanded(DpSize(width = 720.dp, height = 420.dp)),
+    Compact(DpSize(width = 760.dp, height = 188.dp)),
+    Expanded(DpSize(width = 760.dp, height = 480.dp)),
 }
 
 internal val DownloadUiState.windowPresentationTier: WindowPresentationTier

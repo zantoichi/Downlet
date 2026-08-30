@@ -1,5 +1,10 @@
 package downlet
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,7 +23,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -85,8 +94,9 @@ internal fun ToolSetupContent(
         )
         if (state.phase == ToolSetupPhase.Failed) {
             InlineErrorBanner(
-                title = "Tool setup failed.",
-                icon = null,
+                icon = {
+                    Icon(AllIconsKeys.General.NotificationError, contentDescription = null)
+                },
                 modifier =
                     Modifier
                         .fillMaxWidth()
@@ -95,7 +105,10 @@ internal fun ToolSetupContent(
                             liveRegion = LiveRegionMode.Polite
                         },
             ) {
-                Text(ProductCopy.TOOL_SETUP_FAILURE_MESSAGE)
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Tool setup failed.", style = LocalDownletTypography.current.mediaTitle)
+                    Text(ProductCopy.TOOL_SETUP_FAILURE_MESSAGE)
+                }
             }
         }
         Row(
@@ -195,6 +208,7 @@ internal fun DownloadWorkPlaneContent(
     stateHolder: DownloadStateHolder,
     state: DownloadUiState,
     compact: Boolean,
+    animationsEnabled: Boolean,
 ) {
     if (state is DownloadUiState.Error && state.kind == DownloadErrorKind.Resolution) {
         ErrorActionRegion(stateHolder, state.kind)
@@ -220,7 +234,7 @@ internal fun DownloadWorkPlaneContent(
         DestinationRow(stateHolder, controlsEnabled)
         if (state is DownloadUiState.Ready) DownloadAuthorizationRow(stateHolder)
         Spacer(Modifier.weight(1f))
-        StateActionRegion(stateHolder, state)
+        StateActionRegion(stateHolder, state, animationsEnabled)
     }
 }
 
@@ -332,11 +346,12 @@ private fun DestinationRow(
 private fun StateActionRegion(
     stateHolder: DownloadStateHolder,
     state: DownloadUiState,
+    animationsEnabled: Boolean,
 ) {
     when (state) {
         is DownloadUiState.Ready -> ReadyActionRow(stateHolder)
         is DownloadUiState.Downloading -> DownloadingActionRegion(stateHolder, state)
-        is DownloadUiState.Completed -> CompletedActionRegion(stateHolder)
+        is DownloadUiState.Completed -> CompletedActionRegion(stateHolder, animationsEnabled)
         is DownloadUiState.Error -> ErrorActionRegion(stateHolder, state.kind)
         else -> Unit
     }
@@ -408,7 +423,12 @@ private fun DownloadingActionRegion(
 }
 
 @Composable
-private fun CompletedActionRegion(stateHolder: DownloadStateHolder) {
+private fun CompletedActionRegion(
+    stateHolder: DownloadStateHolder,
+    animationsEnabled: Boolean,
+) {
+    var successVisible by remember { mutableStateOf(!animationsEnabled) }
+    LaunchedEffect(animationsEnabled) { successVisible = true }
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -422,7 +442,18 @@ private fun CompletedActionRegion(stateHolder: DownloadStateHolder) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("✓", style = LocalDownletTypography.current.mediaTitle)
+            AnimatedVisibility(
+                visible = successVisible,
+                enter =
+                    if (animationsEnabled) {
+                        fadeIn(tween(SUCCESS_ICON_ANIMATION_MILLIS)) +
+                            scaleIn(tween(SUCCESS_ICON_ANIMATION_MILLIS), initialScale = SUCCESS_ICON_INITIAL_SCALE)
+                    } else {
+                        EnterTransition.None
+                    },
+            ) {
+                Icon(AllIconsKeys.Status.Success, contentDescription = null, modifier = Modifier.size(16.dp))
+            }
             Text("Saved to ${stateHolder.destination}", style = LocalDownletTypography.current.mediaTitle)
         }
         stateHolder.completedFeedback?.let { StatusText(it) }
@@ -464,8 +495,9 @@ private fun ErrorActionRegion(
             "Check that the YouTube link is available and try again."
         }
     InlineErrorBanner(
-        title = title,
-        icon = null,
+        icon = {
+            Icon(AllIconsKeys.General.NotificationError, contentDescription = null)
+        },
         linkActions = { action("Retry", stateHolder::retryDownload) },
         modifier =
             Modifier
@@ -475,7 +507,10 @@ private fun ErrorActionRegion(
                     liveRegion = LiveRegionMode.Polite
                 },
     ) {
-        Text(body)
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, style = LocalDownletTypography.current.mediaTitle)
+            Text(body)
+        }
     }
 }
 
@@ -651,6 +686,8 @@ internal fun formatMediaDuration(duration: Duration?): String {
 
 private const val MAX_PROGRESS_BEFORE_FINISHING = 99
 private const val QUALITY_COLUMN_WEIGHT = 1.35f
+private const val SUCCESS_ICON_ANIMATION_MILLIS = 160
+private const val SUCCESS_ICON_INITIAL_SCALE = 0.92f
 
 private fun List<String>.toReadableList(): String =
     when (size) {

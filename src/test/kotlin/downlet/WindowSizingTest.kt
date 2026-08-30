@@ -40,25 +40,25 @@ class WindowSizingTest {
         val workArea = WindowBounds(x = 0, y = 0, width = 1000, height = 800)
 
         assertEquals(
-            WindowBounds(x = 100, y = 100, width = 720, height = 420),
+            WindowBounds(x = 100, y = 100, width = 760, height = 480),
             fitWindowBounds(
-                current = WindowBounds(x = 100, y = 100, width = 400, height = 168),
+                current = WindowBounds(x = 100, y = 100, width = 400, height = 188),
                 workArea = workArea,
-                targetSize = IntSize(720, 420),
+                targetSize = IntSize(760, 480),
             ),
         )
         assertEquals(
-            WindowBounds(x = 280, y = 380, width = 720, height = 420),
+            WindowBounds(x = 240, y = 320, width = 760, height = 480),
             fitWindowBounds(
-                current = WindowBounds(x = 500, y = 700, width = 400, height = 168),
+                current = WindowBounds(x = 500, y = 700, width = 400, height = 188),
                 workArea = workArea,
-                targetSize = IntSize(720, 420),
+                targetSize = IntSize(760, 480),
             ),
         )
         assertEquals(
             WindowBounds(x = 0, y = 0, width = 1000, height = 800),
             fitWindowBounds(
-                current = WindowBounds(x = 0, y = 0, width = 400, height = 168),
+                current = WindowBounds(x = 0, y = 0, width = 400, height = 188),
                 workArea = workArea,
                 targetSize = IntSize(1200, 900),
             ),
@@ -67,10 +67,10 @@ class WindowSizingTest {
 
     @Test
     fun `logical tier dimensions scale to native device pixels`() {
-        val size = DpSize(720.dp, 420.dp)
+        val size = DpSize(760.dp, 480.dp)
 
-        assertEquals(IntSize(720, 420), size.toDevicePixels(density = 1f))
-        assertEquals(IntSize(900, 525), size.toDevicePixels(density = 1.25f))
-        assertEquals(IntSize(1080, 630), size.toDevicePixels(density = 1.5f))
+        assertEquals(IntSize(760, 480), size.toDevicePixels(density = 1f))
+        assertEquals(IntSize(950, 600), size.toDevicePixels(density = 1.25f))
+        assertEquals(IntSize(1140, 720), size.toDevicePixels(density = 1.5f))
     }
 }
