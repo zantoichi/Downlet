@@ -7,18 +7,26 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import downlet.generated.resources.Res
 import downlet.generated.resources.app_icon
+import downlet.generated.resources.mona_sans_regular
+import downlet.generated.resources.mona_sans_semibold
+import org.jetbrains.compose.resources.Font
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.foundation.theme.LocalTextStyle
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.theme.darkThemeDefinition
 import org.jetbrains.jewel.intui.standalone.theme.default
@@ -53,6 +61,7 @@ fun main() =
     }
 
 @Composable
+@Suppress("LongMethod")
 internal fun ProductWindow(
     stateHolder: DownloadStateHolder,
     theme: DownletTheme,
@@ -91,33 +100,48 @@ internal fun ProductWindow(
                 }
             },
     ) {
-        val appIcon = painterResource(Res.drawable.app_icon)
-        DecoratedWindow(
-            onCloseRequest = onCloseRequest,
-            state = windowState,
-            title = PRODUCT_WINDOW_TITLE,
-            icon = appIcon,
-            resizable = false,
+        val downletFontFamily =
+            FontFamily(
+                Font(Res.font.mona_sans_regular, FontWeight.Normal),
+                Font(Res.font.mona_sans_semibold, FontWeight.SemiBold),
+            )
+        CompositionLocalProvider(
+            LocalTextStyle provides
+                JewelTheme.defaultTextStyle.copy(
+                    fontFamily = downletFontFamily,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                ),
         ) {
-            ManageProductWindowSizing(
-                window = window,
-                windowState = windowState,
-                tier = stateHolder.state.windowPresentationTier,
-                animationsEnabled = animationsEnabled,
-            )
+            val appIcon = painterResource(Res.drawable.app_icon)
+            DecoratedWindow(
+                onCloseRequest = onCloseRequest,
+                state = windowState,
+                title = PRODUCT_WINDOW_TITLE,
+                icon = appIcon,
+                resizable = false,
+            ) {
+                ManageProductWindowSizing(
+                    window = window,
+                    windowState = windowState,
+                    tier = stateHolder.state.windowPresentationTier,
+                    animationsEnabled = animationsEnabled,
+                )
 
-            TitleBar {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(appIcon, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(PRODUCT_WINDOW_TITLE)
+                TitleBar {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(appIcon, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(PRODUCT_WINDOW_TITLE, fontWeight = FontWeight.SemiBold)
+                    }
                 }
-            }
 
-            ProductSurface(
-                stateHolder = stateHolder,
-                animationsEnabled = animationsEnabled,
-            )
+                ProductSurface(
+                    stateHolder = stateHolder,
+                    animationsEnabled = animationsEnabled,
+                )
+            }
         }
     }
 }

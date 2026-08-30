@@ -467,7 +467,7 @@ private fun FormRow(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, modifier = Modifier.width(96.dp))
+        Text(text = label, modifier = Modifier.width(96.dp), fontWeight = FontWeight.SemiBold)
         content()
     }
 }
@@ -537,7 +537,6 @@ private fun MediaIdentity(
                 Text(
                     text = "Preview unavailable",
                     modifier = Modifier.padding(horizontal = 4.dp),
-                    style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.Medium),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,

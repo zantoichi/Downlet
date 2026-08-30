@@ -317,7 +317,6 @@ private fun ColumnScope.ProductBody(
                                 contentDescription =
                                     "Status: Paste or type a YouTube link. Downlet checks it automatically."
                             },
-                        style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.Medium),
                     )
                 }
 
