@@ -4,7 +4,7 @@
 
 **The Quiet Transfer Desk:** a compact Windows utility opened for one short task. The interface combines JetBrains New UI precision with familiar Windows behavior while avoiding IDE chrome.
 
-Normal launch follows the current Windows light or dark preference, with light as the fallback. The product uses one stable column, compact desktop rhythm, progressive disclosure, and one low-chroma work plane after media resolves.
+Normal launch follows the host system's light or dark preference, with light as the fallback. A compact title-bar toggle switches themes without leaving the task. The product uses one stable column, compact desktop rhythm, progressive disclosure, and one low-chroma work plane after media resolves.
 
 ## Layout
 
@@ -13,12 +13,12 @@ Normal launch follows the current Windows light or dark preference, with light a
 - Setup, Resolving, Ready, Downloading, Completed, and Error use Expanded `760 × 480`.
 - Keep the URL row anchored while automatic sizing changes height only.
 - Use one inset tonal work plane for resolved media and later states. No nested cards or shadows.
-- Stack the YouTube label above its field. In Ready, keep media identity full-width, place Download as beside Format & quality, then show Save to and Permission full-width with feedback and actions at the bottom.
+- Stack the YouTube label above its field. In Ready, keep media identity full-width, place Download as beside Format & quality, then keep the Save to icon, label, location, and Change action on one line. Permission stays full-width with feedback and actions at the bottom.
 
 ## Visual System
 
 - Use Jewel `IntUiTheme`, native controls, focus behavior, metrics, and semantic colors as the source of truth.
-- Use the official Mona Sans variable font. Body and controls are `14/18sp` Regular; legal prose is `14/20sp`; form labels and metadata are `13/16sp`; media titles are `15/19sp` SemiBold; section headings are `16/20sp` SemiBold.
+- Use the official Mona Sans variable font. Body and controls are `14/18sp` Regular; legal prose is `14/20sp`; form labels and metadata are `13/16sp`; media titles are `16/20sp` SemiBold; section headings are `17/21sp` SemiBold.
 - Use width `108` for the title-bar brand, `102` for headings and media titles, `100` for controls, and `94` for metadata. Match the optical-size axis to each role's point size.
 - Enable `ss03`, `ss05`, and `ss06` globally. Use tabular figures and `ss08` for durations and progress data, and disable ligatures only for URLs and filesystem paths.
 - Use accent and semantic colors only for actions, focus, selection, progress, success, warning, and error.

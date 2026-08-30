@@ -70,7 +70,7 @@ class DownloadRuntimeTest {
         assertEquals(
             listOf(
                 "Original audio — WebM · 130 kbps",
-                "MP3 — Best quality",
+                "MP3 — Best quality · ~245 kbps VBR",
                 "MP3 — 160 kbps",
                 "MP3 — 128 kbps",
             ),

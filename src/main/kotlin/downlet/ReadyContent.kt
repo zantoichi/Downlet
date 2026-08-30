@@ -217,7 +217,7 @@ internal fun DownloadWorkPlaneContent(
     }
     val item = state.itemOrNull ?: return
     val controlsEnabled = state is DownloadUiState.Ready
-    val controlGap = 8.dp
+    val controlGap = 10.dp
     val thumbnailWidth = 96.dp
 
     Column(
@@ -326,28 +326,30 @@ private fun DestinationRow(
     enabled: Boolean,
 ) {
     val destination = stateHolder.destination?.toString().orEmpty()
-    LabeledSection(
-        icon = AllIconsKeys.Nodes.Folder,
-        label = "Save to",
+    Row(
         modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier =
+                Modifier.semantics(mergeDescendants = true) {
+                    contentDescription = "Save to label"
+                },
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = destination,
-                style = LocalDownletTypography.current.exactMetadata,
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .semantics { contentDescription = "Save to $destination" },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.width(8.dp))
-            Link(text = "Change…", onClick = stateHolder::changeDestination, enabled = enabled)
+            Icon(AllIconsKeys.Nodes.Folder, contentDescription = null, modifier = Modifier.size(14.dp))
+            Text("Save to", style = LocalDownletTypography.current.formLabel)
         }
+        Text(
+            text = destination,
+            style = LocalDownletTypography.current.exactMetadata,
+            modifier = Modifier.weight(1f).semantics { contentDescription = "Save to $destination" },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Link(text = "Change…", onClick = stateHolder::changeDestination, enabled = enabled)
     }
 }
 
@@ -370,14 +372,17 @@ private fun StateActionRegion(
 private fun ReadyActionRow(stateHolder: DownloadStateHolder) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(modifier = Modifier.weight(1f).height(36.dp)) {
+        Box(
+            modifier = Modifier.weight(1f).height(36.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
             stateHolder.readyStatus?.let { feedback ->
                 StatusText(feedback)
             }
         }
-        Spacer(Modifier.width(8.dp))
         DefaultButton(
             onClick = stateHolder::download,
             enabled = stateHolder.downloadEnabled,

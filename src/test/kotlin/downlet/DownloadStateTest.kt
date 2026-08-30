@@ -468,7 +468,7 @@ class DownloadStateTest {
         assertEquals("Original audio — WebM · 130 kbps", holder.selectedQualityLabel)
 
         holder.selectQuality(1)
-        assertEquals("MP3 — Best quality", holder.selectedQualityLabel)
+        assertEquals("MP3 — Best quality · ~245 kbps VBR", holder.selectedQualityLabel)
 
         holder.selectMode(DownloadMode.Video)
         assertEquals("Best available — 2160p", holder.selectedQualityLabel)

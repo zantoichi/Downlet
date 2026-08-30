@@ -1,5 +1,6 @@
 package downlet
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Row
@@ -8,8 +9,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -31,6 +35,8 @@ import org.jetbrains.jewel.intui.window.styling.light
 import org.jetbrains.jewel.intui.window.styling.lightWithLightHeader
 import org.jetbrains.jewel.ui.ComponentStyling
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.ToggleableIconActionButton
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
 import org.jetbrains.jewel.window.styling.DecoratedWindowStyle
@@ -42,23 +48,26 @@ fun main() =
     application {
         val scope = rememberCoroutineScope()
         val stateHolder = remember(scope) { DownloadStateHolder(scope, runtime = YtDlpDownloadRuntime()) }
-        val detectedDarkTheme = isSystemInDarkTheme()
-        val startupTheme = remember { if (detectedDarkTheme) DownletTheme.Dark else DownletTheme.Light }
+        val systemTheme = if (isSystemInDarkTheme()) DownletTheme.Dark else DownletTheme.Light
+        var theme by remember { mutableStateOf(systemTheme) }
         val animationsEnabled = remember { windowsAnimationsEnabled() }
 
         ProductWindow(
             stateHolder = stateHolder,
-            theme = startupTheme,
+            theme = theme,
+            onThemeChange = { theme = it },
             onCloseRequest = ::exitApplication,
             animationsEnabled = animationsEnabled,
         )
     }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 @Suppress("LongMethod")
 internal fun ProductWindow(
     stateHolder: DownloadStateHolder,
     theme: DownletTheme,
+    onThemeChange: (DownletTheme) -> Unit,
     onCloseRequest: () -> Unit,
     initialPosition: WindowPosition = WindowPosition.PlatformDefault,
     animationsEnabled: Boolean = true,
@@ -115,10 +124,28 @@ internal fun ProductWindow(
                 )
 
                 TitleBar {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    val darkMode = theme == DownletTheme.Dark
+                    val themeAction = if (darkMode) "Use light theme" else "Use dark theme"
+                    Row(
+                        modifier = Modifier.align(Alignment.Start),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Image(appIcon, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(PRODUCT_WINDOW_TITLE, style = typography.titleBar)
+                    }
+                    ToggleableIconActionButton(
+                        key = AllIconsKeys.MeetNewUi.DarkTheme,
+                        contentDescription = themeAction,
+                        value = darkMode,
+                        onValueChange = { enabled ->
+                            onThemeChange(if (enabled) DownletTheme.Dark else DownletTheme.Light)
+                        },
+                        modifier = Modifier.size(28.dp),
+                        iconModifier = Modifier.size(16.dp),
+                        tooltipModifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text(themeAction)
                     }
                 }
 

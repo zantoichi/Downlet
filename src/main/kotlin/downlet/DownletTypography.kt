@@ -33,8 +33,8 @@ internal data class DownletTypeRole(
 
 internal object DownletTypeRoles {
     val titleBar = DownletTypeRole(14.sp, 18.sp, FontWeight.SemiBold, 108f, 14.sp, (-0.1).sp)
-    val sectionHeading = DownletTypeRole(16.sp, 20.sp, FontWeight.SemiBold, 102f, 16.sp, (-0.1).sp)
-    val mediaTitle = DownletTypeRole(15.sp, 19.sp, FontWeight.SemiBold, 102f, 15.sp)
+    val sectionHeading = DownletTypeRole(17.sp, 21.sp, FontWeight.SemiBold, 102f, 17.sp, (-0.1).sp)
+    val mediaTitle = DownletTypeRole(16.sp, 20.sp, FontWeight.SemiBold, 102f, 16.sp)
     val body = DownletTypeRole(14.sp, 18.sp, FontWeight.Normal, 100f, 14.sp)
     val legal = DownletTypeRole(14.sp, 20.sp, FontWeight.Normal, 100f, 14.sp)
     val formLabel = DownletTypeRole(13.sp, 16.sp, FontWeight.SemiBold, 100f, 13.sp)

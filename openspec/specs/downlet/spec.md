@@ -22,7 +22,7 @@ Downlet SHALL present one primary Windows desktop window and keep the user's URL
 
 ### Requirement: URL input starts preview directly
 
-Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A valid pasted link SHALL begin Previewing immediately, and a valid manually typed link SHALL begin it after a short idle delay. Previewing SHALL request only lightweight YouTube identity metadata and a bounded thumbnail, SHALL download no media, and SHALL not require yt-dlp. Invalid text SHALL remain editable with concise inline validation. No separate Paste or Analyze action SHALL be required.
+Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A valid pasted link SHALL begin Previewing immediately, and a valid manually typed link SHALL begin it after a short idle delay. Previewing SHALL request only lightweight YouTube identity metadata and a bounded thumbnail, SHALL download no media, and SHALL not require yt-dlp. Invalid text SHALL remain editable with concise inline validation that is visually and semantically distinct without relying on color alone. No separate Paste or Analyze action SHALL be required.
 
 #### Scenario: User enters a valid link
 
@@ -46,7 +46,7 @@ Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A 
 
 ### Requirement: Ready exposes only useful choices
 
-Ready SHALL identify the resolved media with a thumbnail or stable missing-preview fallback, title, channel, duration, and provider. It SHALL expose visibly labelled sections for Video or Audio, an understandable format and quality choice, the current destination with a Change action, a concise per-download authorization confirmation, a Read full terms action, and one Download action. Media identity, Save to, and Permission SHALL remain full-width, while Download as and Format & quality SHALL share one row. Download SHALL remain disabled until the user selects that confirmation. It SHALL NOT expose format IDs, codecs, extractor details, raw logs, or advanced command-line options.
+Ready SHALL identify the resolved media with a thumbnail or stable missing-preview fallback, title, channel, duration, and provider. It SHALL expose visibly labelled sections for Video or Audio, an understandable format and quality choice, the current destination with a Change action, a concise per-download authorization confirmation, a Read full terms action, and one Download action. Media identity, Save to, and Permission SHALL remain full-width, while Download as and Format & quality SHALL share one row. The Save to icon, label, path, and Change action SHALL share one line. Download SHALL remain disabled until the user selects that confirmation. It SHALL NOT expose format IDs, codecs, extractor details, raw logs, or advanced command-line options.
 
 #### Scenario: Media resolves
 
@@ -56,7 +56,7 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 #### Scenario: User chooses audio output
 
 - **WHEN** the user selects Audio
-- **THEN** Original audio without conversion is selected by default and shows its source file format and average bitrate, while MP3 remains available at best, 160 kbps, and 128 kbps quality
+- **THEN** Original audio without conversion is selected by default and shows its source file format and average bitrate, while MP3 remains available at best VBR with an approximate bitrate, 160 kbps, and 128 kbps quality
 
 #### Scenario: User changes the destination
 
@@ -188,7 +188,7 @@ The primary window SHALL use a fixed `760` logical-pixel width and two automatic
 
 ### Requirement: Interaction remains accessible and resilient
 
-Downlet SHALL provide logical keyboard order, visible focus, meaningful control and status semantics, understandable progress, and status communication that does not rely on color or motion alone. The visible interface SHALL use Mona Sans Variable at no less than `13sp`, keep controls Regular, and reserve SemiBold for the brand, headings, form labels, media identity, numeric progress, and important result labels. Label and action icons SHALL accompany text and remain decorative to accessibility services. Essential actions SHALL remain visible in light and dark themes, with long content, missing previews, and common Windows scaling through 150 percent.
+Downlet SHALL provide logical keyboard order, visible focus, meaningful control and status semantics, understandable progress, and status communication that does not rely on color or motion alone. On launch, it SHALL follow the host system's light or dark preference with light as the fallback, and it SHALL expose a title-bar control that switches between light and dark without changing the download state. The visible interface SHALL use Mona Sans Variable at no less than `13sp`, keep controls Regular, and reserve SemiBold for the brand, headings, form labels, media identity, numeric progress, and important result labels. Label and action icons SHALL accompany text and remain decorative to accessibility services. Essential actions SHALL remain visible in light and dark themes, with long content, missing previews, and common Windows scaling through 150 percent.
 
 #### Scenario: User operates Downlet by keyboard
 
@@ -199,6 +199,11 @@ Downlet SHALL provide logical keyboard order, visible focus, meaningful control 
 
 - **WHEN** Downlet is shown in light or dark theme at common Windows scaling
 - **THEN** text, focus, status, and essential actions remain legible and reachable
+
+#### Scenario: User switches theme
+
+- **WHEN** the user activates the title-bar theme control
+- **THEN** Downlet switches between light and dark without restarting or changing the current download state
 
 #### Scenario: Motion is disabled
 

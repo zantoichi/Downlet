@@ -44,6 +44,7 @@ internal object DesignReviewApp {
             ProductWindow(
                 stateHolder = stateHolder,
                 theme = productTheme,
+                onThemeChange = { productTheme = it },
                 onCloseRequest = ::exitApplication,
                 initialPosition = WindowPosition(8.dp, 48.dp),
                 animationsEnabled = animationsEnabled,

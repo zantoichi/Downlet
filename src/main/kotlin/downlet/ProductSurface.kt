@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldState
@@ -178,14 +179,28 @@ private fun LinkFieldRow(
             )
             Box(modifier = Modifier.fillMaxWidth().height(20.dp).padding(top = 4.dp)) {
                 stateHolder.validationMessage?.let { message ->
-                    Text(
-                        text = message,
+                    val errorColor = JewelTheme.globalColors.text.error
+                    Row(
                         modifier =
-                            Modifier.semantics {
-                                contentDescription = "Validation: $message"
+                            Modifier.semantics(mergeDescendants = true) {
+                                contentDescription = "Validation error: $message"
                                 liveRegion = LiveRegionMode.Polite
                             },
-                    )
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            AllIconsKeys.General.NotificationError,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = errorColor,
+                        )
+                        Text(
+                            text = message,
+                            color = errorColor,
+                            style = LocalDownletTypography.current.formLabel,
+                        )
+                    }
                 }
             }
         }
@@ -282,7 +297,10 @@ private fun ColumnScope.ProductBody(
                 ).togetherWith(
                     fadeOut(
                         animationSpec =
-                            tween(durationMillis = CONTENT_EXIT_DURATION.inWholeMilliseconds.toInt(), easing = easing),
+                            tween(
+                                durationMillis = CONTENT_EXIT_DURATION.inWholeMilliseconds.toInt(),
+                                easing = easing,
+                            ),
                     ),
                 ).using(sizeTransform = null)
             } else {

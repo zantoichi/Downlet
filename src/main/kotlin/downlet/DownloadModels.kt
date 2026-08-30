@@ -117,7 +117,7 @@ private fun mp3Quality(bitRateKilobitsPerSecond: Int? = null): DownloadQuality =
         label =
             bitRateKilobitsPerSecond
                 ?.let { "MP3 — $it kbps" }
-                ?: "MP3 — Best quality",
+                ?: "MP3 — Best quality · ~245 kbps VBR",
         ytDlpArguments =
             listOf(
                 "--format",
