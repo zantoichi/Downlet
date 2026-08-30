@@ -342,6 +342,7 @@ dependencies {
         exclude(group = "org.jetbrains.intellij.deps.kotlinx", module = "kotlinx-coroutines-core-jvm")
     }
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("net.java.dev.jna:jna-platform:5.19.1")
     runtimeOnly("com.jetbrains.intellij.platform:icons:262.9437.136")
     testImplementation(kotlin("test"))
@@ -372,7 +373,7 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 tasks.withType<JavaExec>().configureEach {
-    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    jvmArgs("--enable-native-access=ALL-UNNAMED", "-Xms64m", "-Xmx256m")
 }
 
 tasks.withType<Test>().configureEach {
@@ -386,7 +387,7 @@ compose.desktop {
             jetBrainsJdk25
                 .get()
                 .metadata.installationPath.asFile.absolutePath
-        jvmArgs += listOf("--enable-native-access=ALL-UNNAMED")
+        jvmArgs += listOf("--enable-native-access=ALL-UNNAMED", "-Xms64m", "-Xmx256m")
         nativeDistributions {
             packageName = "Downlet"
             packageVersion = downletVersion

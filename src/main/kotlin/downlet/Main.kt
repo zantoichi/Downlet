@@ -122,12 +122,13 @@ internal fun ProductWindow(
                     tier = stateHolder.state.windowPresentationTier,
                     animationsEnabled = animationsEnabled,
                 )
+                ManageWindowsTaskbarProgress(window, stateHolder.state)
 
                 TitleBar {
                     val darkMode = theme == DownletTheme.Dark
                     val themeAction = if (darkMode) "Use light theme" else "Use dark theme"
                     Row(
-                        modifier = Modifier.align(Alignment.Start),
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Image(appIcon, contentDescription = null, modifier = Modifier.size(16.dp))

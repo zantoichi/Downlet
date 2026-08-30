@@ -25,6 +25,13 @@ import kotlin.time.Duration.Companion.milliseconds
 @OptIn(ExperimentalCoroutinesApi::class)
 @Suppress("LargeClass")
 class DownloadStateTest {
+    private fun transferProgress(percent: Int): DownloadProgress.Transferring =
+        DownloadProgress.Transferring(
+            downloadedBytes = percent.toLong(),
+            totalBytes = 100,
+            fraction = percent / 100f,
+        )
+
     private fun TestScope.testHolder(runtime: DownloadRuntime = PreviewDownloadRuntime()) =
         UnconfinedTestDispatcher(testScheduler).let { dispatcher ->
             DownloadStateHolder(
@@ -57,7 +64,7 @@ class DownloadStateTest {
 
     private fun DownloadStateHolder.showDownloading(
         item: DownloadItem = DownloadFixtures.normal,
-        progress: DownloadProgress = DownloadProgress.Transferring(43),
+        progress: DownloadProgress = transferProgress(43),
     ) {
         showDesignState(DownloadUiState.Downloading(item, progress))
     }
@@ -83,7 +90,7 @@ class DownloadStateTest {
                 DownloadUiState.Setup(normal, listOf(DownloadTool.YtDlp)),
                 DownloadUiState.Resolving(normal),
                 DownloadUiState.Ready(normal),
-                DownloadUiState.Downloading(normal, DownloadProgress.Transferring(43)),
+                DownloadUiState.Downloading(normal, transferProgress(43)),
                 DownloadUiState.Completed(normal),
                 DownloadUiState.Error(failure),
             ).map(DownloadUiState::label)
@@ -170,10 +177,13 @@ class DownloadStateTest {
     @Test
     fun `invalid progress values are rejected`() {
         assertFailsWith<IllegalArgumentException> {
-            DownloadProgress.Transferring(-1)
+            DownloadProgress.Transferring(downloadedBytes = -1)
         }
         assertFailsWith<IllegalArgumentException> {
-            DownloadProgress.Transferring(101)
+            DownloadProgress.Transferring(downloadedBytes = 101, totalBytes = 100)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            DownloadProgress.Transferring(downloadedBytes = 1, fraction = 1.01f)
         }
     }
 
@@ -446,7 +456,7 @@ class DownloadStateTest {
 
         assertEquals(DownloadMode.Video, holder.selectedMode)
         assertEquals(videoQualityOptions.map(DownloadQuality::label), holder.qualityOptions)
-        assertEquals("Best available — 2160p", holder.selectedQualityLabel)
+        assertEquals("Best · 2160p60 · ~18.4 Mbps", holder.selectedQualityLabel)
         assertEquals(DownloadFixtures.normal.destination, holder.destination)
         assertNull(holder.readyFeedback)
     }
@@ -457,7 +467,7 @@ class DownloadStateTest {
         holder.showReady()
 
         holder.selectQuality(2)
-        assertEquals("1080p", holder.selectedQualityLabel)
+        assertEquals("1080p60 · ~4.8 Mbps", holder.selectedQualityLabel)
 
         holder.selectMode(DownloadMode.Audio)
         assertEquals(DownloadMode.Audio, holder.selectedMode)
@@ -465,13 +475,13 @@ class DownloadStateTest {
             audioQualityOptions(DownloadFixtures.normal.originalAudio).map(DownloadQuality::label),
             holder.qualityOptions,
         )
-        assertEquals("Original audio — WebM · 130 kbps", holder.selectedQualityLabel)
+        assertEquals("Original audio · Opus/WebM · ~130 kbps · no conversion", holder.selectedQualityLabel)
 
         holder.selectQuality(1)
-        assertEquals("MP3 — Best quality · ~245 kbps VBR", holder.selectedQualityLabel)
+        assertEquals("MP3 · High-quality VBR · conversion", holder.selectedQualityLabel)
 
         holder.selectMode(DownloadMode.Video)
-        assertEquals("Best available — 2160p", holder.selectedQualityLabel)
+        assertEquals("Best · 2160p60 · ~18.4 Mbps", holder.selectedQualityLabel)
     }
 
     @Test
@@ -538,12 +548,11 @@ class DownloadStateTest {
             holder.showReady()
             holder.startAuthorizedDownload()
             runCurrent()
-            assertEquals(DownloadUiState.Downloading(DownloadFixtures.normal, DownloadProgress.Zero), holder.state)
+            assertEquals(DownloadUiState.Downloading(DownloadFixtures.normal, DownloadProgress.Preparing), holder.state)
 
             fakeProgressSteps.forEach { expected ->
                 advanceTimeBy(FAKE_PROGRESS_INTERVAL - 1.milliseconds)
-                val actual = (holder.state as DownloadUiState.Downloading).progress as DownloadProgress.Transferring
-                assertTrue(actual.percent < expected.percent)
+                assertTrue(holder.state != DownloadUiState.Downloading(DownloadFixtures.normal, expected))
                 advanceTimeBy(1.milliseconds)
                 runCurrent()
                 assertEquals(DownloadUiState.Downloading(DownloadFixtures.normal, expected), holder.state)
@@ -551,7 +560,10 @@ class DownloadStateTest {
             advanceTimeBy(FAKE_PROGRESS_INTERVAL)
             runCurrent()
             assertEquals(
-                DownloadUiState.Downloading(DownloadFixtures.normal, DownloadProgress.Processing),
+                DownloadUiState.Downloading(
+                    DownloadFixtures.normal,
+                    DownloadProgress.Processing(DownloadProcessingStage.Merging),
+                ),
                 holder.state,
             )
 
@@ -573,7 +585,7 @@ class DownloadStateTest {
                 runCurrent()
             }
             assertEquals(
-                DownloadUiState.Downloading(DownloadFixtures.failure, DownloadProgress.Transferring(43)),
+                DownloadUiState.Downloading(DownloadFixtures.failure, fakeProgressSteps[1]),
                 holder.state,
             )
 
@@ -627,7 +639,7 @@ class DownloadStateTest {
             holder.retryDownload()
             runCurrent()
 
-            assertEquals(DownloadUiState.Downloading(failureItem, DownloadProgress.Zero), holder.state)
+            assertEquals(DownloadUiState.Downloading(failureItem, DownloadProgress.Preparing), holder.state)
             assertEquals(DownloadMode.Audio, holder.selectedMode)
             assertEquals(1, holder.selectedQualityIndex)
             assertEquals(destination, holder.destination)
@@ -638,6 +650,29 @@ class DownloadStateTest {
             runCurrent()
 
             assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
+        }
+
+    @Test
+    fun `storage error changes destination in place and retry uses it`() =
+        runTest {
+            val holder = testHolder()
+            holder.showDesignState(
+                DownloadUiState.Error(
+                    DownloadFixtures.normal,
+                    reason = DownloadFailureReason.Storage,
+                ),
+            )
+
+            holder.changeDestination()
+            val updated = DownloadFixtures.normal.copy(destination = DownloadFixtures.longDestination.destination)
+            assertEquals(
+                DownloadUiState.Error(updated, reason = DownloadFailureReason.Storage),
+                holder.state,
+            )
+
+            holder.retryDownload()
+            runCurrent()
+            assertEquals(DownloadUiState.Downloading(updated, DownloadProgress.Preparing), holder.state)
         }
 
     @Test
@@ -699,7 +734,7 @@ class DownloadStateTest {
     fun `forced downloading bypasses timers and locks choices`() =
         runTest {
             val holder = testHolder()
-            holder.showDownloading(progress = DownloadProgress.Transferring(43))
+            holder.showDownloading(progress = transferProgress(43))
             holder.selectMode(DownloadMode.Audio)
             holder.selectQuality(2)
             holder.changeDestination()
@@ -708,7 +743,7 @@ class DownloadStateTest {
             runCurrent()
 
             assertEquals(
-                DownloadUiState.Downloading(DownloadFixtures.normal, DownloadProgress.Transferring(43)),
+                DownloadUiState.Downloading(DownloadFixtures.normal, transferProgress(43)),
                 holder.state,
             )
             assertEquals(DownloadMode.Video, holder.selectedMode)
@@ -721,15 +756,15 @@ class DownloadStateTest {
         runTest {
             val runtime = CapturingDownloadRuntime()
             val holder = testHolder(runtime)
-            val forced = DownloadUiState.Downloading(DownloadFixtures.normal, DownloadProgress.Transferring(87))
+            val forced = DownloadUiState.Downloading(DownloadFixtures.normal, transferProgress(87))
             try {
                 holder.showReady()
                 holder.startAuthorizedDownload()
                 runCurrent()
                 val submitStaleProgress = runtime.progressCallbacks.single()
 
-                holder.showDownloading(progress = DownloadProgress.Transferring(87))
-                submitStaleProgress(DownloadProgress.Transferring(18))
+                holder.showDownloading(progress = transferProgress(87))
+                submitStaleProgress(transferProgress(18))
                 runCurrent()
 
                 assertEquals(forced, holder.state)
@@ -759,7 +794,7 @@ class DownloadStateTest {
             advanceTimeBy(FAKE_RESOLUTION_DELAY)
             runCurrent()
             assertEquals(DownloadFixtures.normal.destination, holder.destination)
-            assertEquals("Best available — 2160p", holder.selectedQualityLabel)
+            assertEquals("Best · 2160p60 · ~18.4 Mbps", holder.selectedQualityLabel)
 
             holder.showReady(DownloadFixtures.longDestination)
             assertEquals(DownloadFixtures.longDestination.destination, holder.destination)
@@ -774,7 +809,7 @@ class DownloadStateTest {
 
             holder.showReady()
             assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
-            assertEquals("Best available — 2160p", holder.selectedQualityLabel)
+            assertEquals("Best · 2160p60 · ~18.4 Mbps", holder.selectedQualityLabel)
             assertEquals(DownloadFixtures.normal.destination, holder.destination)
         }
 

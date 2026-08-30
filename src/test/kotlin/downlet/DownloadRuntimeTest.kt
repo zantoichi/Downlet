@@ -25,43 +25,25 @@ import kotlin.time.toJavaDuration
 
 class DownloadRuntimeTest {
     @Test
-    fun `yt-dlp metadata output contains typed media fields`() {
-        val metadata =
-            parseMetadata(
-                listOf(
-                    "DOWNLET_TITLE=City after rain",
-                    "DOWNLET_CHANNEL=North Window",
-                    "DOWNLET_UPLOADER=Fallback uploader",
-                    "DOWNLET_DURATION_SECONDS=754.0",
-                    "DOWNLET_AUDIO_FORMAT=webm",
-                    "DOWNLET_AUDIO_BITRATE_KBPS=129.7",
-                ),
-            )
+    fun `yt-dlp JSON resolves exact media formats and display details`() {
+        val metadata = parseResolvedMedia(resolvedMediaOutput())
 
-        assertEquals("City after rain", metadata["TITLE"])
-        assertEquals("North Window", metadata["CHANNEL"])
-        assertEquals("754.0", metadata["DURATION_SECONDS"])
-        assertEquals(OriginalAudio(format = "webm", bitRateKilobitsPerSecond = 130), parseOriginalAudio(metadata))
-    }
-
-    @Test
-    fun `yt-dlp progress output distinguishes transfer and processing phases`() {
+        assertEquals("City after rain", metadata.title)
+        assertEquals("North Window", metadata.channel)
+        assertEquals(754.seconds, metadata.duration)
         assertEquals(
-            DownloadProgress.Transferring(43),
-            parseProgress("DOWNLET_TRANSFER=downloading| 43.2%"),
+            OriginalAudio(container = "webm", codec = "opus", bitRateKilobitsPerSecond = 126),
+            metadata.originalAudio,
         )
         assertEquals(
-            DownloadProgress.Transferring(100),
-            parseProgress("DOWNLET_TRANSFER=downloading|100.0%"),
+            listOf("Best · 1440p60 · ~2.45 Mbps", "1080p25 · ~1.14 Mbps", "480p · ~640 kbps"),
+            metadata.videoQualities.map(DownloadQuality::label),
         )
-        assertEquals(DownloadProgress.Processing, parseProgress("DOWNLET_PROCESSING=started"))
-        assertEquals(DownloadProgress.Processing, parseProgress("DOWNLET_PROCESSING=processing"))
-        assertNull(parseProgress("DOWNLET_TRANSFER=finished|100.0%"))
-        assertNull(parseProgress("DOWNLET_PROCESSING=finished"))
-        assertNull(parseProgress("[download] waiting"))
-        assertEquals("Downloading…", downloadProgressStatus(DownloadProgress.Transferring(1)))
-        assertEquals("Downloading…", downloadProgressStatus(DownloadProgress.Transferring(100)))
-        assertEquals("Processing…", downloadProgressStatus(DownloadProgress.Processing))
+        assertEquals(
+            listOf("--format", "400+251"),
+            metadata.videoQualities.first().ytDlpArguments,
+        )
+        assertEquals("AV1/MP4 + Opus/WebM · ~96.3 MB · HDR10", metadata.videoQualities.first().supportingText)
     }
 
     @Test
@@ -74,20 +56,26 @@ class DownloadRuntimeTest {
     @Test
     fun `quality choices map to one yt-dlp format selection`() {
         assertEquals(
-            listOf("Best available — 2160p", "1440p", "1080p", "720p", "480p"),
+            listOf(
+                "Best · 2160p60 · ~18.4 Mbps",
+                "1440p60 · ~9.2 Mbps",
+                "1080p60 · ~4.8 Mbps",
+                "720p60 · ~2.4 Mbps",
+                "480p · ~1.1 Mbps",
+            ),
             videoQualityOptions.map(DownloadQuality::label),
         )
         assertEquals(
             listOf(
-                "Original audio — WebM · 130 kbps",
-                "MP3 — Best quality · ~245 kbps VBR",
-                "MP3 — 160 kbps",
-                "MP3 — 128 kbps",
+                "Original audio · Opus/WebM · ~130 kbps · no conversion",
+                "MP3 · High-quality VBR · conversion",
+                "MP3 · 160 kbps · conversion",
+                "MP3 · 128 kbps · conversion",
             ),
             audioQualityOptions(DownloadFixtures.normal.originalAudio).map(DownloadQuality::label),
         )
         assertEquals(
-            listOf("--format", "bv*[height<=1080]+ba/b[height<=1080]"),
+            listOf("--format", "399+251"),
             videoQualityOptions[2].ytDlpArguments,
         )
         assertEquals(
@@ -95,9 +83,31 @@ class DownloadRuntimeTest {
             audioQualityOptions(DownloadFixtures.normal.originalAudio)[0].ytDlpArguments,
         )
         assertEquals(
-            listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "160K"),
+            listOf("--format", "ba", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "160K"),
             audioQualityOptions(DownloadFixtures.normal.originalAudio)[2].ytDlpArguments,
         )
+        assertEquals("2", audioQualityOptions(DownloadFixtures.normal.originalAudio)[1].ytDlpArguments.last())
+    }
+
+    @Test
+    fun `session cache is bounded by access order and thumbnail bytes`() {
+        val first = cachedItem("first", byteArrayOf(1, 2))
+        val second = cachedItem("second", byteArrayOf(3, 4))
+        val third = cachedItem("third", byteArrayOf(5, 6))
+        val entryBounded = SessionMediaCache(maximumEntries = 2, maximumThumbnailBytes = 100)
+        entryBounded.putPreview(first)
+        entryBounded.putPreview(second)
+        assertEquals(first, entryBounded.preview(first.source))
+        entryBounded.putPreview(third)
+        assertNull(entryBounded.preview(second.source))
+        assertEquals(2, entryBounded.size())
+
+        val byteBounded = SessionMediaCache(maximumEntries = 16, maximumThumbnailBytes = 3)
+        byteBounded.putPreview(first)
+        byteBounded.putPreview(second)
+        assertNull(byteBounded.preview(first.source))
+        assertEquals(second, byteBounded.preview(second.source))
+        assertNull(SessionMediaCache().preview(second.source))
     }
 
     @Test
@@ -411,6 +421,34 @@ class DownloadRuntimeTest {
             Files.deleteIfExists(file)
         }
     }
+
+    private fun resolvedMediaOutput() =
+        listOf(
+            "DOWNLET_MEDIA_JSON=" +
+                "{\"title\":\"City after rain\",\"channel\":\"North Window\",\"uploader\":\"Fallback\"," +
+                "\"duration\":754.0}",
+            "DOWNLET_FORMATS_JSON=" +
+                "[" +
+                "{\"format_id\":\"251\",\"abr\":126,\"filesize\":1000000,\"vcodec\":\"none\"," +
+                "\"acodec\":\"opus\",\"ext\":\"webm\",\"dynamic_range\":\"SDR\"}," +
+                "{\"format_id\":\"244\",\"height\":480,\"vbr\":640,\"filesize\":20000000," +
+                "\"vcodec\":\"vp9\",\"acodec\":\"none\",\"ext\":\"webm\",\"dynamic_range\":\"SDR\"}," +
+                "{\"format_id\":\"399\",\"height\":1080,\"fps\":25,\"vbr\":1140,\"filesize\":40000000," +
+                "\"vcodec\":\"av01.0.08M.08\",\"acodec\":\"none\",\"ext\":\"mp4\"," +
+                "\"dynamic_range\":\"SDR\"}," +
+                "{\"format_id\":\"400\",\"height\":1440,\"fps\":60,\"vbr\":2450," +
+                "\"filesize_approx\":100000000,\"vcodec\":\"av01.0.12M.08\",\"acodec\":\"none\"," +
+                "\"ext\":\"mp4\",\"dynamic_range\":\"HDR10\"}" +
+                "]",
+        )
+
+    private fun cachedItem(
+        id: String,
+        thumbnail: ByteArray,
+    ) = DownloadFixtures.normal.copy(
+        source = requireNotNull(YouTubeUrl.parse("https://youtu.be/$id")),
+        thumbnail = MediaThumbnail.Remote(ThumbnailData(thumbnail)),
+    )
 
     private fun executable(
         directory: Path,

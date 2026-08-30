@@ -46,7 +46,7 @@ Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A 
 
 ### Requirement: Ready exposes only useful choices
 
-Ready SHALL identify the resolved media with a thumbnail or stable missing-preview fallback, title, channel, duration, and provider. It SHALL expose visibly labelled sections for Video or Audio, an understandable format and quality choice, the current destination with a Change action, a concise per-download authorization confirmation, a Read full terms action, and one Download action. Media identity, Save to, and Permission SHALL remain full-width, while Download as and Format & quality SHALL share one row. The Save to icon, label, path, and Change action SHALL share one line. Download SHALL remain disabled until the user selects that confirmation. It SHALL NOT expose format IDs, codecs, extractor details, raw logs, or advanced command-line options.
+Ready SHALL identify the resolved media with a thumbnail or stable missing-preview fallback, title, channel, duration, and provider. It SHALL expose visibly labelled sections for Video or Audio, an understandable format and quality choice, the current destination with a Change action, a concise per-download authorization confirmation, a Read full terms action, and one Download action. Video choices SHALL show resolution with bitrate and MAY add FPS, friendly codec and container names, estimated size, and HDR when available. Supporting detail SHALL remain concise and SHALL NOT expose format IDs or backend syntax. Media identity, Save to, and Permission SHALL remain full-width, while Download as and Format & quality SHALL share one row. The Save to icon, label, path, and Change action SHALL share one line. Download SHALL remain disabled until the user selects that confirmation. It SHALL NOT expose extractor details, raw logs, or advanced command-line options.
 
 #### Scenario: Media resolves
 
@@ -56,7 +56,8 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 #### Scenario: User chooses audio output
 
 - **WHEN** the user selects Audio
-- **THEN** Original audio without conversion is selected by default and shows its source file format and average bitrate, while MP3 remains available at best VBR with an approximate bitrate, 160 kbps, and 128 kbps quality
+- **THEN** Original audio without conversion is selected by default and shows its source codec, container, and average bitrate, while MP3 remains available at high-quality VBR, 160 kbps, and 128 kbps quality
+- **AND** Downlet explains that MP3 re-encodes the source for compatibility, cannot restore missing detail, and may add quality loss
 
 #### Scenario: User changes the destination
 
@@ -83,7 +84,7 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 
 ### Requirement: Download outcomes remain actionable
 
-Downloading SHALL preserve media context, lock choices that must not change, show determinate percentage progress while media bytes are transferring, show indeterminate Processing after transfer while backend work continues, and expose Cancel as a secondary action. Transfer percentages from zero through 100 SHALL represent transferred bytes only and SHALL NOT encode processing or completion. Completed SHALL show the destination with Open folder and Download another. Error SHALL explain the failure without backend jargon and expose Retry.
+Downloading SHALL preserve media context, lock choices that must not change, and expose Cancel as a secondary action. Each attempt SHALL begin in Preparing. Transfer progress SHALL aggregate downloaded bytes across selected video and audio streams in completion order, use exact totals before estimates, remain indeterminate when no trustworthy total exists, and never move the visible fraction backward when totals change or an unexpected stream appears. It SHALL show downloaded bytes, available total, speed, and approximate ETA without fabricated placeholders. After transfer it SHALL identify Merging, Converting, or other Finalizing work with indeterminate progress. A displayed 100 percent SHALL represent transferred bytes only and SHALL NOT cause completion; only successful process exit and transactional publication SHALL enter Completed. The Windows taskbar SHALL mirror active progress when supported and otherwise remain a no-op. Completed SHALL show the destination with Open folder and Download another. Error SHALL categorize availability, network, storage, processing, tool, and unknown failures without backend jargon and SHALL expose Retry; storage failures SHALL additionally expose Change folder.
 
 #### Scenario: User cancels a download
 
@@ -95,14 +96,31 @@ Downloading SHALL preserve media context, lock choices that must not change, sho
 - **WHEN** progress completes successfully
 - **THEN** Downlet publishes one final media file into the chosen destination, enters Completed, and offers Open folder and Download another
 
+#### Scenario: Transfer total is unavailable
+
+- **WHEN** yt-dlp reports downloaded bytes or speed without a trustworthy aggregate total
+- **THEN** Downlet keeps the rail indeterminate, shows only available telemetry, and does not invent a percentage
+
+#### Scenario: Separate media streams transfer
+
+- **WHEN** video finishes and audio begins reporting bytes from zero
+- **THEN** Downlet adds completed video bytes to current audio bytes and keeps visible progress monotonic
+
 #### Scenario: Download fails
 
 - **WHEN** downloading fails
-- **THEN** Downlet removes files owned by the failed attempt, enters Error, and Retry restarts the download with the previous choices
+- **THEN** Downlet removes files owned by the failed attempt, enters category-specific Error guidance, and Retry restarts the download with the previous choices
+
+#### Scenario: Storage recovery changes destination
+
+- **WHEN** a storage failure is visible and the user activates Change folder
+- **THEN** Downlet remains in Error with the updated destination and Retry uses that destination with the previous mode and quality
 
 ### Requirement: Downloads use yt-dlp
 
-Normal product operation SHALL use a local `yt-dlp` process after Previewing and any required Setup to resolve authoritative YouTube metadata and download the selected Video or Audio format and quality. Each attempt SHALL use an isolated staging directory inside the chosen destination, and Downlet SHALL publish the final media file only after `yt-dlp` exits successfully. It SHALL provide bundled QuickJS-NG to `yt-dlp` for YouTube JavaScript support and FFmpeg for merging and audio processing. Resolving SHALL use `--skip-download`, preserve preview identity while checking available formats, and download no media. Downlet SHALL translate transfer and processing events into its existing product states, SHALL stop and await the active process tree when Cancel is activated, SHALL remove attempt-owned staging files after success, failure, or cancellation, and SHALL keep command output and backend options out of the interface. The deterministic fake runtime MAY remain available only for tests and the Design Review app.
+Normal product operation SHALL use a local `yt-dlp` process after Previewing and any required Setup to resolve authoritative YouTube metadata and download the selected Video or Audio format and quality. Resolution SHALL obtain media identity and available formats in one process call, select explicit stream IDs, and use those IDs for download so displayed details match the selected streams. MP3 downloads SHALL transfer audio-only input and high-quality VBR SHALL use quality level 2. Each attempt SHALL use an isolated staging directory inside the chosen destination, and Downlet SHALL publish the final media file only after `yt-dlp` exits successfully. It SHALL provide bundled QuickJS-NG to `yt-dlp` for YouTube JavaScript support and FFmpeg for merging and audio processing. Resolving SHALL use `--skip-download`, preserve preview identity while checking available formats, and download no media. Downlet SHALL translate transfer and processing events into its existing product states, SHALL stop and await the active process tree when Cancel is activated, SHALL remove attempt-owned staging files after success, failure, or cancellation, and SHALL keep command output and backend options out of the interface. The deterministic fake runtime MAY remain available only for tests and the Design Review app.
+
+Successful preview and resolution results SHALL be cached only for the current application session. The cache SHALL retain at most 16 media entries and 16 MiB of compressed thumbnail data, evict least-recently-used complete entries when either limit is exceeded, and SHALL NOT cache failures, user choices, progress, destinations, or downloaded files.
 
 #### Scenario: A link resolves through yt-dlp
 
@@ -169,7 +187,7 @@ Downlet SHALL be distributed for Windows 10 and 11 x64 as one downloadable `Down
 
 ### Requirement: Window size follows task stage
 
-The primary window SHALL use a fixed `760` logical-pixel width and two automatic height tiers: Compact at `188` logical pixels for Empty and Previewing, and Expanded at `480` logical pixels for Setup, Resolving, Ready, Downloading, Completed, and Error. Manual resize and maximize SHALL be unavailable while ordinary minimize and close remain available. Height changes SHALL keep the URL anchor stable, remain within the active work area, and use brief interruptible motion with an equivalent instant result when motion duration is disabled.
+The primary window SHALL use a fixed `760` logical-pixel width and two automatic height tiers: Compact at `188` logical pixels for Empty and Previewing, and Expanded at `480` logical pixels for Setup, Resolving, Ready, Downloading, Completed, and Error. Manual resize and maximize SHALL be unavailable while ordinary minimize and close remain available. Height changes SHALL keep the URL anchor stable, remain within the active work area, and use brief interruptible motion with an equivalent instant result when motion duration is disabled. The Downlet icon and wordmark SHALL remain centered in the title bar independently of the trailing theme control.
 
 #### Scenario: Resolution reveals useful content
 
@@ -188,7 +206,7 @@ The primary window SHALL use a fixed `760` logical-pixel width and two automatic
 
 ### Requirement: Interaction remains accessible and resilient
 
-Downlet SHALL provide logical keyboard order, visible focus, meaningful control and status semantics, understandable progress, and status communication that does not rely on color or motion alone. On launch, it SHALL follow the host system's light or dark preference with light as the fallback, and it SHALL expose a title-bar control that switches between light and dark without changing the download state. The visible interface SHALL use Mona Sans Variable at no less than `13sp`, keep controls Regular, and reserve SemiBold for the brand, headings, form labels, media identity, numeric progress, and important result labels. Label and action icons SHALL accompany text and remain decorative to accessibility services. Essential actions SHALL remain visible in light and dark themes, with long content, missing previews, and common Windows scaling through 150 percent.
+Downlet SHALL provide logical keyboard order, visible focus, meaningful control and status semantics, understandable progress, and status communication that does not rely on color or motion alone. The progress rail SHALL expose determinate or indeterminate semantics matching its visible state. A separate polite announcement SHALL change only for Preparing, download start, 10-percent milestones through 90 percent, and Finalizing stage changes; it SHALL NOT announce transfer 100 percent. Completed and Error SHALL retain their existing polite announcements. On launch, Downlet SHALL follow the host system's light or dark preference with light as the fallback, and it SHALL expose a title-bar control that switches between light and dark without changing the download state. The visible interface SHALL use Mona Sans Variable at no less than `13sp`, keep controls Regular, and reserve SemiBold for the brand, headings, form labels, media identity, numeric progress, and important result labels. Format supporting text SHALL remain available to accessibility services and wrap to at most two lines. Label and action icons, including the progress leading cap, SHALL remain decorative to accessibility services. Essential actions SHALL remain visible in light and dark themes, with long content, missing previews, and common Windows scaling through 150 percent.
 
 #### Scenario: User operates Downlet by keyboard
 
@@ -208,4 +226,4 @@ Downlet SHALL provide logical keyboard order, visible focus, meaningful control 
 #### Scenario: Motion is disabled
 
 - **WHEN** the effective motion duration is zero
-- **THEN** every state reaches the same visible and semantic result immediately
+- **THEN** every state reaches the same visible and semantic result immediately and indeterminate progress uses a static centered highlight

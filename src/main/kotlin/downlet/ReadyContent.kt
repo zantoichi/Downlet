@@ -34,10 +34,8 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.decodeToImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,7 +49,6 @@ import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.CheckboxRow
 import org.jetbrains.jewel.ui.component.CircularProgressIndicator
 import org.jetbrains.jewel.ui.component.DefaultButton
-import org.jetbrains.jewel.ui.component.HorizontalProgressBar
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.InlineErrorBanner
 import org.jetbrains.jewel.ui.component.Link
@@ -212,7 +209,7 @@ internal fun DownloadWorkPlaneContent(
     animationsEnabled: Boolean,
 ) {
     if (state is DownloadUiState.Error && state.kind == DownloadErrorKind.Resolution) {
-        ErrorActionRegion(stateHolder, state.kind)
+        ErrorActionRegion(stateHolder, state)
         return
     }
     val item = state.itemOrNull ?: return
@@ -317,6 +314,15 @@ private fun QualityRow(
                     .semantics { contentDescription = "$label: ${stateHolder.selectedQualityLabel}" },
             enabled = enabled,
         )
+        stateHolder.selectedQualitySupportingText?.let { supportingText ->
+            Text(
+                text = supportingText,
+                style = LocalDownletTypography.current.metadata,
+                modifier = Modifier.semantics { contentDescription = "Quality details: $supportingText" },
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -361,9 +367,9 @@ private fun StateActionRegion(
 ) {
     when (state) {
         is DownloadUiState.Ready -> ReadyActionRow(stateHolder)
-        is DownloadUiState.Downloading -> DownloadingActionRegion(stateHolder, state)
+        is DownloadUiState.Downloading -> DownloadingActionRegion(stateHolder, state, animationsEnabled)
         is DownloadUiState.Completed -> CompletedActionRegion(stateHolder, animationsEnabled)
-        is DownloadUiState.Error -> ErrorActionRegion(stateHolder, state.kind)
+        is DownloadUiState.Error -> ErrorActionRegion(stateHolder, state)
         else -> Unit
     }
 }
@@ -397,62 +403,44 @@ private fun ReadyActionRow(stateHolder: DownloadStateHolder) {
 private fun DownloadingActionRegion(
     stateHolder: DownloadStateHolder,
     state: DownloadUiState.Downloading,
+    animationsEnabled: Boolean,
 ) {
-    val status = downloadProgressStatus(state.progress)
-    val contentDescription =
-        when (val progress = state.progress) {
-            is DownloadProgress.Transferring -> "Downloading: ${progress.percent}%. $status"
-            DownloadProgress.Processing -> "Processing download."
-        }
+    val presentation = downloadProgressPresentation(state.progress)
+    val announcement = downloadProgressAnnouncement(state.progress)
     Column(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .semantics(mergeDescendants = true) {
-                    this.contentDescription = contentDescription
-                    liveRegion = LiveRegionMode.Polite
-                },
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                if (state.progress is DownloadProgress.Transferring) "Downloading" else "Processing",
-                style = LocalDownletTypography.current.formLabel,
-            )
-            Spacer(Modifier.weight(1f))
-            (state.progress as? DownloadProgress.Transferring)?.let { progress ->
-                Text("${progress.percent}%", style = LocalDownletTypography.current.progressNumber)
-            }
-        }
-        when (val progress = state.progress) {
-            is DownloadProgress.Transferring -> {
-                HorizontalProgressBar(
-                    progress = progress.fraction,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .semantics {
-                                progressBarRangeInfo =
-                                    ProgressBarRangeInfo(
-                                        current = progress.fraction,
-                                        range = 0f..1f,
-                                    )
-                            },
+            announcement?.let { message ->
+                Box(
+                    Modifier
+                        .size(0.dp)
+                        .semantics {
+                            contentDescription = message
+                            liveRegion = LiveRegionMode.Polite
+                        },
                 )
             }
-
-            DownloadProgress.Processing -> {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CircularProgressIndicator()
+            Text(presentation.heading, style = LocalDownletTypography.current.formLabel)
+            Spacer(Modifier.weight(1f))
+            (state.progress as? DownloadProgress.Transferring)?.let { progress ->
+                progress.percent?.let { percent ->
+                    Text("$percent%", style = LocalDownletTypography.current.progressNumber)
                 }
             }
         }
+        QuietProgressRail(
+            fraction = (state.progress as? DownloadProgress.Transferring)?.fraction,
+            animationsEnabled = animationsEnabled,
+        )
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(status, style = LocalDownletTypography.current.numericMetadata)
+            Text(presentation.leftText, style = LocalDownletTypography.current.numericMetadata)
             Spacer(Modifier.weight(1f))
+            presentation.rightText?.let { eta ->
+                Text(eta, style = LocalDownletTypography.current.numericMetadata)
+                Spacer(Modifier.width(12.dp))
+            }
             Link("Cancel", onClick = stateHolder::cancelDownload)
         }
     }
@@ -514,37 +502,31 @@ private fun CompletedActionRegion(
 @Composable
 private fun ErrorActionRegion(
     stateHolder: DownloadStateHolder,
-    kind: DownloadErrorKind,
+    error: DownloadUiState.Error,
 ) {
-    val title =
-        if (kind == DownloadErrorKind.Resolution) {
-            "Couldn't read this YouTube link."
-        } else {
-            "Couldn't download this media."
-        }
-    val body =
-        if (kind == DownloadErrorKind.Resolution) {
-            "Check that the link is available and try again."
-        } else {
-            "Check that the YouTube link is available and try again."
-        }
+    val copy = ProductCopy.downloadFailure(error.kind, error.reason)
     val errorColor = JewelTheme.globalColors.text.error
     InlineErrorBanner(
         icon = {
             Icon(AllIconsKeys.General.NotificationError, contentDescription = null, tint = errorColor)
         },
-        linkActions = { action("Retry", stateHolder::retryDownload) },
+        linkActions = {
+            if (error.reason == DownloadFailureReason.Storage) {
+                action("Change folder", stateHolder::changeDestination)
+            }
+            action("Retry", stateHolder::retryDownload)
+        },
         modifier =
             Modifier
                 .fillMaxWidth()
                 .semantics {
-                    contentDescription = "Error: $title $body"
+                    contentDescription = "Error: ${copy.title} ${copy.guidance}"
                     liveRegion = LiveRegionMode.Polite
                 },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, color = errorColor, style = LocalDownletTypography.current.mediaTitle)
-            Text(body, color = errorColor)
+            Text(copy.title, color = errorColor, style = LocalDownletTypography.current.mediaTitle)
+            Text(copy.guidance, color = errorColor)
         }
     }
 }
@@ -711,25 +693,6 @@ internal fun mediaContentDescription(
         ).joinToString(" · ") +
         "." +
         if (thumbnailAvailable) "" else " Preview unavailable."
-
-@Suppress("MagicNumber")
-internal fun downloadProgressStatus(progress: DownloadProgress): String =
-    when (progress) {
-        DownloadProgress.Processing -> {
-            "Processing…"
-        }
-
-        is DownloadProgress.Transferring -> {
-            when (progress.percent) {
-                0 -> "Starting download…"
-                18 -> "4.8 MB/s · About 18 seconds remaining"
-                43 -> "5.1 MB/s · About 11 seconds remaining"
-                68 -> "4.9 MB/s · About 7 seconds remaining"
-                87 -> "5.0 MB/s · About 3 seconds remaining"
-                else -> "Downloading…"
-            }
-        }
-    }
 
 internal fun formatMediaDuration(duration: Duration?): String {
     if (duration == null) return "Unknown duration"

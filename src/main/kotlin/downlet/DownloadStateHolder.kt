@@ -57,6 +57,9 @@ internal class DownloadStateHolder(
     val selectedQualityLabel: String
         get() = selectedQuality.label
 
+    val selectedQualitySupportingText: String?
+        get() = selectedQuality.supportingText
+
     val destination: Path?
         get() {
             val current = state
@@ -95,7 +98,7 @@ internal class DownloadStateHolder(
     private val availableQualities: List<DownloadQuality>
         get() =
             if (selectedMode == DownloadMode.Video) {
-                videoQualityOptions
+                state.itemOrNull?.videoQualities ?: videoQualityOptions
             } else {
                 audioQualityOptions(state.itemOrNull?.originalAudio)
             }
@@ -196,12 +199,25 @@ internal class DownloadStateHolder(
         readyFeedback = null
     }
 
+    @Suppress("ReturnCount")
     fun changeDestination() {
-        val ready = state as? DownloadUiState.Ready ?: return
-
-        val destination = runtime.chooseDestination(ready.item.destination) ?: return
-        state = ready.copy(item = ready.item.copy(destination = destination))
-        readyFeedback = "Save location changed to $destination."
+        val current = state
+        val item =
+            when (current) {
+                is DownloadUiState.Ready -> current.item
+                is DownloadUiState.Error -> current.item.takeIf { current.reason == DownloadFailureReason.Storage }
+                else -> null
+            } ?: return
+        val destination = runtime.chooseDestination(item.destination) ?: return
+        val updatedItem = item.copy(destination = destination)
+        val updatedState =
+            when (current) {
+                is DownloadUiState.Ready -> current.copy(item = updatedItem)
+                is DownloadUiState.Error -> current.copy(item = updatedItem)
+                else -> null
+            } ?: return
+        state = updatedState
+        if (current is DownloadUiState.Ready) readyFeedback = "Save location changed to $destination."
     }
 
     fun download() {
@@ -308,6 +324,7 @@ internal class DownloadStateHolder(
             }
     }
 
+    @Suppress("TooGenericExceptionCaught")
     private suspend fun resolve(
         requestItem: DownloadItem,
         generation: Long,
@@ -323,14 +340,21 @@ internal class DownloadStateHolder(
             }
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             if (isCurrentResolution(requestItem, generation)) {
                 clearReadySelection()
-                transitionTo(DownloadUiState.Error(requestItem, DownloadErrorKind.Resolution))
+                transitionTo(
+                    DownloadUiState.Error(
+                        requestItem,
+                        DownloadErrorKind.Resolution,
+                        (error as? DownloadRuntimeException)?.reason ?: DownloadFailureReason.Unknown,
+                    ),
+                )
             }
         }
     }
 
+    @Suppress("TooGenericExceptionCaught")
     private fun startDownload(item: DownloadItem) {
         val canStart =
             state == DownloadUiState.Ready(item) ||
@@ -345,7 +369,7 @@ internal class DownloadStateHolder(
         val request = DownloadRequest(item, selectedQuality)
         readyFeedback = null
         completedFeedback = null
-        transitionTo(DownloadUiState.Downloading(item, DownloadProgress.Zero))
+        transitionTo(DownloadUiState.Downloading(item, DownloadProgress.Preparing))
         downloadJob =
             holderScope.launch {
                 try {
@@ -358,10 +382,17 @@ internal class DownloadStateHolder(
                     }
                 } catch (error: CancellationException) {
                     throw error
-                } catch (_: Exception) {
+                } catch (error: Exception) {
                     if (isCurrentDownload(item, generation)) {
                         downloadJob = null
-                        transitionTo(DownloadUiState.Error(item))
+                        transitionTo(
+                            DownloadUiState.Error(
+                                item,
+                                reason =
+                                    (error as? DownloadRuntimeException)?.reason
+                                        ?: DownloadFailureReason.Unknown,
+                            ),
+                        )
                     }
                     return@launch
                 }

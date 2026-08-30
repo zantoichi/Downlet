@@ -26,10 +26,10 @@ internal fun createDownloadAttempt(destination: Path): DownloadAttempt {
         )
     } catch (error: IOException) {
         root?.let { runCatching { deleteRecursively(it) } }
-        throw DownloadRuntimeException(error)
+        throw DownloadRuntimeException(error, DownloadFailureReason.Storage)
     } catch (error: SecurityException) {
         root?.let { runCatching { deleteRecursively(it) } }
-        throw DownloadRuntimeException(error)
+        throw DownloadRuntimeException(error, DownloadFailureReason.Storage)
     }
 }
 
@@ -56,9 +56,9 @@ internal fun publishStagedDownload(
     } catch (error: DownloadRuntimeException) {
         throw error
     } catch (error: IOException) {
-        throw DownloadRuntimeException(error)
+        throw DownloadRuntimeException(error, DownloadFailureReason.Storage)
     } catch (error: SecurityException) {
-        throw DownloadRuntimeException(error)
+        throw DownloadRuntimeException(error, DownloadFailureReason.Storage)
     }
 }
 

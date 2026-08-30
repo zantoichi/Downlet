@@ -28,9 +28,24 @@ import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
+import kotlin.time.Duration.Companion.seconds
 
 private const val CONTROLLER_WINDOW_TITLE = "Design Review Controller"
-private val DESIGN_REVIEW_PROGRESS = DownloadProgress.Transferring(43)
+private const val FAILURE_BUTTONS_PER_ROW = 3
+private val DESIGN_REVIEW_PROGRESS =
+    DownloadProgress.Transferring(
+        downloadedBytes = 59_340_000,
+        totalBytes = 138_000_000,
+        totalIsEstimated = true,
+        speedBytesPerSecond = 5_200_000.0,
+        eta = 15.seconds,
+        fraction = 0.43f,
+    )
+private val DESIGN_REVIEW_UNKNOWN_PROGRESS =
+    DownloadProgress.Transferring(
+        downloadedBytes = 72_400_000,
+        speedBytesPerSecond = 5_200_000.0,
+    )
 
 internal object DesignReviewApp {
     @JvmStatic
@@ -94,7 +109,7 @@ private fun ControllerWindow(
         rememberWindowState(
             position = WindowPosition(800.dp, 48.dp),
             width = 560.dp,
-            height = 600.dp,
+            height = 760.dp,
         )
 
     IntUiTheme(
@@ -168,16 +183,82 @@ private fun ControllerWindow(
                                 )
                             },
                         ) {
-                            Text("Downloading")
+                            Text("Known transfer")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                showState(
+                                    DownloadUiState.Downloading(
+                                        DownloadFixtures.normal,
+                                        DESIGN_REVIEW_UNKNOWN_PROGRESS,
+                                    ),
+                                )
+                            },
+                        ) {
+                            Text("Unknown transfer")
                         }
                         OutlinedButton(onClick = { showState(DownloadUiState.Completed(DownloadFixtures.normal)) }) {
                             Text("Completed")
                         }
-                        OutlinedButton(onClick = { showState(DownloadUiState.Error(DownloadFixtures.failure)) }) {
-                            Text("Error")
-                        }
                         OutlinedButton(onClick = onReset) {
                             Text("Reset")
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                showState(
+                                    DownloadUiState.Downloading(
+                                        DownloadFixtures.normal,
+                                        DownloadProgress.Preparing,
+                                    ),
+                                )
+                            },
+                        ) {
+                            Text("Preparing")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                showState(
+                                    DownloadUiState.Downloading(
+                                        DownloadFixtures.normal,
+                                        DownloadProgress.Processing(DownloadProcessingStage.Merging),
+                                    ),
+                                )
+                            },
+                        ) {
+                            Text("Merging")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                showState(
+                                    DownloadUiState.Downloading(
+                                        DownloadFixtures.normal,
+                                        DownloadProgress.Processing(DownloadProcessingStage.Converting),
+                                    ),
+                                )
+                            },
+                        ) {
+                            Text("Converting")
+                        }
+                    }
+                    Text("Failure guidance")
+                    DownloadFailureReason.entries.chunked(FAILURE_BUTTONS_PER_ROW).forEach { reasons ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            reasons.forEach { reason ->
+                                OutlinedButton(
+                                    onClick = {
+                                        showState(
+                                            DownloadUiState.Error(
+                                                DownloadFixtures.failure,
+                                                reason = reason,
+                                            ),
+                                        )
+                                    },
+                                ) {
+                                    Text(reason.name)
+                                }
+                            }
                         }
                     }
                     Text("Ready fixtures")

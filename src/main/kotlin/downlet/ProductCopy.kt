@@ -5,6 +5,11 @@ internal data class LegalSectionCopy(
     val body: String,
 )
 
+internal data class DownloadFailureCopy(
+    val title: String,
+    val guidance: String,
+)
+
 internal object ProductCopy {
     const val INVALID_LINK_MESSAGE = "Enter a valid YouTube link."
     const val TOOL_SETUP_FAILURE_MESSAGE =
@@ -14,6 +19,62 @@ internal object ProductCopy {
     const val DOWNLOAD_AUTHORIZATION_TEXT = "I own this media or have permission to download it."
     const val OPEN_FOLDER_ACKNOWLEDGEMENT = "Folder opening is unavailable in this design preview."
     const val OPEN_FOLDER_FAILURE_MESSAGE = "Couldn't open the download folder."
+
+    fun downloadFailure(
+        kind: DownloadErrorKind,
+        reason: DownloadFailureReason,
+    ): DownloadFailureCopy =
+        when (reason) {
+            DownloadFailureReason.Availability -> {
+                DownloadFailureCopy(
+                    "This media isn’t available to Downlet.",
+                    "It may be private, restricted, removed, or require sign-in. Check the link or use another " +
+                        "accessible video.",
+                )
+            }
+
+            DownloadFailureReason.Network -> {
+                DownloadFailureCopy(
+                    "The connection was interrupted.",
+                    "Check your connection, wait a moment, and try again.",
+                )
+            }
+
+            DownloadFailureReason.Storage -> {
+                DownloadFailureCopy(
+                    "Downlet couldn’t save this file.",
+                    "Choose a writable folder with enough free space, then try again.",
+                )
+            }
+
+            DownloadFailureReason.Processing -> {
+                DownloadFailureCopy(
+                    "Downlet couldn’t finish this file.",
+                    "Merging or conversion failed. Try the download again.",
+                )
+            }
+
+            DownloadFailureReason.Tool -> {
+                DownloadFailureCopy(
+                    "A required download tool couldn’t run.",
+                    "Restart Downlet and try again.",
+                )
+            }
+
+            DownloadFailureReason.Unknown -> {
+                if (kind == DownloadErrorKind.Resolution) {
+                    DownloadFailureCopy(
+                        "Couldn’t read this YouTube link.",
+                        "Check that the link is available and try again.",
+                    )
+                } else {
+                    DownloadFailureCopy(
+                        "Couldn’t download this media.",
+                        "Try again. If it keeps failing, check the link and save location.",
+                    )
+                }
+            }
+        }
 
     fun toolSetupDescription(
         toolNames: String,

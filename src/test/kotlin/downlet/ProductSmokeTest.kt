@@ -148,7 +148,10 @@ class ProductSmokeTest {
                 onNodeWithContentDescription("Save to label").assertExists()
                 onNodeWithContentDescription("Permission label").assertExists()
                 onNodeWithText("Video").assertExists()
-                onNodeWithContentDescription("Quality: Best available — 2160p").assertExists()
+                onNodeWithContentDescription("Quality: Best · 2160p60 · ~18.4 Mbps").assertExists()
+                onNodeWithContentDescription(
+                    "Quality details: AV1/MP4 + Opus/WebM · ~1.65 GB",
+                ).assertExists()
                 onNodeWithText("Download").assertIsDisplayed().assertIsNotEnabled()
                 onNodeWithContentDescription(
                     mediaContentDescription(DownloadFixtures.normal, thumbnailAvailable = true),
@@ -159,7 +162,11 @@ class ProductSmokeTest {
                 onNodeWithText("Format & quality").assertExists()
                 onNodeWithContentDescription("Format & quality label").assertExists()
                 onNodeWithContentDescription(
-                    "Format & quality: Original audio — WebM · 130 kbps",
+                    "Format & quality: Original audio · Opus/WebM · ~130 kbps · no conversion",
+                ).assertExists()
+                onNodeWithContentDescription(
+                    "Quality details: Fastest option. Keeps the available source audio without re-encoding or adding " +
+                        "quality loss.",
                 ).assertExists()
 
                 onNodeWithText(ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT).performClick()
@@ -180,8 +187,8 @@ class ProductSmokeTest {
                 stateScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL.inWholeMilliseconds)
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
-                onNodeWithContentDescription("Processing download.").assertExists()
-                onNodeWithText("Processing…").assertExists()
+                onNodeWithContentDescription("Finalizing. Merging video and audio.").assertExists()
+                onNodeWithText("Merging video and audio…").assertExists()
                 onNodeWithText("Cancel").assertExists()
 
                 stateScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL.inWholeMilliseconds)
@@ -243,12 +250,13 @@ class ProductSmokeTest {
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
-                onNodeWithText("Couldn't download this media.").assertExists()
+                onNodeWithText("Couldn’t download this media.").assertExists()
                 onNodeWithText("Retry").performClick()
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
-                onNodeWithContentDescription("Downloading: 0%. Starting download…").assertExists()
+                onNodeWithContentDescription("Preparing download.").assertExists()
+                onNodeWithText("Preparing download…").assertExists()
             }
         } finally {
             stateHolder.close()

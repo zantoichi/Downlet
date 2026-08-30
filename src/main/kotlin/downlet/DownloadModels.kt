@@ -29,45 +29,85 @@ internal enum class DownloadErrorKind {
     Download,
 }
 
+internal enum class DownloadFailureReason {
+    Availability,
+    Network,
+    Storage,
+    Processing,
+    Tool,
+    Unknown,
+}
+
+internal enum class DownloadProcessingStage {
+    Merging,
+    Converting,
+    Finalizing,
+}
+
 internal const val MAX_TRANSFER_PERCENT = 100
 
 internal sealed interface DownloadProgress {
+    data object Preparing : DownloadProgress
+
     data class Transferring(
-        val percent: Int,
+        val downloadedBytes: Long,
+        val totalBytes: Long? = null,
+        val totalIsEstimated: Boolean = false,
+        val speedBytesPerSecond: Double? = null,
+        val eta: Duration? = null,
+        val fraction: Float? = null,
     ) : DownloadProgress {
         init {
-            require(percent in 0..MAX_TRANSFER_PERCENT)
+            require(downloadedBytes >= 0)
+            require(totalBytes == null || totalBytes >= downloadedBytes)
+            require(speedBytesPerSecond == null || (speedBytesPerSecond > 0 && speedBytesPerSecond.isFinite()))
+            require(eta == null || (eta >= Duration.ZERO && eta.isFinite()))
+            require(fraction == null || (fraction.isFinite() && fraction in 0f..1f))
         }
 
-        val fraction: Float
-            get() = percent / 100f
+        val percent: Int?
+            get() = fraction?.times(MAX_TRANSFER_PERCENT)?.toInt()?.coerceIn(0, MAX_TRANSFER_PERCENT)
     }
 
-    data object Processing : DownloadProgress
-
-    companion object {
-        val Zero = Transferring(0)
-    }
+    data class Processing(
+        val stage: DownloadProcessingStage,
+    ) : DownloadProgress
 }
 
-internal val fakeProgressSteps = listOf(18, 43, 68, 87).map(DownloadProgress::Transferring)
+internal val fakeProgressSteps =
+    listOf(18, 43, 68, 87).map { percent ->
+        val total = 138_000_000L
+        DownloadProgress.Transferring(
+            downloadedBytes = total * percent / MAX_TRANSFER_PERCENT,
+            totalBytes = total,
+            totalIsEstimated = true,
+            speedBytesPerSecond = 5_200_000.0,
+            eta = ((MAX_TRANSFER_PERCENT - percent) * 2L / 3L).seconds,
+            fraction = percent / MAX_TRANSFER_PERCENT.toFloat(),
+        )
+    }
 
 internal data class DownloadQuality(
     val label: String,
+    val supportingText: String? = null,
     val ytDlpArguments: List<String>,
 )
 
 internal data class OriginalAudio(
-    val format: String,
+    val container: String,
+    val codec: String,
     val bitRateKilobitsPerSecond: Int?,
 ) {
     init {
-        require(format.isNotBlank())
+        require(container.isNotBlank())
+        require(codec.isNotBlank())
         require(bitRateKilobitsPerSecond == null || bitRateKilobitsPerSecond > 0)
     }
 
     val description: String
-        get() = "${format.toAudioFormatLabel()} · ${bitRateKilobitsPerSecond?.let { "$it kbps" } ?: "unknown bitrate"}"
+        get() =
+            "${codec.toCodecLabel()}/${container.toContainerLabel()} · " +
+                (bitRateKilobitsPerSecond?.let { "~$it kbps" } ?: "bitrate unavailable")
 }
 
 internal enum class DownloadTool(
@@ -80,17 +120,41 @@ internal enum class DownloadTool(
 
 internal val videoQualityOptions =
     listOf(
-        videoQuality(maxHeightPixels = 2160, bestAvailable = true),
-        videoQuality(maxHeightPixels = 1440),
-        videoQuality(maxHeightPixels = 1080),
-        videoQuality(maxHeightPixels = 720),
-        videoQuality(maxHeightPixels = 480),
+        DownloadQuality(
+            label = "Best · 2160p60 · ~18.4 Mbps",
+            supportingText = "AV1/MP4 + Opus/WebM · ~1.65 GB",
+            ytDlpArguments = listOf("--format", "401+251"),
+        ),
+        DownloadQuality(
+            label = "1440p60 · ~9.2 Mbps",
+            supportingText = "AV1/MP4 + Opus/WebM · ~828 MB",
+            ytDlpArguments = listOf("--format", "400+251"),
+        ),
+        DownloadQuality(
+            label = "1080p60 · ~4.8 Mbps",
+            supportingText = "AV1/MP4 + Opus/WebM · ~432 MB",
+            ytDlpArguments = listOf("--format", "399+251"),
+        ),
+        DownloadQuality(
+            label = "720p60 · ~2.4 Mbps",
+            supportingText = "AV1/MP4 + Opus/WebM · ~216 MB",
+            ytDlpArguments = listOf("--format", "398+251"),
+        ),
+        DownloadQuality(
+            label = "480p · ~1.1 Mbps",
+            supportingText = "VP9/WebM + Opus/WebM · ~99 MB",
+            ytDlpArguments = listOf("--format", "244+251"),
+        ),
     )
 
 internal fun audioQualityOptions(originalAudio: OriginalAudio?) =
     listOf(
         DownloadQuality(
-            label = "Original audio — ${originalAudio?.description ?: "unknown format · unknown bitrate"}",
+            label =
+                "Original audio · ${originalAudio?.description ?: "format and bitrate unavailable"} · " +
+                    "no conversion",
+            supportingText =
+                "Fastest option. Keeps the available source audio without re-encoding or adding quality loss.",
             ytDlpArguments = listOf("--format", "ba"),
         ),
         mp3Quality(),
@@ -98,7 +162,7 @@ internal fun audioQualityOptions(originalAudio: OriginalAudio?) =
         mp3Quality(bitRateKilobitsPerSecond = 128),
     )
 
-private fun String.toAudioFormatLabel(): String =
+internal fun String.toContainerLabel(): String =
     when (lowercase(Locale.ROOT)) {
         "webm" -> "WebM"
         "m4a" -> "M4A"
@@ -107,30 +171,34 @@ private fun String.toAudioFormatLabel(): String =
         else -> uppercase(Locale.ROOT)
     }
 
-private fun videoQuality(
-    maxHeightPixels: Int,
-    bestAvailable: Boolean = false,
-): DownloadQuality =
-    DownloadQuality(
-        label = if (bestAvailable) "Best available — ${maxHeightPixels}p" else "${maxHeightPixels}p",
-        ytDlpArguments = listOf("--format", "bv*[height<=$maxHeightPixels]+ba/b[height<=$maxHeightPixels]"),
-    )
+internal fun String.toCodecLabel(): String =
+    when (lowercase(Locale.ROOT).substringBefore('.')) {
+        "av01" -> "AV1"
+        "vp9" -> "VP9"
+        "avc1" -> "H.264"
+        "hev1", "hvc1" -> "H.265"
+        "opus" -> "Opus"
+        "mp4a" -> "AAC"
+        else -> uppercase(Locale.ROOT)
+    }
 
 private fun mp3Quality(bitRateKilobitsPerSecond: Int? = null): DownloadQuality =
     DownloadQuality(
         label =
             bitRateKilobitsPerSecond
-                ?.let { "MP3 — $it kbps" }
-                ?: "MP3 — Best quality · ~245 kbps VBR",
+                ?.let { "MP3 · $it kbps · conversion" }
+                ?: "MP3 · High-quality VBR · conversion",
+        supportingText =
+            "MP3 re-encodes for compatibility and may reduce quality. Higher bitrates cannot restore source detail.",
         ytDlpArguments =
             listOf(
                 "--format",
-                "ba/b",
+                "ba",
                 "--extract-audio",
                 "--audio-format",
                 "mp3",
                 "--audio-quality",
-                bitRateKilobitsPerSecond?.let { "${it}K" } ?: "0",
+                bitRateKilobitsPerSecond?.let { "${it}K" } ?: "2",
             ),
     )
 
@@ -227,6 +295,7 @@ internal data class DownloadItem(
     val duration: Duration?,
     val destination: Path,
     val originalAudio: OriginalAudio? = null,
+    val videoQualities: List<DownloadQuality> = videoQualityOptions,
     val thumbnail: MediaThumbnail = MediaThumbnail.BundledPreview,
 ) {
     init {
@@ -244,7 +313,7 @@ internal object DownloadFixtures {
             channel = "North Window",
             duration = 12.minutes + 34.seconds,
             destination = Path.of("Downloads"),
-            originalAudio = OriginalAudio(format = "webm", bitRateKilobitsPerSecond = 130),
+            originalAudio = OriginalAudio(container = "webm", codec = "opus", bitRateKilobitsPerSecond = 130),
         )
 
     val longTitle =
@@ -328,6 +397,7 @@ internal sealed interface DownloadUiState {
     data class Error(
         val item: DownloadItem,
         val kind: DownloadErrorKind = DownloadErrorKind.Download,
+        val reason: DownloadFailureReason = DownloadFailureReason.Unknown,
     ) : DownloadUiState
 }
 

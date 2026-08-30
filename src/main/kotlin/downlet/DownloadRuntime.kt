@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package downlet
 
 import kotlinx.coroutines.CancellationException
@@ -8,6 +10,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.xml.sax.SAXException
 import java.awt.Desktop
 import java.io.ByteArrayInputStream
@@ -24,6 +33,8 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.HexFormat
+import java.util.LinkedHashMap
+import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
 import java.util.concurrent.atomic.AtomicReference
@@ -63,6 +74,53 @@ internal interface DownloadRuntime {
     fun openDestination(destination: Path): String?
 }
 
+internal class SessionMediaCache(
+    private val maximumEntries: Int = SESSION_CACHE_MAX_ENTRIES,
+    private val maximumThumbnailBytes: Int = SESSION_CACHE_MAX_THUMBNAIL_BYTES,
+) {
+    private data class Entry(
+        var preview: DownloadItem? = null,
+        var resolved: DownloadItem? = null,
+    )
+
+    private val entries = LinkedHashMap<YouTubeUrl, Entry>(maximumEntries, 0.75f, true)
+
+    @Synchronized
+    fun preview(source: YouTubeUrl): DownloadItem? = entries[source]?.preview
+
+    @Synchronized
+    fun resolved(source: YouTubeUrl): DownloadItem? = entries[source]?.resolved
+
+    @Synchronized
+    fun putPreview(item: DownloadItem) {
+        entries.getOrPut(item.source, ::Entry).preview = item
+        trim()
+    }
+
+    @Synchronized
+    fun putResolved(item: DownloadItem) {
+        entries.getOrPut(item.source, ::Entry).resolved = item
+        trim()
+    }
+
+    @Synchronized
+    internal fun size(): Int = entries.size
+
+    private fun trim() {
+        while (entries.size > maximumEntries || retainedThumbnailBytes() > maximumThumbnailBytes) {
+            entries.entries.iterator().run {
+                next()
+                remove()
+            }
+        }
+    }
+
+    private fun retainedThumbnailBytes(): Int =
+        entries.values.sumOf { entry ->
+            ((entry.preview?.thumbnail as? MediaThumbnail.Remote)?.data?.bytes?.size).orZero()
+        }
+}
+
 internal class PreviewDownloadRuntime : DownloadRuntime {
     override suspend fun preview(source: YouTubeUrl): DownloadItem = DownloadFixtures.normal.copy(source = source)
 
@@ -83,7 +141,7 @@ internal class PreviewDownloadRuntime : DownloadRuntime {
             onProgress(progress)
         }
         delay(FAKE_PROGRESS_INTERVAL)
-        onProgress(DownloadProgress.Processing)
+        onProgress(DownloadProgress.Processing(DownloadProcessingStage.Merging))
         delay(FAKE_PROGRESS_INTERVAL)
     }
 
@@ -109,6 +167,7 @@ internal class YtDlpDownloadRuntime(
             .build(),
 ) : DownloadRuntime {
     private val currentProcess = AtomicReference<ProcessExecution?>()
+    private val cache = SessionMediaCache()
     private val provisionedYtDlp = toolsDirectory.resolve("yt-dlp").resolve(YT_DLP_VERSION).resolve("yt-dlp.exe")
     private val provisionedQuickJs =
         toolsDirectory.resolve("quickjs-ng").resolve(QUICKJS_VERSION).resolve("qjs.exe")
@@ -152,6 +211,7 @@ internal class YtDlpDownloadRuntime(
     }
 
     override suspend fun preview(source: YouTubeUrl): DownloadItem {
+        cache.preview(source)?.let { return it }
         val metadata = requestPreview(source)
         val thumbnailBytes =
             metadata.thumbnailUri?.let { uri ->
@@ -174,10 +234,11 @@ internal class YtDlpDownloadRuntime(
                     ?.let(::ThumbnailData)
                     ?.let(MediaThumbnail::Remote)
                     ?: MediaThumbnail.Unavailable,
-        )
+        ).also(cache::putPreview)
     }
 
     override suspend fun resolve(source: YouTubeUrl): DownloadItem {
+        cache.resolved(source)?.let { return it }
         ensureQuickJs()
         val output =
             execute(
@@ -186,39 +247,25 @@ internal class YtDlpDownloadRuntime(
                         "--skip-download",
                         "--format",
                         "ba",
-                        "--replace-in-metadata",
-                        "title,channel,uploader",
-                        "[\\r\\n\\t]+",
-                        " ",
                         "--print",
-                        "DOWNLET_TITLE=%(title)s",
+                        "DOWNLET_MEDIA_JSON=%(.{title,channel,uploader,duration})j",
                         "--print",
-                        "DOWNLET_CHANNEL=%(channel|)s",
-                        "--print",
-                        "DOWNLET_UPLOADER=%(uploader|)s",
-                        "--print",
-                        "DOWNLET_DURATION_SECONDS=%(duration|)s",
-                        "--print",
-                        "DOWNLET_AUDIO_FORMAT=%(ext|)s",
-                        "--print",
-                        "DOWNLET_AUDIO_BITRATE_KBPS=%(abr,tbr|)s",
+                        "DOWNLET_FORMATS_JSON=%(formats.:.{format_id,width,height,fps,vbr,tbr,abr,filesize," +
+                            "filesize_approx,vcodec,acodec,ext,dynamic_range})j",
                         source.toString(),
                     ),
             )
-        val metadata = parseMetadata(output)
+        val metadata = parseResolvedMedia(output)
         return DownloadItem(
             source = source,
-            title = metadata.getValue("TITLE"),
-            channel =
-                metadata["CHANNEL"]
-                    .orEmpty()
-                    .ifBlank { metadata["UPLOADER"].orEmpty() }
-                    .ifBlank { "Unknown channel" },
-            duration = metadata["DURATION_SECONDS"]?.toDoubleOrNull()?.seconds,
+            title = metadata.title,
+            channel = metadata.channel,
+            duration = metadata.duration,
             destination = defaultDownloadDirectory(),
-            originalAudio = parseOriginalAudio(metadata),
+            originalAudio = metadata.originalAudio,
+            videoQualities = metadata.videoQualities,
             thumbnail = MediaThumbnail.Unavailable,
-        )
+        ).also(cache::putResolved)
     }
 
     override suspend fun download(
@@ -229,12 +276,16 @@ internal class YtDlpDownloadRuntime(
         val attempt = withContext(Dispatchers.IO) { createDownloadAttempt(request.item.destination) }
         var publishedFile: Path? = null
         try {
+            val tracker = DownloadProgressTracker()
             var lastProgress: DownloadProgress? = null
             execute(downloadArguments(request, attempt)) { line ->
-                parseProgress(line)?.takeIf { it != lastProgress }?.let { progress ->
-                    lastProgress = progress
-                    onProgress(progress)
-                }
+                parseYtDlpProgressEvent(line)
+                    ?.let(tracker::accept)
+                    ?.takeIf { it != lastProgress }
+                    ?.let { progress ->
+                        lastProgress = progress
+                        onProgress(progress)
+                    }
             }
             currentCoroutineContext().ensureActive()
             publishedFile =
@@ -298,10 +349,12 @@ internal class YtDlpDownloadRuntime(
                             maxBytes.toLong(),
                         ),
                     ).awaitCancellable()
-            if (response.statusCode() !in HTTP_SUCCESS_MIN..HTTP_SUCCESS_MAX) failRuntime()
+            if (response.statusCode() !in HTTP_SUCCESS_MIN..HTTP_SUCCESS_MAX) {
+                failRuntime(reason = failureReasonForHttpStatus(response.statusCode()))
+            }
             return response.body()
         } catch (error: IOException) {
-            failRuntime(error)
+            failRuntime(error, DownloadFailureReason.Network)
         }
     }
 
@@ -332,12 +385,22 @@ internal class YtDlpDownloadRuntime(
     ): List<String> =
         commonArguments() +
             listOf(
+                "--no-simulate",
                 "--newline",
                 "--progress",
+                "--output-na-placeholder",
+                "NA",
+                "--progress-delta",
+                "0.25",
+                "--print",
+                "before_dl:DOWNLET_PLAN=%(filesize)s|%(filesize_approx)s|" +
+                    "%(requested_formats.0.filesize)s|%(requested_formats.0.filesize_approx)s|" +
+                    "%(requested_formats.1.filesize)s|%(requested_formats.1.filesize_approx)s",
                 "--progress-template",
-                "download:DOWNLET_TRANSFER=%(progress.status)s|%(progress._percent_str)s",
+                "download:DOWNLET_TRANSFER=%(progress.status)s|%(progress.downloaded_bytes)s|" +
+                    "%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s",
                 "--progress-template",
-                "postprocess:DOWNLET_PROCESSING=%(progress.status)s",
+                "postprocess:DOWNLET_PROCESSING=%(progress.status)s|%(progress.postprocessor)s",
                 "--paths",
                 "home:${attempt.output}",
                 "--paths",
@@ -360,14 +423,16 @@ internal class YtDlpDownloadRuntime(
         onLine: suspend (String) -> Unit = {},
     ): List<String> =
         withContext(Dispatchers.IO) {
-            val executable = ytDlpExecutable() ?: throw DownloadRuntimeException()
+            val executable =
+                ytDlpExecutable()
+                    ?: throw DownloadRuntimeException(reason = DownloadFailureReason.Tool)
             val process =
                 try {
                     ProcessBuilder(listOf(executable) + arguments)
                         .redirectErrorStream(true)
                         .start()
-                } catch (_: IOException) {
-                    throw DownloadRuntimeException()
+                } catch (error: IOException) {
+                    throw DownloadRuntimeException(error, DownloadFailureReason.Tool)
                 }
             val execution = ProcessExecution(process)
             currentProcess.set(execution)
@@ -381,7 +446,13 @@ internal class YtDlpDownloadRuntime(
                         onLine(line)
                     }
                 }
-                if (process.waitFor() != 0) throw DownloadRuntimeException()
+                if (process.waitFor() != 0) {
+                    val diagnostics = output.toList()
+                    throw DownloadRuntimeException(
+                        reason = classifyDownloadFailure(diagnostics),
+                        diagnostics = diagnostics,
+                    )
+                }
                 output.toList()
             } finally {
                 currentProcess.compareAndSet(execution, null)
@@ -492,39 +563,197 @@ internal class YtDlpDownloadRuntime(
 
 internal class DownloadRuntimeException(
     cause: Throwable? = null,
-) : RuntimeException(cause)
-
-private fun failRuntime(cause: Throwable? = null): Nothing = throw DownloadRuntimeException(cause)
-
-internal fun parseMetadata(output: List<String>): Map<String, String> {
-    val metadata =
-        output
-            .mapNotNull { line ->
-                METADATA_PREFIXES.firstNotNullOfOrNull { prefix ->
-                    line
-                        .removePrefix(prefix)
-                        .takeIf { it != line }
-                        ?.let { prefix.removeSurrounding("DOWNLET_", "=") to it }
-                }
-            }.toMap()
-    require(metadata["TITLE"].orEmpty().isNotBlank())
-    return metadata
+    val reason: DownloadFailureReason = DownloadFailureReason.Unknown,
+    diagnostics: List<String> = emptyList(),
+) : RuntimeException(cause) {
+    val diagnostics: List<String> = diagnostics.takeLast(MAX_DIAGNOSTIC_LINES)
 }
 
-internal fun parseOriginalAudio(metadata: Map<String, String>): OriginalAudio? =
-    metadata["AUDIO_FORMAT"]
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-        ?.let { format ->
+private fun failRuntime(
+    cause: Throwable? = null,
+    reason: DownloadFailureReason = DownloadFailureReason.Unknown,
+): Nothing = throw DownloadRuntimeException(cause, reason)
+
+internal data class ResolvedMedia(
+    val title: String,
+    val channel: String,
+    val duration: Duration?,
+    val originalAudio: OriginalAudio,
+    val videoQualities: List<DownloadQuality>,
+)
+
+private data class MediaFormat(
+    val id: String,
+    val height: Int?,
+    val fps: Double?,
+    val videoBitrate: Double?,
+    val totalBitrate: Double?,
+    val audioBitrate: Double?,
+    val fileSize: Long?,
+    val approximateFileSize: Long?,
+    val videoCodec: String?,
+    val audioCodec: String?,
+    val container: String,
+    val dynamicRange: String?,
+) {
+    val hasVideo: Boolean get() = videoCodec.isMediaCodec()
+    val hasAudio: Boolean get() = audioCodec.isMediaCodec()
+    val isAudioOnly: Boolean get() = !hasVideo && hasAudio
+    val bestFileSize: Long? get() = fileSize ?: approximateFileSize
+    val fileSizeIsApproximate: Boolean get() = fileSize == null && approximateFileSize != null
+}
+
+internal fun parseResolvedMedia(output: List<String>): ResolvedMedia {
+    val media = output.jsonAfter(MEDIA_JSON_PREFIX).jsonObject
+    val formats =
+        output
+            .jsonAfter(FORMATS_JSON_PREFIX)
+            .jsonArray
+            .mapNotNull { element -> (element as? JsonObject)?.toMediaFormat() }
+    val audio = formats.lastOrNull(MediaFormat::isAudioOnly) ?: error("No audio-only format")
+    val qualities = selectVideoQualities(formats, audio)
+    require(qualities.isNotEmpty())
+    val title = media.text("title").orEmpty()
+    require(title.isNotBlank())
+    return ResolvedMedia(
+        title = title,
+        channel = media.text("channel") ?: media.text("uploader") ?: "Unknown channel",
+        duration = media.number("duration")?.seconds,
+        originalAudio =
             OriginalAudio(
-                format = format,
+                container = audio.container,
+                codec = requireNotNull(audio.audioCodec),
                 bitRateKilobitsPerSecond =
-                    metadata["AUDIO_BITRATE_KBPS"]
-                        ?.toDoubleOrNull()
+                    (audio.audioBitrate ?: audio.totalBitrate)
                         ?.roundToInt()
                         ?.takeIf { it > 0 },
-            )
-        }
+            ),
+        videoQualities = qualities,
+    )
+}
+
+private fun selectVideoQualities(
+    formats: List<MediaFormat>,
+    audio: MediaFormat,
+): List<DownloadQuality> {
+    val selectedIds = mutableSetOf<String>()
+    return VIDEO_HEIGHT_CEILINGS.mapNotNull { ceiling ->
+        val video =
+            formats.lastOrNull {
+                it.hasVideo && it.height != null && it.height <= ceiling
+            } ?: return@mapNotNull null
+        if (!selectedIds.add(video.id)) return@mapNotNull null
+        video.toDownloadQuality(audio, bestAvailable = selectedIds.size == 1)
+    }
+}
+
+private fun MediaFormat.toDownloadQuality(
+    audio: MediaFormat,
+    bestAvailable: Boolean,
+): DownloadQuality {
+    val selectedAudio = audio.takeUnless { hasAudio }
+    val bitrate = if (hasAudio) totalBitrate else videoBitrate
+    val bitrateLabel = bitrate?.let(::formatBitrate) ?: "bitrate unavailable"
+    val resolution = "${requireNotNull(height)}p${fps?.toFpsLabel().orEmpty()}"
+    val primary =
+        listOfNotNull(
+            "Best".takeIf { bestAvailable },
+            resolution,
+            bitrateLabel + " total".takeIf { hasAudio }.orEmpty(),
+        )
+    val streamDetails =
+        buildList {
+            add("${requireNotNull(videoCodec).toCodecLabel()}/${container.toContainerLabel()}")
+            selectedAudio?.let {
+                add("${requireNotNull(it.audioCodec).toCodecLabel()}/${it.container.toContainerLabel()}")
+            }
+        }.joinToString(" + ")
+    val size = combinedSizeWith(selectedAudio)
+    val detail =
+        buildList {
+            add(streamDetails)
+            size?.let { add(formatFileSize(it.first, it.second)) }
+            dynamicRange?.takeUnless { it.equals("SDR", ignoreCase = true) }?.let(::add)
+        }.joinToString(" · ")
+    return DownloadQuality(
+        label = primary.joinToString(" · "),
+        supportingText = detail,
+        ytDlpArguments = listOf("--format", selectedAudio?.let { "$id+${it.id}" } ?: id),
+    )
+}
+
+private fun MediaFormat.combinedSizeWith(audio: MediaFormat?): Pair<Long, Boolean>? {
+    val videoSize = bestFileSize ?: return null
+    val audioSize = audio?.bestFileSize ?: 0L
+    return (videoSize + audioSize) to (fileSizeIsApproximate || audio?.fileSizeIsApproximate == true)
+}
+
+private fun JsonObject.toMediaFormat(): MediaFormat? {
+    val id = text("format_id")
+    val container = text("ext")
+    return if (id == null || container == null) {
+        null
+    } else {
+        MediaFormat(
+            id = id,
+            height = number("height")?.roundToInt(),
+            fps = number("fps"),
+            videoBitrate = number("vbr"),
+            totalBitrate = number("tbr"),
+            audioBitrate = number("abr"),
+            fileSize = number("filesize")?.toLong(),
+            approximateFileSize = number("filesize_approx")?.toLong(),
+            videoCodec = text("vcodec"),
+            audioCodec = text("acodec"),
+            container = container,
+            dynamicRange = text("dynamic_range"),
+        )
+    }
+}
+
+private fun List<String>.jsonAfter(prefix: String) =
+    firstNotNullOfOrNull { line -> line.removePrefix(prefix).takeIf { it != line } }
+        ?.let(Json::parseToJsonElement)
+        ?: error("Missing yt-dlp JSON output")
+
+private fun JsonObject.text(name: String): String? =
+    get(name)
+        ?.jsonPrimitive
+        ?.contentOrNull
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() && !it.equals("NA", ignoreCase = true) && !it.equals("none", ignoreCase = true) }
+
+private fun JsonObject.number(name: String): Double? = get(name)?.jsonPrimitive?.doubleOrNull?.takeIf { it.isFinite() }
+
+private fun String?.isMediaCodec(): Boolean = this != null && !equals("none", ignoreCase = true)
+
+private fun Double.toFpsLabel(): String =
+    roundToInt()
+        .takeIf { kotlin.math.abs(this - it) < FPS_INTEGER_TOLERANCE }
+        ?.toString()
+        ?: "%.2f".format(Locale.ROOT, this)
+
+private fun formatBitrate(kilobitsPerSecond: Double): String =
+    if (kilobitsPerSecond >= KILOBITS_PER_MEGABIT) {
+        "~${"%.2f".format(Locale.ROOT, kilobitsPerSecond / KILOBITS_PER_MEGABIT).trimEnd('0').trimEnd('.')} Mbps"
+    } else {
+        "~${kilobitsPerSecond.roundToInt()} kbps"
+    }
+
+private fun formatFileSize(
+    bytes: Long,
+    approximate: Boolean,
+): String {
+    val prefix = if (approximate) "~" else ""
+    val mebibytes = bytes / BYTES_PER_MEBIBYTE
+    return if (mebibytes >= MEBIBYTES_PER_GIBIBYTE) {
+        "$prefix${"%.2f".format(Locale.ROOT, mebibytes / MEBIBYTES_PER_GIBIBYTE).trimEnd('0').trimEnd('.')} GB"
+    } else {
+        "$prefix${"%.1f".format(Locale.ROOT, mebibytes).trimEnd('0').trimEnd('.')} MB"
+    }
+}
+
+private fun Int?.orZero(): Int = this ?: 0
 
 internal data class OEmbedMetadata(
     val title: String,
@@ -594,18 +823,6 @@ internal suspend fun <T> CompletableFuture<T>.awaitCancellable(): T =
         continuation.invokeOnCancellation { cancel(true) }
     }
 
-internal fun parseProgress(line: String): DownloadProgress? {
-    if (PROCESSING_PATTERN.matches(line)) return DownloadProgress.Processing
-    return TRANSFER_PROGRESS_PATTERN
-        .matchEntire(line)
-        ?.groupValues
-        ?.get(1)
-        ?.toDoubleOrNull()
-        ?.roundToInt()
-        ?.coerceIn(0, MAX_TRANSFER_PERCENT)
-        ?.let(DownloadProgress::Transferring)
-}
-
 internal fun quickJsArguments(executable: String?): List<String> =
     executable?.let { listOf("--no-js-runtimes", "--js-runtimes", "quickjs:$it") }.orEmpty()
 
@@ -648,9 +865,19 @@ private data class ToolAsset(
 )
 
 private const val MAX_CAPTURED_OUTPUT_LINES = 100
+private const val MAX_DIAGNOSTIC_LINES = 20
 private const val DOWNLOAD_BUFFER_SIZE = 64 * 1024
 private const val MAX_PREVIEW_BYTES = 64 * 1024
 private const val MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024
+private const val SESSION_CACHE_MAX_ENTRIES = 16
+private const val SESSION_CACHE_MAX_THUMBNAIL_BYTES = 16 * 1024 * 1024
+private const val FPS_INTEGER_TOLERANCE = 0.01
+private const val KILOBITS_PER_MEGABIT = 1_000.0
+private const val BYTES_PER_MEBIBYTE = 1024.0 * 1024.0
+private const val MEBIBYTES_PER_GIBIBYTE = 1024.0
+private const val MEDIA_JSON_PREFIX = "DOWNLET_MEDIA_JSON="
+private const val FORMATS_JSON_PREFIX = "DOWNLET_FORMATS_JSON="
+private val VIDEO_HEIGHT_CEILINGS = listOf(2160, 1440, 1080, 720, 480)
 private val CONNECT_TIMEOUT: Duration = 30.seconds
 private val PREVIEW_TIMEOUT: Duration = 20.seconds
 private val DOWNLOAD_TIMEOUT: Duration = 10.minutes
@@ -676,15 +903,4 @@ private val FFMPEG_ASSET =
         URI("https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-$FFMPEG_VERSION-essentials_build.zip"),
         "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9",
     )
-private val METADATA_PREFIXES =
-    listOf(
-        "DOWNLET_TITLE=",
-        "DOWNLET_CHANNEL=",
-        "DOWNLET_UPLOADER=",
-        "DOWNLET_DURATION_SECONDS=",
-        "DOWNLET_AUDIO_FORMAT=",
-        "DOWNLET_AUDIO_BITRATE_KBPS=",
-    )
-private val TRANSFER_PROGRESS_PATTERN = Regex("DOWNLET_TRANSFER=downloading\\|\\s*([0-9]+(?:\\.[0-9]+)?)%")
-private val PROCESSING_PATTERN = Regex("DOWNLET_PROCESSING=(?:started|processing)")
-private val PREVIEW_FAILURE_PROGRESS = DownloadProgress.Transferring(68)
+private val PREVIEW_FAILURE_PROGRESS = fakeProgressSteps[2]
