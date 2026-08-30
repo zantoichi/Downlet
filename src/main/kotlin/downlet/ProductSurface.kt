@@ -291,46 +291,79 @@ private fun ColumnScope.ProductBody(
         contentKey = { it.isWorkPlaneState },
         label = "Downlet state body",
     ) { state ->
-        when (state) {
-            DownloadUiState.Empty -> {
-                Text(
-                    text = "Paste or type a YouTube link. Downlet checks it automatically.",
-                    modifier =
-                        Modifier.semantics {
-                            contentDescription =
-                                "Status: Paste or type a YouTube link. Downlet checks it automatically."
-                        },
-                    style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.Medium),
-                )
+        if (stateHolder.showingLegalDetails) {
+            WorkPlane(
+                shape = workPlaneShape,
+                fill = workPlaneFill,
+                border = workPlaneBorder,
+                compact = compact,
+            ) {
+                LegalDetailsContent(stateHolder, state)
             }
-
-            is DownloadUiState.Resolving -> {
-                Row(
-                    modifier =
-                        Modifier.semantics(mergeDescendants = true) {
-                            contentDescription = "Status: Checking this YouTube link…"
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CircularProgressIndicator()
-                    Text("Checking this YouTube link…")
+        } else {
+            when (state) {
+                DownloadUiState.Empty -> {
+                    Text(
+                        text = "Paste or type a YouTube link. Downlet checks it automatically.",
+                        modifier =
+                            Modifier.semantics {
+                                contentDescription =
+                                    "Status: Paste or type a YouTube link. Downlet checks it automatically."
+                            },
+                        style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.Medium),
+                    )
                 }
-            }
 
-            is DownloadUiState.Ready,
-            is DownloadUiState.Downloading,
-            is DownloadUiState.Completed,
-            is DownloadUiState.Error,
-            -> {
-                WorkPlane(
-                    shape = workPlaneShape,
-                    fill = workPlaneFill,
-                    border = workPlaneBorder,
-                    compact = compact,
-                ) {
-                    DownloadWorkPlaneContent(stateHolder, state, compact)
+                is DownloadUiState.Previewing -> {
+                    Row(
+                        modifier =
+                            Modifier.semantics(mergeDescendants = true) {
+                                contentDescription = "Status: Finding this video…"
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator()
+                        Text("Finding this video…")
+                    }
+                }
+
+                is DownloadUiState.Resolving -> {
+                    WorkPlane(
+                        shape = workPlaneShape,
+                        fill = workPlaneFill,
+                        border = workPlaneBorder,
+                        compact = compact,
+                    ) {
+                        ResolvingContent(state)
+                    }
+                }
+
+                is DownloadUiState.Setup -> {
+                    WorkPlane(
+                        shape = workPlaneShape,
+                        fill = workPlaneFill,
+                        border = workPlaneBorder,
+                        compact = compact,
+                    ) {
+                        ToolSetupContent(stateHolder, state)
+                    }
+                }
+
+                is DownloadUiState.Ready,
+                is DownloadUiState.Downloading,
+                is DownloadUiState.Completed,
+                is DownloadUiState.Error,
+                -> {
+                    WorkPlane(
+                        shape = workPlaneShape,
+                        fill = workPlaneFill,
+                        border = workPlaneBorder,
+                        compact = compact,
+                    ) {
+                        DownloadWorkPlaneContent(stateHolder, state, compact)
+                    }
                 }
             }
         }
@@ -361,7 +394,9 @@ private fun WorkPlane(
 
 private val DownloadUiState.isWorkPlaneState: Boolean
     get() =
-        this is DownloadUiState.Ready ||
+        this is DownloadUiState.Setup ||
+            this is DownloadUiState.Resolving ||
+            this is DownloadUiState.Ready ||
             this is DownloadUiState.Downloading ||
             this is DownloadUiState.Completed ||
             this is DownloadUiState.Error

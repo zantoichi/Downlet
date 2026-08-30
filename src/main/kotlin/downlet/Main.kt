@@ -32,7 +32,7 @@ private const val PRODUCT_WINDOW_TITLE = "Downlet"
 fun main() =
     application {
         val scope = rememberCoroutineScope()
-        val stateHolder = remember(scope) { DownloadStateHolder(scope) }
+        val stateHolder = remember(scope) { DownloadStateHolder(scope, runtime = YtDlpDownloadRuntime()) }
         val detectedDarkTheme = isSystemInDarkTheme()
         val startupTheme = remember { if (detectedDarkTheme) DownletTheme.Dark else DownletTheme.Light }
 

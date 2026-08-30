@@ -9,10 +9,12 @@ class WindowSizingTest {
         val compactStates =
             listOf(
                 DownloadUiState.Empty,
-                DownloadUiState.Resolving(DownloadFixtures.normal),
+                DownloadUiState.Previewing(DownloadFixtures.normal),
             )
         val expandedStates =
             listOf(
+                DownloadUiState.Setup(DownloadFixtures.normal, listOf("yt-dlp")),
+                DownloadUiState.Resolving(DownloadFixtures.normal),
                 DownloadUiState.Ready(DownloadFixtures.normal),
                 DownloadUiState.Downloading(DownloadFixtures.normal, progressPercent = 43),
                 DownloadUiState.Completed(DownloadFixtures.normal),

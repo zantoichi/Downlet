@@ -11,12 +11,24 @@ internal const val FAKE_PROGRESS_INTERVAL_MILLIS = 350L
 internal const val COMPLETE_PROGRESS_PERCENT = 100
 internal const val INVALID_LINK_MESSAGE = "Enter a valid YouTube link."
 internal const val DOWNLOAD_UNAVAILABLE_MESSAGE = "Download is unavailable for this item."
+internal const val TOOL_SETUP_FAILURE_MESSAGE =
+    "Couldn't install the required tools. Check your connection and try again."
+internal const val TOOL_SETUP_CONSENT_TEXT =
+    "I choose to download these tools and accept the tool terms."
+internal const val DOWNLOAD_AUTHORIZATION_TEXT =
+    "I am authorized to download this media and accept responsibility for this download."
 internal const val OPEN_FOLDER_ACKNOWLEDGEMENT = "Folder opening is unavailable in this design preview."
+internal const val OPEN_FOLDER_FAILURE_MESSAGE = "Couldn't open the download folder."
 internal val fakeProgressSteps = listOf(18, 43, 68, 87, COMPLETE_PROGRESS_PERCENT)
 
 internal enum class DownloadMode {
     Video,
     Audio,
+}
+
+internal enum class DownloadErrorKind {
+    Resolution,
+    Download,
 }
 
 internal val videoQualityOptions = listOf("Best available — 2160p", "1440p", "1080p", "720p", "480p")
@@ -71,6 +83,14 @@ internal sealed interface FakeDownloadOutcome {
     }
 }
 
+internal class ThumbnailData(
+    val bytes: ByteArray,
+) {
+    override fun equals(other: Any?): Boolean = other is ThumbnailData && bytes.contentEquals(other.bytes)
+
+    override fun hashCode(): Int = bytes.contentHashCode()
+}
+
 internal data class DownloadFixture(
     val id: String,
     val sourceUrl: String,
@@ -79,6 +99,7 @@ internal data class DownloadFixture(
     val duration: String,
     val destination: String,
     val thumbnailAvailable: Boolean = true,
+    val thumbnailData: ThumbnailData? = null,
     val outcome: FakeDownloadOutcome = FakeDownloadOutcome.Success,
     val canDownload: Boolean = true,
 )
@@ -137,6 +158,22 @@ internal val readyDestinations =
 internal sealed interface DownloadUiState {
     data object Empty : DownloadUiState
 
+    data class Previewing(
+        val fixture: DownloadFixture,
+        val completesAutomatically: Boolean = true,
+    ) : DownloadUiState
+
+    data class Setup(
+        val fixture: DownloadFixture,
+        val tools: List<String>,
+        val installing: Boolean = false,
+        val failed: Boolean = false,
+    ) : DownloadUiState {
+        init {
+            require(tools.isNotEmpty())
+        }
+    }
+
     data class Resolving(
         val fixture: DownloadFixture,
         val completesAutomatically: Boolean = true,
@@ -152,34 +189,25 @@ internal sealed interface DownloadUiState {
     ) : DownloadUiState {
         init {
             require(progressPercent in 0..COMPLETE_PROGRESS_PERCENT)
-            val outcome = fixture.outcome
-            if (outcome is FakeDownloadOutcome.Failure) {
-                require(progressPercent <= outcome.atPercent)
-            }
         }
     }
 
     data class Completed(
         val fixture: DownloadFixture,
-    ) : DownloadUiState {
-        init {
-            require(fixture.outcome == FakeDownloadOutcome.Success)
-        }
-    }
+    ) : DownloadUiState
 
     data class Error(
         val fixture: DownloadFixture,
-    ) : DownloadUiState {
-        init {
-            require(fixture.outcome is FakeDownloadOutcome.Failure)
-        }
-    }
+        val kind: DownloadErrorKind = DownloadErrorKind.Download,
+    ) : DownloadUiState
 }
 
 internal val DownloadUiState.label: String
     get() =
         when (this) {
             DownloadUiState.Empty -> "Empty"
+            is DownloadUiState.Previewing -> "Previewing"
+            is DownloadUiState.Setup -> "Setup"
             is DownloadUiState.Resolving -> "Resolving"
             is DownloadUiState.Ready -> "Ready"
             is DownloadUiState.Downloading -> "Downloading"
@@ -192,8 +220,19 @@ internal sealed interface DownloadEvent {
 
     data object ShowEmpty : DownloadEvent
 
+    data class ShowPreviewing(
+        val fixture: DownloadFixture = DownloadFixtures.normal,
+    ) : DownloadEvent
+
     data class ShowResolving(
         val fixture: DownloadFixture = DownloadFixtures.normal,
+    ) : DownloadEvent
+
+    data class ShowSetup(
+        val fixture: DownloadFixture = DownloadFixtures.normal,
+        val tools: List<String> = listOf("yt-dlp", "FFmpeg"),
+        val installing: Boolean = false,
+        val failed: Boolean = false,
     ) : DownloadEvent
 
     data class ShowReady(

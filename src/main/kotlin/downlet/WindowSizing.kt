@@ -35,9 +35,11 @@ internal val DownloadUiState.windowPresentationTier: WindowPresentationTier
     get() =
         when (this) {
             DownloadUiState.Empty,
-            is DownloadUiState.Resolving,
+            is DownloadUiState.Previewing,
             -> WindowPresentationTier.Compact
 
+            is DownloadUiState.Setup,
+            is DownloadUiState.Resolving,
             is DownloadUiState.Ready,
             is DownloadUiState.Downloading,
             is DownloadUiState.Completed,

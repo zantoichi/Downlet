@@ -8,7 +8,7 @@ Defines the durable user-visible behavior of Downlet, a small Windows desktop ut
 
 ### Requirement: Single-window download flow
 
-Downlet SHALL present one primary Windows desktop window and keep the user's URL context in place while moving through Empty, Resolving, Ready, Downloading, Completed, and Error states. It SHALL NOT require navigation, tabs, a sidebar, or a settings surface for the primary task.
+Downlet SHALL present one primary Windows desktop window and keep the user's URL context in place while moving through Empty, Previewing, Setup, Resolving, Ready, Downloading, Completed, and Error states. It SHALL NOT require navigation, tabs, a sidebar, or a settings surface for the primary task.
 
 #### Scenario: Application starts
 
@@ -20,14 +20,24 @@ Downlet SHALL present one primary Windows desktop window and keep the user's URL
 - **WHEN** the flow advances to another state
 - **THEN** the same primary window updates in place without opening another product screen
 
-### Requirement: URL input starts resolution directly
+### Requirement: URL input starts preview directly
 
-Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A valid pasted link SHALL begin resolution immediately, a valid manually typed link SHALL begin resolution after a short idle delay, and invalid text SHALL remain editable with concise inline validation. No separate Paste or Analyze action SHALL be required.
+Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A valid pasted link SHALL begin Previewing immediately, and a valid manually typed link SHALL begin it after a short idle delay. Previewing SHALL request only lightweight YouTube identity metadata and a bounded thumbnail, SHALL download no media, and SHALL not require yt-dlp. Invalid text SHALL remain editable with concise inline validation. No separate Paste or Analyze action SHALL be required.
 
 #### Scenario: User enters a valid link
 
 - **WHEN** the user pastes a valid YouTube URL or pauses after typing one
-- **THEN** Downlet enters Resolving without requiring Enter or another command
+- **THEN** Downlet enters Previewing without requiring Enter or another command
+
+#### Scenario: Preview succeeds
+
+- **WHEN** Downlet receives the media title, channel, and optional thumbnail
+- **THEN** it enters Setup when required tools are missing or Resolving when they are already available
+
+#### Scenario: Preview fails
+
+- **WHEN** the lightweight metadata request fails or does not identify media
+- **THEN** Downlet enters a recoverable resolution error without checking, downloading, or installing tools
 
 #### Scenario: User enters an invalid link
 
@@ -36,12 +46,25 @@ Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A 
 
 ### Requirement: Ready exposes only useful choices
 
-Ready SHALL identify the resolved media with a thumbnail or stable missing-preview fallback, title, channel, duration, and provider. It SHALL expose Video or Audio, an understandable quality choice, the current destination with a Change action, and one Download action. It SHALL NOT expose format IDs, codecs, extractor details, raw logs, or advanced command-line options.
+Ready SHALL identify the resolved media with a thumbnail or stable missing-preview fallback, title, channel, duration, and provider. It SHALL expose Video or Audio, an understandable quality choice, the current destination with a Change action, a concise per-download authorization confirmation, a Read full terms action, and one Download action. Download SHALL remain disabled until the user selects that confirmation. It SHALL NOT expose format IDs, codecs, extractor details, raw logs, or advanced command-line options.
 
 #### Scenario: Media resolves
 
 - **WHEN** resolution succeeds
 - **THEN** Ready shows the media identity and the choices required to start a download
+
+#### Scenario: User authorizes one media download
+
+- **WHEN** Ready first appears for a media item
+- **THEN** Download remains disabled until the user confirms ownership or permission and accepts responsibility for following applicable law and YouTube's terms
+
+- **WHEN** a different media item enters Ready
+- **THEN** Downlet requires a fresh confirmation
+
+#### Scenario: User reads full terms from Ready
+
+- **WHEN** the user activates Read full terms
+- **THEN** Downlet replaces the work area with detailed tool-license, media-responsibility, and liability information and provides Back to download without losing the URL or Ready choices
 
 #### Scenario: Content is long or incomplete
 
@@ -67,9 +90,47 @@ Downloading SHALL preserve media context, lock choices that must not change, sho
 - **WHEN** downloading fails
 - **THEN** Downlet enters Error and Retry restarts the download with the previous choices
 
+### Requirement: Downloads use yt-dlp
+
+Normal product operation SHALL use a local `yt-dlp` process after Previewing and any required Setup to resolve authoritative YouTube metadata and download the selected Video or Audio quality into the chosen destination. It SHALL provide bundled QuickJS-NG to `yt-dlp` for YouTube JavaScript support and FFmpeg for merging and audio processing. Resolving SHALL use `--skip-download`, preserve preview identity while checking available formats, and download no media. Downlet SHALL translate process progress and failures into its existing product states, SHALL stop the active process when Cancel is activated, and SHALL keep command output and backend options out of the interface. The deterministic fake runtime MAY remain available only for tests and the Design Review app.
+
+#### Scenario: A link resolves through yt-dlp
+
+- **WHEN** preview succeeds and required tools are available
+- **THEN** Downlet resolves its title, channel, duration, and identity through `yt-dlp` before entering Ready
+
+#### Scenario: A real download runs
+
+- **WHEN** the user activates Download in Ready
+- **THEN** Downlet starts `yt-dlp` with the selected mode, quality, and destination and reflects reported progress until completion or failure
+
+#### Scenario: A real download is cancelled
+
+- **WHEN** the user activates Cancel while `yt-dlp` is running
+- **THEN** Downlet terminates the process and returns to Ready with the prior choices preserved
+
+### Requirement: Tool setup is explicit and verified
+
+Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required notices, but SHALL NOT include yt-dlp or FFmpeg in its installer. After Previewing succeeds, Setup SHALL appear only when yt-dlp or FFmpeg is unavailable. It SHALL keep the media preview visible, name only the missing tools, state their approximate download size and purpose, clarify that tool setup does not download the media, leave consent unselected, and download nothing until the user selects consent and activates Download and continue. Setup SHALL expose Read full terms, which replaces the work area with preview-network, tool-license, media-responsibility, and liability information and provides Back to setup without losing the URL or consent state. Downlet SHALL retrieve pinned upstream artifacts, verify their SHA-256 hashes before installation, store them under the user's local application-data directory, and invoke them as separate processes. Editing the URL SHALL remain available as a way to leave or cancel Setup.
+
+#### Scenario: User declines tool setup
+
+- **WHEN** Setup appears and the user does not select consent or activate Download and continue
+- **THEN** Downlet does not retrieve or run a missing third-party tool
+
+#### Scenario: User chooses tool setup
+
+- **WHEN** the user selects consent and activates Download and continue
+- **THEN** Downlet downloads only the named pinned tools, verifies each artifact, installs them locally, and continues resolving the submitted URL
+
+#### Scenario: Verification or installation fails
+
+- **WHEN** a tool download, hash verification, or installation fails
+- **THEN** Setup reports a concise failure and allows the user to try again without exposing backend output
+
 ### Requirement: Window size follows task stage
 
-The primary window SHALL use a fixed width and two automatic height tiers: Compact for Empty and Resolving, and Expanded for Ready, Downloading, Completed, and Error. Manual resize and maximize SHALL be unavailable while ordinary minimize and close remain available. Height changes SHALL keep the URL anchor stable, remain within the active work area, and use brief interruptible motion with an equivalent instant result when motion duration is disabled.
+The primary window SHALL use a fixed width and two automatic height tiers: Compact for Empty and Previewing, and Expanded for Setup, Resolving, Ready, Downloading, Completed, and Error. Manual resize and maximize SHALL be unavailable while ordinary minimize and close remain available. Height changes SHALL keep the URL anchor stable, remain within the active work area, and use brief interruptible motion with an equivalent instant result when motion duration is disabled.
 
 #### Scenario: Resolution reveals useful content
 

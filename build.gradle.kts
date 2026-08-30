@@ -3,6 +3,7 @@ import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JvmVendorSpec
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -63,6 +64,12 @@ compose.desktop {
 
 compose.resources {
     generateResClass = always
+}
+
+tasks.named<ProcessResources>("processResources") {
+    from(rootDir) {
+        include("LICENSE", "THIRD_PARTY_NOTICES.md")
+    }
 }
 
 ktlint {

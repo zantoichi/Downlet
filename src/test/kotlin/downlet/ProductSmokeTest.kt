@@ -32,6 +32,64 @@ import kotlin.time.Duration.Companion.nanoseconds
 
 class ProductSmokeTest {
     @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
+    @Test
+    fun `tool setup requires explicit consent`() {
+        val machineScheduler = TestCoroutineScheduler()
+        val machineDispatcher = UnconfinedTestDispatcher(machineScheduler)
+        val stateHolder =
+            DownloadStateHolder(
+                CoroutineScope(machineDispatcher + SupervisorJob()),
+                machineDispatcher = machineDispatcher,
+            )
+        try {
+            stateHolder.onEvent(DownloadEvent.ShowPreviewing())
+            machineScheduler.runCurrent()
+
+            runComposeUiTest {
+                setContent {
+                    IntUiTheme(
+                        theme = JewelTheme.lightThemeDefinition(),
+                        styling = ComponentStyling.default().decoratedWindow(),
+                    ) {
+                        ProductSurface(stateHolder)
+                    }
+                }
+
+                assertEquals(WindowPresentationTier.Compact, stateHolder.state.windowPresentationTier)
+                onNodeWithContentDescription("Status: Finding this video…").assertExists()
+
+                stateHolder.onEvent(DownloadEvent.ShowSetup())
+                machineScheduler.runCurrent()
+                mainClock.advanceTimeByFrame()
+                assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
+                onNodeWithText("Prepare this download").assertExists()
+                onNodeWithText("Download and continue").assertIsNotEnabled()
+                onNodeWithText("Read full terms").performClick()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Full terms").assertExists()
+                onNodeWithText("Before setup").assertExists()
+                onNodeWithText("Third-party tools").assertExists()
+                onNodeWithText("Licenses").assertExists()
+                onNodeWithText("Your responsibility").assertExists()
+                onNodeWithText("Limits").assertExists()
+                onNodeWithText("Back to setup").performClick()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Prepare this download").assertExists()
+                onNodeWithText("Download and continue").assertIsNotEnabled()
+                onNodeWithText(TOOL_SETUP_CONSENT_TEXT).performClick()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Download and continue").assertIsEnabled()
+                onNodeWithText("Download and continue").performClick()
+                machineScheduler.runCurrent()
+                mainClock.advanceTimeByFrame()
+                onNodeWithContentDescription("Status: Checking available formats…").assertExists()
+            }
+        } finally {
+            stateHolder.close()
+        }
+    }
+
+    @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
     @Suppress("LongMethod")
     @Test
     fun `happy product flow reaches completed`() {
@@ -65,7 +123,7 @@ class ProductSmokeTest {
                 mainClock.advanceTimeBy(MANUAL_LINK_DEBOUNCE_MILLIS)
                 machineScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
-                onNodeWithContentDescription("Status: Checking this YouTube link…").assertExists()
+                onNodeWithContentDescription("Status: Checking available formats…").assertExists()
 
                 machineScheduler.advanceTimeBy(FAKE_RESOLUTION_MILLIS)
                 machineScheduler.runCurrent()
@@ -73,11 +131,14 @@ class ProductSmokeTest {
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
                 onNodeWithText("Video").assertExists()
                 onNodeWithContentDescription("Quality: Best available — 2160p").assertExists()
-                onNodeWithText("Download").assertIsEnabled()
+                onNodeWithText("Download").assertIsNotEnabled()
                 onNodeWithContentDescription(
                     mediaContentDescription(DownloadFixtures.normal, thumbnailAvailable = true),
                 ).assertExists()
 
+                onNodeWithText(DOWNLOAD_AUTHORIZATION_TEXT).performClick()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Download").assertIsEnabled()
                 onNodeWithText("Download").performClick()
                 machineScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
@@ -133,6 +194,8 @@ class ProductSmokeTest {
                 }
 
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
+                onNodeWithText(DOWNLOAD_AUTHORIZATION_TEXT).performClick()
+                mainClock.advanceTimeByFrame()
                 onNodeWithText("Download").performClick()
                 machineScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()

@@ -109,17 +109,23 @@ private fun ControllerWindow(
                         OutlinedButton(onClick = { onEvent(DownloadEvent.ShowEmpty) }) {
                             Text("Empty")
                         }
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowPreviewing()) }) {
+                            Text("Previewing")
+                        }
+                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowSetup()) }) {
+                            Text("Setup")
+                        }
                         OutlinedButton(onClick = { onEvent(DownloadEvent.ShowResolving()) }) {
                             Text("Resolving")
                         }
                         OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady()) }) {
                             Text("Ready")
                         }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { onEvent(DownloadEvent.ShowDownloading()) }) {
                             Text("Downloading")
                         }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { onEvent(DownloadEvent.ShowCompleted()) }) {
                             Text("Completed")
                         }
@@ -195,6 +201,8 @@ private fun ControllerWindow(
 private val DownloadUiState.fixtureId: String
     get() =
         when (this) {
+            is DownloadUiState.Previewing -> fixture.id
+            is DownloadUiState.Setup -> fixture.id
             is DownloadUiState.Resolving -> fixture.id
             is DownloadUiState.Ready -> fixture.id
             is DownloadUiState.Downloading -> fixture.id

@@ -3,6 +3,7 @@ package downlet
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,15 +27,21 @@ import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadStateTest {
-    private fun TestScope.testHolder() =
+    private fun TestScope.testHolder(runtime: DownloadRuntime = PreviewDownloadRuntime()) =
         UnconfinedTestDispatcher(testScheduler).let { dispatcher ->
             DownloadStateHolder(
                 CoroutineScope(backgroundScope.coroutineContext + dispatcher),
                 machineDispatcher = dispatcher,
+                runtime = runtime,
             )
         }
 
     private fun immediateHolder() = DownloadStateHolder(machineDispatcher = Dispatchers.Unconfined)
+
+    private fun DownloadStateHolder.startAuthorizedDownload() {
+        updateDownloadAuthorization(true)
+        download()
+    }
 
     private suspend fun DownloadStateHolder.awaitState(expected: DownloadUiState) {
         withTimeout(5.seconds) {
@@ -45,13 +52,15 @@ class DownloadStateTest {
     }
 
     @Test
-    fun `all six states are explicit`() {
+    fun `all eight states are explicit`() {
         val normal = DownloadFixtures.normal
         val failure = DownloadFixtures.failure
 
         val labels =
             listOf(
                 DownloadUiState.Empty,
+                DownloadUiState.Previewing(normal),
+                DownloadUiState.Setup(normal, listOf("yt-dlp")),
                 DownloadUiState.Resolving(normal),
                 DownloadUiState.Ready(normal),
                 DownloadUiState.Downloading(normal, progressPercent = 43),
@@ -59,19 +68,91 @@ class DownloadStateTest {
                 DownloadUiState.Error(failure),
             ).map(DownloadUiState::label)
 
-        assertEquals(listOf("Empty", "Resolving", "Ready", "Downloading", "Completed", "Error"), labels)
+        assertEquals(
+            listOf("Empty", "Previewing", "Setup", "Resolving", "Ready", "Downloading", "Completed", "Error"),
+            labels,
+        )
     }
 
     @Test
-    fun `invalid outcome combinations are rejected`() {
+    fun `missing tools require explicit consent before installation and resolution`() =
+        runTest {
+            val runtime = ControlledPreviewRuntime(listOf("yt-dlp", "FFmpeg"))
+            val holder = testHolder(runtime)
+            val sourceUrl = "https://youtu.be/setup"
+
+            holder.beginResolution(sourceUrl)
+            runCurrent()
+            assertEquals(sourceUrl, (holder.state as DownloadUiState.Previewing).fixture.sourceUrl)
+            runtime.completePreview()
+            runCurrent()
+            assertEquals(
+                DownloadUiState.Setup(
+                    DownloadFixtures.normal.copy(sourceUrl = sourceUrl),
+                    listOf("yt-dlp", "FFmpeg"),
+                ),
+                holder.state,
+            )
+            assertFalse(holder.toolSetupEnabled)
+
+            holder.installTools()
+            assertEquals(0, runtime.installCount)
+
+            holder.updateToolSetupConsent(true)
+            assertTrue(holder.toolSetupEnabled)
+            holder.installTools()
+            runCurrent()
+
+            assertEquals(1, runtime.installCount)
+            assertEquals(sourceUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
+            advanceTimeBy(FAKE_RESOLUTION_MILLIS.milliseconds)
+            runCurrent()
+            assertEquals(sourceUrl, (holder.state as DownloadUiState.Ready).fixture.sourceUrl)
+        }
+
+    @Test
+    fun `installed tools move from previewing directly to resolving`() =
+        runTest {
+            val runtime = ControlledPreviewRuntime()
+            val holder = testHolder(runtime)
+            val sourceUrl = "https://youtu.be/already-ready"
+
+            holder.beginResolution(sourceUrl)
+            runCurrent()
+            assertEquals(sourceUrl, (holder.state as DownloadUiState.Previewing).fixture.sourceUrl)
+
+            runtime.completePreview()
+            runCurrent()
+            assertEquals(sourceUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
+
+            advanceTimeBy(FAKE_RESOLUTION_MILLIS.milliseconds)
+            runCurrent()
+            assertEquals(sourceUrl, (holder.state as DownloadUiState.Ready).fixture.sourceUrl)
+        }
+
+    @Test
+    fun `preview failure becomes recoverable without checking or installing tools`() =
+        runTest {
+            val runtime = ControlledPreviewRuntime(listOf("yt-dlp", "FFmpeg"), failPreview = true)
+            val holder = testHolder(runtime)
+
+            holder.beginResolution("https://youtu.be/unavailable")
+            runCurrent()
+            runtime.completePreview()
+            runCurrent()
+
+            assertEquals(DownloadErrorKind.Resolution, (holder.state as DownloadUiState.Error).kind)
+            assertEquals(0, runtime.missingToolsCount)
+            assertEquals(0, runtime.installCount)
+        }
+
+    @Test
+    fun `invalid progress values are rejected`() {
         assertFailsWith<IllegalArgumentException> {
-            DownloadUiState.Downloading(DownloadFixtures.failure, progressPercent = 87)
+            DownloadUiState.Downloading(DownloadFixtures.normal, progressPercent = -1)
         }
         assertFailsWith<IllegalArgumentException> {
-            DownloadUiState.Completed(DownloadFixtures.failure)
-        }
-        assertFailsWith<IllegalArgumentException> {
-            DownloadUiState.Error(DownloadFixtures.normal)
+            DownloadUiState.Downloading(DownloadFixtures.normal, progressPercent = 101)
         }
     }
 
@@ -355,6 +436,7 @@ class DownloadStateTest {
     fun `disabled fixture ignores download activation`() {
         val holder = immediateHolder()
         holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.disabledAction))
+        holder.updateDownloadAuthorization(true)
         assertFalse(holder.downloadEnabled)
         assertEquals(DOWNLOAD_UNAVAILABLE_MESSAGE, holder.readyStatus)
         holder.download()
@@ -363,11 +445,56 @@ class DownloadStateTest {
     }
 
     @Test
+    fun `each ready media requires explicit download authorization`() {
+        val holder = immediateHolder()
+        holder.onEvent(DownloadEvent.ShowReady())
+
+        assertFalse(holder.downloadEnabled)
+        holder.download()
+        assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
+
+        holder.updateDownloadAuthorization(true)
+        assertTrue(holder.downloadEnabled)
+
+        holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.longTitle))
+        assertFalse(holder.downloadAuthorizationAccepted)
+        assertFalse(holder.downloadEnabled)
+    }
+
+    @Test
+    fun `full terms preserve setup consent and ready choices`() {
+        val holder = immediateHolder()
+        holder.onEvent(DownloadEvent.ShowSetup())
+        holder.updateToolSetupConsent(true)
+
+        holder.showLegalDetails()
+        assertTrue(holder.showingLegalDetails)
+        holder.hideLegalDetails()
+        assertTrue(holder.toolSetupAccepted)
+
+        holder.onEvent(DownloadEvent.ShowReady())
+        holder.selectMode(DownloadMode.Audio)
+        holder.selectQuality(1)
+        holder.changeDestination()
+        holder.updateDownloadAuthorization(true)
+        val destination = holder.destination
+
+        holder.showLegalDetails()
+        assertTrue(holder.showingLegalDetails)
+        holder.hideLegalDetails()
+        assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
+        assertEquals(DownloadMode.Audio, holder.selectedMode)
+        assertEquals(1, holder.selectedQualityIndex)
+        assertEquals(destination, holder.destination)
+        assertTrue(holder.downloadAuthorizationAccepted)
+    }
+
+    @Test
     fun `success timeline advances on exact 350 millisecond boundaries`() =
         runTest {
             val holder = testHolder()
             holder.onEvent(DownloadEvent.ShowReady())
-            holder.download()
+            holder.startAuthorizedDownload()
             runCurrent()
             assertEquals(DownloadUiState.Downloading(DownloadFixtures.normal, 0), holder.state)
 
@@ -389,7 +516,7 @@ class DownloadStateTest {
         runTest {
             val holder = testHolder()
             holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.failure))
-            holder.download()
+            holder.startAuthorizedDownload()
             runCurrent()
 
             repeat(2) {
@@ -413,7 +540,7 @@ class DownloadStateTest {
             holder.changeDestination()
             val destination = holder.destination
 
-            holder.download()
+            holder.startAuthorizedDownload()
             runCurrent()
             holder.cancelDownload()
             runCurrent()
@@ -435,7 +562,7 @@ class DownloadStateTest {
             holder.selectQuality(1)
             holder.changeDestination()
             val destination = holder.destination
-            holder.download()
+            holder.startAuthorizedDownload()
             runCurrent()
             advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 3).milliseconds)
             runCurrent()
@@ -479,7 +606,7 @@ class DownloadStateTest {
         runTest {
             val holder = testHolder()
             holder.onEvent(DownloadEvent.ShowReady())
-            holder.download()
+            holder.startAuthorizedDownload()
             runCurrent()
             holder.observeLinkEdit("https://youtu.be/new-link")
             advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 6).milliseconds)
@@ -487,7 +614,7 @@ class DownloadStateTest {
             assertEquals(DownloadUiState.Empty, holder.state)
 
             holder.onEvent(DownloadEvent.ShowReady())
-            holder.download()
+            holder.startAuthorizedDownload()
             runCurrent()
             holder.onEvent(DownloadEvent.Reset)
             advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 6).milliseconds)
@@ -495,7 +622,7 @@ class DownloadStateTest {
             assertEquals(DownloadUiState.Empty, holder.state)
 
             holder.onEvent(DownloadEvent.ShowReady())
-            holder.download()
+            holder.startAuthorizedDownload()
             runCurrent()
             holder.onEvent(DownloadEvent.ShowCompleted())
             advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 6).milliseconds)
@@ -503,7 +630,7 @@ class DownloadStateTest {
             assertEquals(DownloadUiState.Completed(DownloadFixtures.normal), holder.state)
 
             holder.onEvent(DownloadEvent.ShowReady())
-            holder.download()
+            holder.startAuthorizedDownload()
             runCurrent()
             val stateAtClose = holder.state
             holder.close()
@@ -540,7 +667,7 @@ class DownloadStateTest {
             try {
                 holder.onEvent(DownloadEvent.ShowReady())
                 holder.awaitState(ready)
-                holder.download()
+                holder.startAuthorizedDownload()
                 holder.awaitState(downloading)
                 val submitStaleProgress =
                     holder.captureProgressSubmissionForTest(
@@ -565,7 +692,7 @@ class DownloadStateTest {
         holder.selectMode(DownloadMode.Audio)
         holder.selectQuality(1)
         holder.changeDestination()
-        holder.download()
+        holder.startAuthorizedDownload()
 
         holder.observeLinkEdit("https://youtube.com/watch?v=new")
         assertEquals(DownloadUiState.Empty, holder.state)
@@ -595,5 +722,37 @@ class DownloadStateTest {
         assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
         assertEquals("Best available — 2160p", holder.selectedQualityLabel)
         assertEquals("Downloads", holder.destination)
+    }
+
+    private class ControlledPreviewRuntime(
+        private val tools: List<String> = emptyList(),
+        private val failPreview: Boolean = false,
+    ) : DownloadRuntime by PreviewDownloadRuntime() {
+        private val previewGate = CompletableDeferred<Unit>()
+
+        var installCount = 0
+            private set
+
+        var missingToolsCount = 0
+            private set
+
+        fun completePreview() {
+            previewGate.complete(Unit)
+        }
+
+        override suspend fun preview(sourceUrl: String): DownloadFixture {
+            previewGate.await()
+            if (failPreview) throw DownloadRuntimeException()
+            return DownloadFixtures.normal.copy(sourceUrl = sourceUrl)
+        }
+
+        override fun missingTools(): List<String> {
+            missingToolsCount += 1
+            return if (installCount == 0) tools else emptyList()
+        }
+
+        override suspend fun installMissingTools() {
+            installCount += 1
+        }
     }
 }
