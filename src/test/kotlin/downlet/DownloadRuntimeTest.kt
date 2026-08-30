@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Comparator
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
@@ -74,6 +75,135 @@ class DownloadRuntimeTest {
         )
         assertEquals(emptyList(), quickJsArguments(null))
     }
+
+    @Test
+    fun `executable discovery validates overrides and preserves source order`() =
+        withTempDirectory { root ->
+            val override = executable(root.resolve("override tools"), "custom-yt-dlp.exe")
+            val provisioned = executable(root.resolve("managed tools"), "yt-dlp.exe")
+            val pathDirectory = root.resolve("path tools")
+            val pathExecutable = executable(pathDirectory, "yt-dlp.exe")
+            val extensionless = executable(pathDirectory, "yt-dlp")
+
+            assertEquals(
+                override,
+                resolveExecutable(
+                    "DOWNLET_YT_DLP",
+                    provisioned,
+                    "yt-dlp",
+                    mapOf("DOWNLET_YT_DLP" to "  \"$override\"  ", "Path" to "\"$pathDirectory\""),
+                ),
+            )
+            assertEquals(
+                provisioned,
+                resolveExecutable(
+                    "DOWNLET_YT_DLP",
+                    provisioned,
+                    "yt-dlp",
+                    mapOf("DOWNLET_YT_DLP" to root.resolve("missing.exe").toString(), "Path" to "\"$pathDirectory\""),
+                ),
+            )
+            assertEquals(
+                provisioned,
+                resolveExecutable("DOWNLET_YT_DLP", provisioned, "yt-dlp", mapOf("DOWNLET_YT_DLP" to "\u0000")),
+            )
+
+            Files.delete(provisioned)
+            assertEquals(
+                pathExecutable,
+                resolveExecutable(
+                    "DOWNLET_YT_DLP",
+                    provisioned,
+                    "yt-dlp",
+                    mapOf("Path" to "\"$pathDirectory\""),
+                ),
+            )
+            Files.delete(pathExecutable)
+            assertEquals(
+                extensionless,
+                resolveExecutable(
+                    "DOWNLET_YT_DLP",
+                    provisioned,
+                    "yt-dlp",
+                    mapOf("PATH" to pathDirectory.toString()),
+                ),
+            )
+            Files.delete(extensionless)
+            assertNull(resolveExecutable("DOWNLET_YT_DLP", provisioned, "yt-dlp", emptyMap()))
+        }
+
+    @Test
+    fun `ffmpeg discovery requires a co-located pair`() =
+        withTempDirectory { root ->
+            val firstOverride = ffmpegPair(root.resolve("first override"))
+            val secondOverride = ffmpegPair(root.resolve("second override"))
+            val managed = ffmpegPair(root.resolve("managed"))
+            val pathPair = ffmpegPair(root.resolve("path"))
+
+            assertEquals(
+                firstOverride,
+                resolveFfmpegTools(
+                    mapOf("DOWNLET_FFMPEG" to firstOverride.directory.resolve("ffmpeg.exe").toString()),
+                    managed.directory,
+                ),
+            )
+            assertEquals(
+                firstOverride,
+                resolveFfmpegTools(
+                    mapOf(
+                        "DOWNLET_FFMPEG" to "\"${firstOverride.directory.resolve("ffmpeg.exe")}\"",
+                        "DOWNLET_FFPROBE" to "\"${firstOverride.directory.resolve("ffprobe.exe")}\"",
+                    ),
+                    managed.directory,
+                ),
+            )
+            assertEquals(
+                managed,
+                resolveFfmpegTools(
+                    mapOf(
+                        "DOWNLET_FFMPEG" to firstOverride.directory.resolve("ffmpeg.exe").toString(),
+                        "DOWNLET_FFPROBE" to secondOverride.directory.resolve("ffprobe.exe").toString(),
+                        "PATH" to pathPair.directory.toString(),
+                    ),
+                    managed.directory,
+                ),
+            )
+
+            Files.delete(managed.directory.resolve("ffprobe.exe"))
+            assertEquals(
+                pathPair,
+                resolveFfmpegTools(
+                    mapOf(
+                        "DOWNLET_FFMPEG" to root.resolve("missing.exe").toString(),
+                        "PATH" to pathPair.directory.toString(),
+                    ),
+                    managed.directory,
+                ),
+            )
+            Files.delete(pathPair.directory.resolve("ffprobe.exe"))
+            ffmpegPair(root.resolve("unlisted"))
+            assertNull(resolveFfmpegTools(emptyMap(), root.resolve("unmanaged pair")))
+        }
+
+    @Test
+    fun `runtime skips setup for a complete PATH tool set`() =
+        withTempDirectory { root ->
+            val pathDirectory = root.resolve("path")
+            executable(pathDirectory, "yt-dlp.exe")
+            val ffmpeg = ffmpegPair(pathDirectory)
+            val runtime =
+                YtDlpDownloadRuntime(
+                    toolsDirectory = root.resolve("managed"),
+                    environment = mapOf("Path" to "\"$pathDirectory\""),
+                )
+
+            assertEquals(emptyList(), runtime.missingTools())
+            assertEquals(
+                listOf("--ffmpeg-location", ffmpeg.directory.toString()),
+                ffmpegLocationArguments(ffmpeg),
+            )
+            assertEquals(emptyList(), ffmpegLocationArguments(null))
+        }
 
     @Test
     fun `typed tool metadata supplies labels and setup size`() {
@@ -201,6 +331,31 @@ class DownloadRuntimeTest {
             requireSha256(file, "7b27412de844403545bd151fbe49191b4d5b91a9e15b5db7c863fea54639a82b")
         } finally {
             Files.deleteIfExists(file)
+        }
+    }
+
+    private fun executable(
+        directory: Path,
+        name: String,
+    ): Path {
+        Files.createDirectories(directory)
+        return directory.resolve(name).also { Files.writeString(it, "test") }
+    }
+
+    private fun ffmpegPair(directory: Path): FfmpegTools {
+        executable(directory, "ffmpeg.exe")
+        executable(directory, "ffprobe.exe")
+        return FfmpegTools(directory.toAbsolutePath().normalize())
+    }
+
+    private fun withTempDirectory(block: (Path) -> Unit) {
+        val directory = Files.createTempDirectory("downlet-runtime-")
+        try {
+            block(directory)
+        } finally {
+            Files.walk(directory).use { paths ->
+                paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
+            }
         }
     }
 }

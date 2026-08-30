@@ -111,7 +111,7 @@ Normal product operation SHALL use a local `yt-dlp` process after Previewing and
 
 ### Requirement: Tool setup is explicit and verified
 
-Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required notices, but SHALL NOT include yt-dlp or FFmpeg in its installer. After Previewing succeeds, Setup SHALL appear only when yt-dlp or FFmpeg is unavailable. It SHALL keep the media preview visible, name only the missing tools, state their approximate download size and purpose, clarify that tool setup does not download the media, leave consent unselected, and download nothing until the user selects consent and activates Download and continue. Setup SHALL expose Read full terms, which replaces the work area with preview-network, tool-license, media-responsibility, and liability information and provides Back to setup without losing the URL or consent state. Downlet SHALL retrieve pinned upstream artifacts, verify their SHA-256 hashes before installation, store them under the user's local application-data directory, and invoke them as separate processes. Editing the URL SHALL remain available as a way to leave or cancel Setup.
+Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required notices, but SHALL NOT include yt-dlp or FFmpeg in its distribution. After Previewing succeeds, Setup SHALL appear only when yt-dlp or FFmpeg is unavailable. Tool discovery SHALL check valid explicit environment overrides, then Downlet-managed tools under local application data, then `PATH`, and SHALL NOT scan other folders or drives. Invalid overrides SHALL fall through to the next source, and FFmpeg SHALL count as available only when `ffmpeg` and `ffprobe` are regular files in the same directory. Setup SHALL keep the media preview visible, name only the missing tools, state their approximate download size and purpose, clarify that tool setup does not download the media, leave consent unselected, and download nothing until the user selects consent and activates Download and continue. Setup SHALL expose Read full terms, which replaces the work area with preview-network, tool-license, media-responsibility, and liability information and provides Back to setup without losing the URL or consent state. Downlet SHALL retrieve pinned upstream artifacts, verify their SHA-256 hashes before installation, store them under the user's local application-data directory, and invoke them as separate processes. Editing the URL SHALL remain available as a way to leave or cancel Setup.
 
 #### Scenario: User declines tool setup
 
@@ -123,10 +123,39 @@ Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required not
 - **WHEN** the user selects consent and activates Download and continue
 - **THEN** Downlet downloads only the named pinned tools, verifies each artifact, installs them locally, and continues resolving the submitted URL
 
+#### Scenario: Existing tools are discoverable
+
+- **WHEN** valid yt-dlp and co-located FFmpeg and ffprobe executables are available through an override, Downlet-managed storage, or `PATH`
+- **THEN** Downlet bypasses Setup and continues resolving without downloading replacement tools
+
 #### Scenario: Verification or installation fails
 
 - **WHEN** a tool download, hash verification, or installation fails
 - **THEN** Setup reports a concise failure and allows the user to try again without exposing backend output
+
+### Requirement: Windows distribution is portable and self-contained
+
+Downlet SHALL be distributed for Windows 10 and 11 x64 as one downloadable `Downlet.exe` that requires neither installation nor a system Java runtime. The executable SHALL NOT exceed 90 MiB and SHOULD remain at or below the 65 MiB strong target. It MAY extract and cache its bundled, jlink-trimmed JetBrains Runtime and application payload under the user's local application-data directory. It SHALL verify the cached payload, recover from incomplete or invalid contents, coordinate simultaneous first launches, forward command-line arguments, and return the application's exit code. It SHALL create no registry entries, shortcuts, services, PATH changes, uninstaller, or administrator prompt. yt-dlp and FFmpeg SHALL remain external to the distributed executable.
+
+#### Scenario: Downlet starts on a machine without Java
+
+- **WHEN** the user starts the distributed `Downlet.exe` without Java installed or available on `PATH`
+- **THEN** Downlet opens using its bundled trimmed runtime without installation or elevation
+
+#### Scenario: Downlet starts for the first time
+
+- **WHEN** no valid cached payload exists
+- **THEN** Downlet validates and extracts its payload atomically under local application data before opening
+
+#### Scenario: Downlet starts again
+
+- **WHEN** a valid cached payload already exists
+- **THEN** Downlet reuses that payload without reinstalling the application
+
+#### Scenario: Cached payload is incomplete or invalid
+
+- **WHEN** payload verification fails
+- **THEN** Downlet replaces the invalid cache with a verified payload or shows a native error message if recovery fails
 
 ### Requirement: Window size follows task stage
 

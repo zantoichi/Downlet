@@ -117,12 +117,12 @@ internal class YtDlpDownloadRuntime(
     override fun missingTools(): List<DownloadTool> =
         buildList {
             if (ytDlpExecutable() == null) add(DownloadTool.YtDlp)
-            if (ffmpegExecutable() == null || ffprobeExecutable() == null) add(DownloadTool.Ffmpeg)
+            if (ffmpegTools() == null) add(DownloadTool.Ffmpeg)
         }
 
     override suspend fun installMissingTools() {
         if (ytDlpExecutable() == null) installExecutable(YT_DLP_ASSET, provisionedYtDlp)
-        if (ffmpegExecutable() == null || ffprobeExecutable() == null) {
+        if (ffmpegTools() == null) {
             installZipEntries(
                 FFMPEG_ASSET,
                 mapOf(
@@ -316,11 +316,7 @@ internal class YtDlpDownloadRuntime(
         buildList {
             addAll(listOf("--ignore-config", "--encoding", "UTF-8", "--no-colors", "--no-playlist"))
             addAll(quickJsArguments(quickJsExecutable()))
-            ffmpegExecutable()?.let { executable ->
-                runCatching { Path.of(executable).parent }
-                    .getOrNull()
-                    ?.let { addAll(listOf("--ffmpeg-location", it.toString())) }
-            }
+            addAll(ffmpegLocationArguments(ffmpegTools()))
         }
 
     private suspend fun execute(
@@ -356,23 +352,13 @@ internal class YtDlpDownloadRuntime(
             }
         }
 
-    private fun ytDlpExecutable(): String? = configuredExecutable("DOWNLET_YT_DLP", provisionedYtDlp, "yt-dlp")
+    private fun ytDlpExecutable(): String? =
+        resolveExecutable("DOWNLET_YT_DLP", provisionedYtDlp, "yt-dlp", environment)?.toString()
 
-    private fun quickJsExecutable(): String? = configuredExecutable("DOWNLET_QUICKJS", provisionedQuickJs, "qjs")
+    private fun quickJsExecutable(): String? =
+        resolveExecutable("DOWNLET_QUICKJS", provisionedQuickJs, "qjs", environment)?.toString()
 
-    private fun ffmpegExecutable(): String? = configuredExecutable("DOWNLET_FFMPEG", provisionedFfmpeg, "ffmpeg")
-
-    private fun ffprobeExecutable(): String? = configuredExecutable("DOWNLET_FFPROBE", provisionedFfprobe, "ffprobe")
-
-    private fun configuredExecutable(
-        environmentName: String,
-        provisioned: Path,
-        command: String,
-    ): String? =
-        environment[environmentName]
-            ?.takeIf(String::isNotBlank)
-            ?: provisioned.takeIf(Files::isRegularFile)?.toString()
-            ?: findExecutableOnPath(command, environment)?.toString()
+    private fun ffmpegTools(): FfmpegTools? = resolveFfmpegTools(environment, provisionedFfmpegDirectory)
 
     private suspend fun installExecutable(
         asset: ToolAsset,
@@ -583,23 +569,6 @@ internal fun requireSha256(
     }
     val actual = HexFormat.of().formatHex(digest.digest())
     if (!actual.equals(expected, ignoreCase = true)) throw DownloadRuntimeException()
-}
-
-private fun findExecutableOnPath(
-    command: String,
-    environment: Map<String, String>,
-): Path? {
-    val path = environment.entries.firstOrNull { it.key.equals("PATH", ignoreCase = true) }?.value ?: return null
-    val candidates = listOf("$command.exe", command)
-    return path
-        .split(java.io.File.pathSeparatorChar)
-        .asSequence()
-        .map(String::trim)
-        .filter(String::isNotEmpty)
-        .map { it.trim('"') }
-        .flatMap { directory -> candidates.asSequence().map { candidate -> directory to candidate } }
-        .mapNotNull { (directory, candidate) -> runCatching { Path.of(directory, candidate) }.getOrNull() }
-        .firstOrNull(Files::isRegularFile)
 }
 
 private fun moveReplacing(
