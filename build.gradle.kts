@@ -328,6 +328,7 @@ plugins {
 repositories {
     google()
     mavenCentral()
+    maven("https://www.jetbrains.com/intellij-repository/releases")
 }
 
 dependencies {
@@ -342,6 +343,7 @@ dependencies {
     }
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     implementation("net.java.dev.jna:jna-platform:5.19.1")
+    runtimeOnly("com.jetbrains.intellij.platform:icons:262.9437.136")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.jetbrains.compose.ui:ui-test:1.12.0")
