@@ -270,6 +270,53 @@ class ProductSmokeTest {
         }
     }
 
+    @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
+    @Test
+    fun `zero motion replaces state content immediately and restores focus`() {
+        val stateScheduler = TestCoroutineScheduler()
+        val stateDispatcher = UnconfinedTestDispatcher(stateScheduler)
+        val stateHolder =
+            DownloadStateHolder(
+                CoroutineScope(stateDispatcher + SupervisorJob()),
+                PreviewDownloadRuntime(),
+            )
+        try {
+            runComposeUiTest {
+                setContent {
+                    IntUiTheme(
+                        theme = JewelTheme.lightThemeDefinition(),
+                        styling = ComponentStyling.default().decoratedWindow(),
+                    ) {
+                        ProductSurface(stateHolder, motionDurationScale = 0f)
+                    }
+                }
+
+                val emptyStatus =
+                    onNodeWithContentDescription(
+                        "Status: Paste or type a YouTube link. Downlet checks it automatically.",
+                    )
+                val linkField = onNodeWithContentDescription("YouTube link field")
+                emptyStatus.assertExists()
+
+                mainClock.autoAdvance = false
+                runOnIdle { stateHolder.showDesignState(DownloadUiState.Ready(DownloadFixtures.normal)) }
+                mainClock.advanceTimeByFrame()
+                mainClock.advanceTimeByFrame()
+                emptyStatus.assertDoesNotExist()
+                onNodeWithText("Video").assertExists()
+
+                runOnIdle { stateHolder.showDesignState(DownloadUiState.Empty) }
+                mainClock.advanceTimeByFrame()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Video").assertDoesNotExist()
+                emptyStatus.assertExists()
+                linkField.assertIsFocused()
+            }
+        } finally {
+            stateHolder.close()
+        }
+    }
+
     @OptIn(ExperimentalTestApi::class)
     @Test
     fun `rapid height retarget cancels stale target`() {

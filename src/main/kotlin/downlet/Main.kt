@@ -35,11 +35,13 @@ fun main() =
         val stateHolder = remember(scope) { DownloadStateHolder(scope, runtime = YtDlpDownloadRuntime()) }
         val detectedDarkTheme = isSystemInDarkTheme()
         val startupTheme = remember { if (detectedDarkTheme) DownletTheme.Dark else DownletTheme.Light }
+        val startupMotionDurationScale = remember { windowsMotionDurationScale() }
 
         ProductWindow(
             stateHolder = stateHolder,
             theme = startupTheme,
             onCloseRequest = ::exitApplication,
+            motionDurationScale = startupMotionDurationScale,
         )
     }
 

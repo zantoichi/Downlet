@@ -14,6 +14,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
+import com.sun.jna.Native
+import com.sun.jna.platform.win32.User32
+import com.sun.jna.ptr.IntByReference
+import com.sun.jna.win32.W32APIOptions
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -77,6 +81,35 @@ internal fun logicalPixelsToDevicePixels(
 
 private const val EXPAND_DURATION_MILLIS = 250
 private const val COLLAPSE_DURATION_MILLIS = 167
+private const val SPI_GETCLIENTAREAANIMATION = 0x1042
+
+private interface MotionUser32 : User32 {
+    @Suppress("FunctionName", "ktlint:standard:function-naming")
+    fun SystemParametersInfo(
+        uiAction: Int,
+        uiParam: Int,
+        pvParam: IntByReference,
+        fWinIni: Int,
+    ): Boolean
+}
+
+private val motionUser32: MotionUser32 by lazy {
+    Native.load("user32", MotionUser32::class.java, W32APIOptions.DEFAULT_OPTIONS)
+}
+
+internal fun windowsMotionDurationScale(
+    animationsEnabled: () -> Boolean = ::windowsClientAreaAnimationsEnabled,
+): Float = if (runCatching(animationsEnabled).getOrDefault(false)) 1f else 0f
+
+private fun windowsClientAreaAnimationsEnabled(): Boolean {
+    val enabled = IntByReference()
+    return motionUser32.SystemParametersInfo(
+        SPI_GETCLIENTAREAANIMATION,
+        0,
+        enabled,
+        0,
+    ) && enabled.value != 0
+}
 
 @Composable
 internal fun ManageProductWindowSizing(

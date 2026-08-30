@@ -5,6 +5,13 @@ import kotlin.test.assertEquals
 
 class WindowSizingTest {
     @Test
+    fun `Windows animation preference controls motion duration`() {
+        assertEquals(1f, windowsMotionDurationScale { true })
+        assertEquals(0f, windowsMotionDurationScale { false })
+        assertEquals(0f, windowsMotionDurationScale { error("User32 unavailable") })
+    }
+
+    @Test
     fun `all product states map to one of two tiers`() {
         val compactStates =
             listOf(
