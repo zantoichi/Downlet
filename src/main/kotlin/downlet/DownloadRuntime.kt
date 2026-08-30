@@ -5,12 +5,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.xml.sax.SAXException
 import java.awt.Desktop
 import java.io.ByteArrayInputStream
 import java.io.IOException
-import java.io.InputStream
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
@@ -24,6 +24,8 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Duration
 import java.util.HexFormat
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
 import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipInputStream
 import javax.swing.JFileChooser
@@ -134,7 +136,16 @@ internal class YtDlpDownloadRuntime(
 
     override suspend fun preview(sourceUrl: String): DownloadFixture {
         val metadata = requestPreview(sourceUrl)
-        val thumbnailBytes = metadata.thumbnailUri?.let { runCatching { requestThumbnail(it) }.getOrNull() }
+        val thumbnailBytes =
+            metadata.thumbnailUri?.let { uri ->
+                try {
+                    requestThumbnail(uri)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    null
+                }
+            }
         return DownloadFixture(
             id = sourceUrl,
             sourceUrl = sourceUrl,
@@ -226,20 +237,18 @@ internal class YtDlpDownloadRuntime(
         }.fold(onSuccess = { null }, onFailure = { ProductCopy.OPEN_FOLDER_FAILURE_MESSAGE })
 
     private suspend fun requestPreview(sourceUrl: String): OEmbedMetadata =
-        withContext(Dispatchers.IO) {
-            val encodedUrl = URLEncoder.encode(sourceUrl, StandardCharsets.UTF_8)
+        URLEncoder.encode(sourceUrl, StandardCharsets.UTF_8).let { encodedUrl ->
             parseOEmbed(sendBounded(URI("$OEMBED_ENDPOINT?url=$encodedUrl&format=xml"), MAX_PREVIEW_BYTES))
         }
 
     private suspend fun requestThumbnail(uri: URI): ByteArray =
-        withContext(Dispatchers.IO) {
-            if (uri.scheme != "https" || !uri.host.equals(YOUTUBE_THUMBNAIL_HOST, ignoreCase = true)) {
-                throw DownloadRuntimeException()
-            }
+        if (uri.scheme != "https" || !uri.host.equals(YOUTUBE_THUMBNAIL_HOST, ignoreCase = true)) {
+            throw DownloadRuntimeException()
+        } else {
             sendBounded(uri, MAX_THUMBNAIL_BYTES)
         }
 
-    private fun sendBounded(
+    private suspend fun sendBounded(
         uri: URI,
         maxBytes: Int,
     ): ByteArray {
@@ -251,13 +260,18 @@ internal class YtDlpDownloadRuntime(
                 .GET()
                 .build()
         try {
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
+            val response =
+                httpClient
+                    .sendAsync(
+                        request,
+                        HttpResponse.BodyHandlers.limiting(
+                            HttpResponse.BodyHandlers.ofByteArray(),
+                            maxBytes.toLong(),
+                        ),
+                    ).awaitCancellable()
             if (response.statusCode() !in HTTP_SUCCESS_MIN..HTTP_SUCCESS_MAX) failRuntime()
-            return response.body().use { input -> readBounded(input, maxBytes) }
+            return response.body()
         } catch (error: IOException) {
-            failRuntime(error)
-        } catch (error: InterruptedException) {
-            Thread.currentThread().interrupt()
             failRuntime(error)
         }
     }
@@ -425,19 +439,11 @@ internal class YtDlpDownloadRuntime(
                         .header("User-Agent", "Downlet/$DOWNLET_DOWNLOAD_AGENT_VERSION")
                         .GET()
                         .build()
-                val response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
+                val response =
+                    httpClient
+                        .sendAsync(request, HttpResponse.BodyHandlers.ofFile(target))
+                        .awaitCancellable()
                 if (response.statusCode() !in HTTP_SUCCESS_MIN..HTTP_SUCCESS_MAX) throw DownloadRuntimeException()
-                response.body().use { input ->
-                    Files.newOutputStream(target).use { output ->
-                        val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            output.write(buffer, 0, read)
-                        }
-                    }
-                }
                 requireSha256(target, asset.sha256)
                 target
             } catch (error: CancellationException) {
@@ -447,10 +453,6 @@ internal class YtDlpDownloadRuntime(
                 Files.deleteIfExists(target)
                 throw error
             } catch (error: IOException) {
-                Files.deleteIfExists(target)
-                throw DownloadRuntimeException(error)
-            } catch (error: InterruptedException) {
-                Thread.currentThread().interrupt()
                 Files.deleteIfExists(target)
                 throw DownloadRuntimeException(error)
             } catch (error: SecurityException) {
@@ -540,12 +542,18 @@ internal fun parseOEmbed(bytes: ByteArray): OEmbedMetadata =
         failRuntime(error)
     }
 
-internal fun readBounded(
-    input: InputStream,
-    maxBytes: Int,
-): ByteArray =
-    input.readNBytes(maxBytes + 1).also { bytes ->
-        if (bytes.size > maxBytes) throw DownloadRuntimeException()
+internal suspend fun <T> CompletableFuture<T>.awaitCancellable(): T =
+    suspendCancellableCoroutine { continuation ->
+        whenComplete { value, error ->
+            continuation.resumeWith(
+                if (error == null) {
+                    Result.success(value)
+                } else {
+                    Result.failure((error as? CompletionException)?.cause ?: error)
+                },
+            )
+        }
+        continuation.invokeOnCancellation { cancel(true) }
     }
 
 internal fun parseProgress(line: String): Int? =

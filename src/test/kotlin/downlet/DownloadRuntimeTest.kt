@@ -1,9 +1,13 @@
 package downlet
 
 import com.sun.jna.platform.win32.KnownFolders
-import java.io.ByteArrayInputStream
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -177,12 +181,16 @@ class DownloadRuntimeTest {
     }
 
     @Test
-    fun `preview responses are bounded`() {
-        assertEquals(4, readBounded(ByteArrayInputStream(ByteArray(4)), maxBytes = 4).size)
-        assertFailsWith<DownloadRuntimeException> {
-            readBounded(ByteArrayInputStream(ByteArray(5)), maxBytes = 4)
+    fun `cancelling a coroutine cancels its pending future`() =
+        runTest {
+            val future = CompletableFuture<Unit>()
+            val job = launch { future.awaitCancellable() }
+
+            yield()
+            job.cancelAndJoin()
+
+            assertTrue(future.isCancelled)
         }
-    }
 
     @Test
     fun `bundled quickjs matches its pinned release hash`() {
