@@ -30,7 +30,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -64,7 +63,7 @@ internal fun ToolSetupContent(
         MediaIdentity(state.item, thumbnailWidth = 128.dp, showDuration = false)
         Text(
             text = "Prepare this download",
-            style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.SemiBold),
+            style = LocalDownletTypography.current.sectionHeading,
         )
         Text(
             ProductCopy.toolSetupDescription(
@@ -141,7 +140,7 @@ internal fun LegalDetailsContent(
         )
         Text(
             text = "Full terms",
-            style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.SemiBold),
+            style = LocalDownletTypography.current.sectionHeading,
         )
         ProductCopy.legalSections.forEach { section ->
             LegalSection(title = section.title, body = section.body)
@@ -179,9 +178,9 @@ private fun LegalSection(
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(
             text = title,
-            style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.SemiBold),
+            style = LocalDownletTypography.current.formLabel,
         )
-        Text(body)
+        Text(body, style = LocalDownletTypography.current.legal)
     }
 }
 
@@ -353,7 +352,7 @@ private fun DownloadingActionRegion(
         Row(modifier = Modifier.fillMaxWidth()) {
             Text("Downloading")
             Spacer(Modifier.weight(1f))
-            Text("${state.progress.percent}%", fontWeight = FontWeight.SemiBold)
+            Text("${state.progress.percent}%", style = LocalDownletTypography.current.progressNumber)
         }
         HorizontalProgressBar(
             progress = state.progress.fraction,
@@ -391,8 +390,8 @@ private fun CompletedActionRegion(stateHolder: DownloadStateHolder) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("✓", fontWeight = FontWeight.SemiBold)
-            Text("Saved to ${stateHolder.destination}", fontWeight = FontWeight.SemiBold)
+            Text("✓", style = LocalDownletTypography.current.mediaTitle)
+            Text("Saved to ${stateHolder.destination}", style = LocalDownletTypography.current.mediaTitle)
         }
         stateHolder.completedFeedback?.let { StatusText(it) }
         Row(
@@ -467,7 +466,7 @@ private fun FormRow(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, modifier = Modifier.width(96.dp), fontWeight = FontWeight.SemiBold)
+        Text(text = label, modifier = Modifier.width(96.dp), style = LocalDownletTypography.current.formLabel)
         content()
     }
 }
@@ -550,7 +549,7 @@ private fun MediaIdentity(
         ) {
             Text(
                 text = item.title,
-                style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.SemiBold),
+                style = LocalDownletTypography.current.mediaTitle,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -561,6 +560,7 @@ private fun MediaIdentity(
                         formatMediaDuration(item.duration).takeIf { showDuration },
                         "YouTube",
                     ).joinToString(" · "),
+                style = LocalDownletTypography.current.numericMetadata,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

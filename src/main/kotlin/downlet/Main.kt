@@ -12,18 +12,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import downlet.generated.resources.Res
 import downlet.generated.resources.app_icon
-import downlet.generated.resources.mona_sans_regular
-import downlet.generated.resources.mona_sans_semibold
-import org.jetbrains.compose.resources.Font
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.foundation.theme.LocalTextStyle
@@ -100,19 +94,10 @@ internal fun ProductWindow(
                 }
             },
     ) {
-        val downletFontFamily =
-            FontFamily(
-                Font(Res.font.mona_sans_regular, FontWeight.Normal),
-                Font(Res.font.mona_sans_semibold, FontWeight.SemiBold),
-            )
+        val typography = downletTypography()
         CompositionLocalProvider(
-            LocalTextStyle provides
-                JewelTheme.defaultTextStyle.copy(
-                    fontFamily = downletFontFamily,
-                    fontWeight = FontWeight.Normal,
-                    fontSize = 14.sp,
-                    lineHeight = 18.sp,
-                ),
+            LocalDownletTypography provides typography,
+            LocalTextStyle provides typography.body,
         ) {
             val appIcon = painterResource(Res.drawable.app_icon)
             DecoratedWindow(
@@ -133,7 +118,7 @@ internal fun ProductWindow(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Image(appIcon, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(PRODUCT_WINDOW_TITLE, fontWeight = FontWeight.SemiBold)
+                        Text(PRODUCT_WINDOW_TITLE, style = typography.titleBar)
                     }
                 }
 
