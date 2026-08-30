@@ -1,6 +1,8 @@
 package downlet
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -20,6 +22,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.foundation.theme.LocalTextStyle
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.theme.default
 import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
@@ -55,7 +58,7 @@ class ProductSmokeTest {
                         theme = JewelTheme.lightThemeDefinition(),
                         styling = ComponentStyling.default().decoratedWindow(),
                     ) {
-                        ProductSurface(stateHolder)
+                        TestProductSurface(stateHolder)
                     }
                 }
 
@@ -117,7 +120,7 @@ class ProductSmokeTest {
                         theme = JewelTheme.lightThemeDefinition(),
                         styling = ComponentStyling.default().decoratedWindow(),
                     ) {
-                        ProductSurface(stateHolder)
+                        TestProductSurface(stateHolder)
                     }
                 }
 
@@ -207,7 +210,7 @@ class ProductSmokeTest {
                         theme = JewelTheme.lightThemeDefinition(),
                         styling = ComponentStyling.default().decoratedWindow(),
                     ) {
-                        ProductSurface(stateHolder)
+                        TestProductSurface(stateHolder)
                     }
                 }
 
@@ -260,7 +263,7 @@ class ProductSmokeTest {
                         theme = JewelTheme.lightThemeDefinition(),
                         styling = ComponentStyling.default().decoratedWindow(),
                     ) {
-                        ProductSurface(stateHolder)
+                        TestProductSurface(stateHolder)
                     }
                 }
 
@@ -298,7 +301,7 @@ class ProductSmokeTest {
                         theme = JewelTheme.lightThemeDefinition(),
                         styling = ComponentStyling.default().decoratedWindow(),
                     ) {
-                        ProductSurface(stateHolder, animationsEnabled = false)
+                        TestProductSurface(stateHolder, animationsEnabled = false)
                     }
                 }
 
@@ -371,5 +374,19 @@ class ProductSmokeTest {
                 assertEquals(compactHeight, renderedHeight.intValue)
             }
         }
+    }
+}
+
+@Composable
+private fun TestProductSurface(
+    stateHolder: DownloadStateHolder,
+    animationsEnabled: Boolean = true,
+) {
+    val typography = downletTypography()
+    CompositionLocalProvider(
+        LocalDownletTypography provides typography,
+        LocalTextStyle provides typography.body,
+    ) {
+        ProductSurface(stateHolder, animationsEnabled)
     }
 }
