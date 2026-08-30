@@ -9,7 +9,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Comparator
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -46,12 +45,23 @@ class DownloadRuntimeTest {
     }
 
     @Test
-    fun `yt-dlp progress output is bounded for the downloading state`() {
-        assertEquals(DownloadProgress(43), parseProgress("DOWNLET_PROGRESS= 43.2%"))
-        assertEquals(DownloadProgress(99), parseProgress("DOWNLET_PROGRESS=100.0%"))
+    fun `yt-dlp progress output distinguishes transfer and processing phases`() {
+        assertEquals(
+            DownloadProgress.Transferring(43),
+            parseProgress("DOWNLET_TRANSFER=downloading| 43.2%"),
+        )
+        assertEquals(
+            DownloadProgress.Transferring(100),
+            parseProgress("DOWNLET_TRANSFER=downloading|100.0%"),
+        )
+        assertEquals(DownloadProgress.Processing, parseProgress("DOWNLET_PROCESSING=started"))
+        assertEquals(DownloadProgress.Processing, parseProgress("DOWNLET_PROCESSING=processing"))
+        assertNull(parseProgress("DOWNLET_TRANSFER=finished|100.0%"))
+        assertNull(parseProgress("DOWNLET_PROCESSING=finished"))
         assertNull(parseProgress("[download] waiting"))
-        assertEquals("Downloading…", downloadProgressStatus(DownloadProgress(1)))
-        assertEquals("Finishing…", downloadProgressStatus(DownloadProgress(99)))
+        assertEquals("Downloading…", downloadProgressStatus(DownloadProgress.Transferring(1)))
+        assertEquals("Downloading…", downloadProgressStatus(DownloadProgress.Transferring(100)))
+        assertEquals("Processing…", downloadProgressStatus(DownloadProgress.Processing))
     }
 
     @Test
@@ -253,6 +263,49 @@ class DownloadRuntimeTest {
     }
 
     @Test
+    fun `staged download publishes one file without replacing an existing target`() =
+        withTempDirectory { root ->
+            val destination = Files.createDirectory(root.resolve("destination"))
+            val firstOutput = Files.createDirectories(root.resolve("first-output"))
+            val firstStagedFile = firstOutput.resolve("media.mp3")
+            Files.writeString(firstStagedFile, "first")
+
+            val published = assertNotNull(publishStagedDownload(firstOutput, destination))
+
+            assertEquals(destination.resolve("media.mp3"), published)
+            assertEquals("first", Files.readString(published))
+            assertFalse(Files.exists(firstStagedFile))
+
+            val duplicateOutput = Files.createDirectories(root.resolve("duplicate-output"))
+            val duplicateStagedFile = duplicateOutput.resolve("media.mp3")
+            Files.writeString(duplicateStagedFile, "replacement")
+
+            assertNull(publishStagedDownload(duplicateOutput, destination))
+            assertEquals("first", Files.readString(published))
+            assertEquals("replacement", Files.readString(duplicateStagedFile))
+        }
+
+    @Test
+    fun `staged download rejects ambiguous output and recursive cleanup removes the attempt`() =
+        withTempDirectory { root ->
+            val destination = Files.createDirectory(root.resolve("destination"))
+            val attempt = Files.createDirectories(destination.resolve(".downlet-test"))
+            val output = Files.createDirectory(attempt.resolve("output"))
+            val working = Files.createDirectory(attempt.resolve("working"))
+            Files.writeString(output.resolve("first.webm"), "first")
+            Files.writeString(output.resolve("second.webm"), "second")
+            Files.writeString(working.resolve("partial.part"), "partial")
+
+            assertFailsWith<DownloadRuntimeException> {
+                publishStagedDownload(output, destination)
+            }
+
+            deleteRecursively(attempt)
+            assertFalse(Files.exists(attempt))
+            assertEquals(emptyList(), Files.list(destination).use { it.toList() })
+        }
+
+    @Test
     fun `process tree termination stops parent and descendants`() {
         if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
 
@@ -268,14 +321,11 @@ class DownloadRuntimeTest {
             }
             assertTrue(descendants.isNotEmpty(), "Expected cmd.exe to start ping.exe")
 
-            terminateProcessTree(process)
+            val terminatedHandles = terminateProcessTree(process)
+            awaitProcessTreeTermination(process, terminatedHandles)
 
-            assertTrue(
-                process.waitFor(waitTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS),
-                "Parent process did not exit",
-            )
+            assertFalse(process.isAlive, "Parent process did not exit")
             descendants.forEach { descendant ->
-                descendant.onExit().get(waitTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
                 assertFalse(descendant.isAlive, "Descendant process did not exit")
             }
         } finally {

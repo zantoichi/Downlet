@@ -29,24 +29,28 @@ internal enum class DownloadErrorKind {
     Download,
 }
 
-@JvmInline
-internal value class DownloadProgress(
-    val percent: Int,
-) {
-    init {
-        require(percent in 0..MAX_PERCENT)
+internal const val MAX_TRANSFER_PERCENT = 100
+
+internal sealed interface DownloadProgress {
+    data class Transferring(
+        val percent: Int,
+    ) : DownloadProgress {
+        init {
+            require(percent in 0..MAX_TRANSFER_PERCENT)
+        }
+
+        val fraction: Float
+            get() = percent / 100f
     }
 
-    val fraction: Float
-        get() = percent / 100f
+    data object Processing : DownloadProgress
 
     companion object {
-        private const val MAX_PERCENT = 99
-        val Zero = DownloadProgress(0)
+        val Zero = Transferring(0)
     }
 }
 
-internal val fakeProgressSteps = listOf(18, 43, 68, 87).map(::DownloadProgress)
+internal val fakeProgressSteps = listOf(18, 43, 68, 87).map(DownloadProgress::Transferring)
 
 internal data class DownloadQuality(
     val label: String,

@@ -2,6 +2,7 @@ package downlet
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -82,6 +83,8 @@ internal class PreviewDownloadRuntime : DownloadRuntime {
             onProgress(progress)
         }
         delay(FAKE_PROGRESS_INTERVAL)
+        onProgress(DownloadProgress.Processing)
+        delay(FAKE_PROGRESS_INTERVAL)
     }
 
     override fun cancel() = Unit
@@ -105,13 +108,28 @@ internal class YtDlpDownloadRuntime(
             .connectTimeout(CONNECT_TIMEOUT.toJavaDuration())
             .build(),
 ) : DownloadRuntime {
-    private val currentProcess = AtomicReference<Process?>()
+    private val currentProcess = AtomicReference<ProcessExecution?>()
     private val provisionedYtDlp = toolsDirectory.resolve("yt-dlp").resolve(YT_DLP_VERSION).resolve("yt-dlp.exe")
     private val provisionedQuickJs =
         toolsDirectory.resolve("quickjs-ng").resolve(QUICKJS_VERSION).resolve("qjs.exe")
     private val provisionedFfmpegDirectory = toolsDirectory.resolve("ffmpeg").resolve(FFMPEG_VERSION).resolve("bin")
     private val provisionedFfmpeg = provisionedFfmpegDirectory.resolve("ffmpeg.exe")
     private val provisionedFfprobe = provisionedFfmpegDirectory.resolve("ffprobe.exe")
+
+    private class ProcessExecution(
+        private val process: Process,
+    ) {
+        @Volatile
+        private var terminatedHandles: List<ProcessHandle>? = null
+
+        @Synchronized
+        fun terminate(): List<ProcessHandle> =
+            terminatedHandles ?: terminateProcessTree(process).also { terminatedHandles = it }
+
+        fun awaitTermination() {
+            awaitProcessTreeTermination(process, terminate())
+        }
+    }
 
     override fun missingTools(): List<DownloadTool> =
         buildList {
@@ -208,18 +226,36 @@ internal class YtDlpDownloadRuntime(
         onProgress: suspend (DownloadProgress) -> Unit,
     ) {
         ensureQuickJs()
-        Files.createDirectories(request.item.destination)
-        var lastProgress: DownloadProgress? = null
-        execute(downloadArguments(request)) { line ->
-            parseProgress(line)?.takeIf { it != lastProgress }?.let { progress ->
-                lastProgress = progress
-                onProgress(progress)
+        val attempt = withContext(Dispatchers.IO) { createDownloadAttempt(request.item.destination) }
+        var publishedFile: Path? = null
+        try {
+            var lastProgress: DownloadProgress? = null
+            execute(downloadArguments(request, attempt)) { line ->
+                parseProgress(line)?.takeIf { it != lastProgress }?.let { progress ->
+                    lastProgress = progress
+                    onProgress(progress)
+                }
+            }
+            currentCoroutineContext().ensureActive()
+            publishedFile =
+                withContext(NonCancellable + Dispatchers.IO) {
+                    publishStagedDownload(attempt.output, request.item.destination)
+                }
+            currentCoroutineContext().ensureActive()
+        } catch (error: CancellationException) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                publishedFile?.let(Files::deleteIfExists)
+            }
+            throw error
+        } finally {
+            withContext(NonCancellable + Dispatchers.IO) {
+                deleteRecursively(attempt.root)
             }
         }
     }
 
     override fun cancel() {
-        currentProcess.get()?.let(::terminateProcessTree)
+        currentProcess.get()?.terminate()
     }
 
     override fun chooseDestination(current: Path): Path? = WindowsFolderPicker.choose(current)
@@ -290,15 +326,22 @@ internal class YtDlpDownloadRuntime(
         }
     }
 
-    private fun downloadArguments(request: DownloadRequest): List<String> =
+    private fun downloadArguments(
+        request: DownloadRequest,
+        attempt: DownloadAttempt,
+    ): List<String> =
         commonArguments() +
             listOf(
                 "--newline",
                 "--progress",
                 "--progress-template",
-                "download:DOWNLET_PROGRESS=%(progress._percent_str)s",
+                "download:DOWNLET_TRANSFER=%(progress.status)s|%(progress._percent_str)s",
+                "--progress-template",
+                "postprocess:DOWNLET_PROCESSING=%(progress.status)s",
                 "--paths",
-                request.item.destination.toString(),
+                "home:${attempt.output}",
+                "--paths",
+                "temp:${attempt.working}",
                 "--output",
                 "%(title).180B [%(id)s].%(ext)s",
             ) +
@@ -326,7 +369,8 @@ internal class YtDlpDownloadRuntime(
                 } catch (_: IOException) {
                     throw DownloadRuntimeException()
                 }
-            currentProcess.set(process)
+            val execution = ProcessExecution(process)
+            currentProcess.set(execution)
             val output = ArrayDeque<String>()
             try {
                 process.inputStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
@@ -340,8 +384,8 @@ internal class YtDlpDownloadRuntime(
                 if (process.waitFor() != 0) throw DownloadRuntimeException()
                 output.toList()
             } finally {
-                currentProcess.compareAndSet(process, null)
-                if (process.isAlive) process.destroyForcibly()
+                currentProcess.compareAndSet(execution, null)
+                execution.awaitTermination()
             }
         }
 
@@ -550,15 +594,17 @@ internal suspend fun <T> CompletableFuture<T>.awaitCancellable(): T =
         continuation.invokeOnCancellation { cancel(true) }
     }
 
-internal fun parseProgress(line: String): DownloadProgress? =
-    PROGRESS_PATTERN
-        .find(line)
+internal fun parseProgress(line: String): DownloadProgress? {
+    if (PROCESSING_PATTERN.matches(line)) return DownloadProgress.Processing
+    return TRANSFER_PROGRESS_PATTERN
+        .matchEntire(line)
         ?.groupValues
         ?.get(1)
         ?.toDoubleOrNull()
         ?.roundToInt()
-        ?.coerceIn(0, MAX_PROGRESS_BEFORE_COMPLETE)
-        ?.let(::DownloadProgress)
+        ?.coerceIn(0, MAX_TRANSFER_PERCENT)
+        ?.let(DownloadProgress::Transferring)
+}
 
 internal fun quickJsArguments(executable: String?): List<String> =
     executable?.let { listOf("--no-js-runtimes", "--js-runtimes", "quickjs:$it") }.orEmpty()
@@ -601,7 +647,6 @@ private data class ToolAsset(
     val sha256: String,
 )
 
-private const val MAX_PROGRESS_BEFORE_COMPLETE = 99
 private const val MAX_CAPTURED_OUTPUT_LINES = 100
 private const val DOWNLOAD_BUFFER_SIZE = 64 * 1024
 private const val MAX_PREVIEW_BYTES = 64 * 1024
@@ -640,5 +685,6 @@ private val METADATA_PREFIXES =
         "DOWNLET_AUDIO_FORMAT=",
         "DOWNLET_AUDIO_BITRATE_KBPS=",
     )
-private val PROGRESS_PATTERN = Regex("DOWNLET_PROGRESS=\\s*([0-9]+(?:\\.[0-9]+)?)%")
-private val PREVIEW_FAILURE_PROGRESS = DownloadProgress(68)
+private val TRANSFER_PROGRESS_PATTERN = Regex("DOWNLET_TRANSFER=downloading\\|\\s*([0-9]+(?:\\.[0-9]+)?)%")
+private val PROCESSING_PATTERN = Regex("DOWNLET_PROCESSING=(?:started|processing)")
+private val PREVIEW_FAILURE_PROGRESS = DownloadProgress.Transferring(68)

@@ -399,34 +399,57 @@ private fun DownloadingActionRegion(
     state: DownloadUiState.Downloading,
 ) {
     val status = downloadProgressStatus(state.progress)
+    val contentDescription =
+        when (val progress = state.progress) {
+            is DownloadProgress.Transferring -> "Downloading: ${progress.percent}%. $status"
+            DownloadProgress.Processing -> "Processing download."
+        }
     Column(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .semantics(mergeDescendants = true) {
-                    contentDescription = "Downloading: ${state.progress.percent}%. $status"
+                    this.contentDescription = contentDescription
                     liveRegion = LiveRegionMode.Polite
                 },
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
-            Text("Downloading", style = LocalDownletTypography.current.formLabel)
+            Text(
+                if (state.progress is DownloadProgress.Transferring) "Downloading" else "Processing",
+                style = LocalDownletTypography.current.formLabel,
+            )
             Spacer(Modifier.weight(1f))
-            Text("${state.progress.percent}%", style = LocalDownletTypography.current.progressNumber)
+            (state.progress as? DownloadProgress.Transferring)?.let { progress ->
+                Text("${progress.percent}%", style = LocalDownletTypography.current.progressNumber)
+            }
         }
-        HorizontalProgressBar(
-            progress = state.progress.fraction,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .semantics {
-                        progressBarRangeInfo =
-                            ProgressBarRangeInfo(
-                                current = state.progress.fraction,
-                                range = 0f..1f,
-                            )
-                    },
-        )
+        when (val progress = state.progress) {
+            is DownloadProgress.Transferring -> {
+                HorizontalProgressBar(
+                    progress = progress.fraction,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .semantics {
+                                progressBarRangeInfo =
+                                    ProgressBarRangeInfo(
+                                        current = progress.fraction,
+                                        range = 0f..1f,
+                                    )
+                            },
+                )
+            }
+
+            DownloadProgress.Processing -> {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+        }
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(status, style = LocalDownletTypography.current.numericMetadata)
             Spacer(Modifier.weight(1f))
@@ -691,14 +714,21 @@ internal fun mediaContentDescription(
 
 @Suppress("MagicNumber")
 internal fun downloadProgressStatus(progress: DownloadProgress): String =
-    when (progress.percent) {
-        0 -> "Starting download…"
-        18 -> "4.8 MB/s · About 18 seconds remaining"
-        43 -> "5.1 MB/s · About 11 seconds remaining"
-        68 -> "4.9 MB/s · About 7 seconds remaining"
-        87 -> "5.0 MB/s · About 3 seconds remaining"
-        in 1 until MAX_PROGRESS_BEFORE_FINISHING -> "Downloading…"
-        else -> "Finishing…"
+    when (progress) {
+        DownloadProgress.Processing -> {
+            "Processing…"
+        }
+
+        is DownloadProgress.Transferring -> {
+            when (progress.percent) {
+                0 -> "Starting download…"
+                18 -> "4.8 MB/s · About 18 seconds remaining"
+                43 -> "5.1 MB/s · About 11 seconds remaining"
+                68 -> "4.9 MB/s · About 7 seconds remaining"
+                87 -> "5.0 MB/s · About 3 seconds remaining"
+                else -> "Downloading…"
+            }
+        }
     }
 
 internal fun formatMediaDuration(duration: Duration?): String {
@@ -715,7 +745,6 @@ internal fun formatMediaDuration(duration: Duration?): String {
     }
 }
 
-private const val MAX_PROGRESS_BEFORE_FINISHING = 99
 private const val QUALITY_COLUMN_WEIGHT = 1.35f
 private const val SUCCESS_ICON_ANIMATION_MILLIS = 160
 private const val SUCCESS_ICON_INITIAL_SCALE = 0.92f

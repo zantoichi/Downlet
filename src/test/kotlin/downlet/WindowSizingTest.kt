@@ -26,7 +26,7 @@ class WindowSizingTest {
                 DownloadUiState.Setup(DownloadFixtures.normal, listOf(DownloadTool.YtDlp)),
                 DownloadUiState.Resolving(DownloadFixtures.normal),
                 DownloadUiState.Ready(DownloadFixtures.normal),
-                DownloadUiState.Downloading(DownloadFixtures.normal, DownloadProgress(43)),
+                DownloadUiState.Downloading(DownloadFixtures.normal, DownloadProgress.Transferring(43)),
                 DownloadUiState.Completed(DownloadFixtures.normal),
                 DownloadUiState.Error(DownloadFixtures.failure),
             )

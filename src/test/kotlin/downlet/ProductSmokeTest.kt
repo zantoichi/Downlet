@@ -172,9 +172,19 @@ class ProductSmokeTest {
                 onNodeWithText("Cancel").assertExists()
                 linkField.assertIsNotEnabled()
 
-                stateScheduler.advanceTimeBy(
-                    (FAKE_PROGRESS_INTERVAL * (fakeProgressSteps.size + 1)).inWholeMilliseconds,
-                )
+                stateScheduler.advanceTimeBy((FAKE_PROGRESS_INTERVAL * fakeProgressSteps.size).inWholeMilliseconds)
+                stateScheduler.runCurrent()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("87%").assertExists()
+
+                stateScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL.inWholeMilliseconds)
+                stateScheduler.runCurrent()
+                mainClock.advanceTimeByFrame()
+                onNodeWithContentDescription("Processing download.").assertExists()
+                onNodeWithText("Processing…").assertExists()
+                onNodeWithText("Cancel").assertExists()
+
+                stateScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL.inWholeMilliseconds)
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)

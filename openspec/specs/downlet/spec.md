@@ -83,26 +83,26 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 
 ### Requirement: Download outcomes remain actionable
 
-Downloading SHALL preserve media context, lock choices that must not change, show determinate progress, and expose Cancel as a secondary action. Completed SHALL show the destination with Open folder and Download another. Error SHALL explain the failure without backend jargon and expose Retry.
+Downloading SHALL preserve media context, lock choices that must not change, show determinate percentage progress while media bytes are transferring, show indeterminate Processing after transfer while backend work continues, and expose Cancel as a secondary action. Transfer percentages from zero through 100 SHALL represent transferred bytes only and SHALL NOT encode processing or completion. Completed SHALL show the destination with Open folder and Download another. Error SHALL explain the failure without backend jargon and expose Retry.
 
 #### Scenario: User cancels a download
 
 - **WHEN** the user activates Cancel
-- **THEN** Downlet returns to Ready with the previous choices and destination preserved
+- **THEN** Downlet returns to Ready with the previous choices and destination preserved, removes files owned by the cancelled attempt, and leaves pre-existing destination files unchanged
 
 #### Scenario: Download completes
 
 - **WHEN** progress completes successfully
-- **THEN** Downlet enters Completed and offers Open folder and Download another
+- **THEN** Downlet publishes one final media file into the chosen destination, enters Completed, and offers Open folder and Download another
 
 #### Scenario: Download fails
 
 - **WHEN** downloading fails
-- **THEN** Downlet enters Error and Retry restarts the download with the previous choices
+- **THEN** Downlet removes files owned by the failed attempt, enters Error, and Retry restarts the download with the previous choices
 
 ### Requirement: Downloads use yt-dlp
 
-Normal product operation SHALL use a local `yt-dlp` process after Previewing and any required Setup to resolve authoritative YouTube metadata and download the selected Video or Audio format and quality into the chosen destination. It SHALL provide bundled QuickJS-NG to `yt-dlp` for YouTube JavaScript support and FFmpeg for merging and audio processing. Resolving SHALL use `--skip-download`, preserve preview identity while checking available formats, and download no media. Downlet SHALL translate process progress and failures into its existing product states, SHALL stop the active process when Cancel is activated, and SHALL keep command output and backend options out of the interface. The deterministic fake runtime MAY remain available only for tests and the Design Review app.
+Normal product operation SHALL use a local `yt-dlp` process after Previewing and any required Setup to resolve authoritative YouTube metadata and download the selected Video or Audio format and quality. Each attempt SHALL use an isolated staging directory inside the chosen destination, and Downlet SHALL publish the final media file only after `yt-dlp` exits successfully. It SHALL provide bundled QuickJS-NG to `yt-dlp` for YouTube JavaScript support and FFmpeg for merging and audio processing. Resolving SHALL use `--skip-download`, preserve preview identity while checking available formats, and download no media. Downlet SHALL translate transfer and processing events into its existing product states, SHALL stop and await the active process tree when Cancel is activated, SHALL remove attempt-owned staging files after success, failure, or cancellation, and SHALL keep command output and backend options out of the interface. The deterministic fake runtime MAY remain available only for tests and the Design Review app.
 
 #### Scenario: A link resolves through yt-dlp
 
@@ -112,12 +112,12 @@ Normal product operation SHALL use a local `yt-dlp` process after Previewing and
 #### Scenario: A real download runs
 
 - **WHEN** the user activates Download in Ready
-- **THEN** Downlet starts `yt-dlp` with the selected mode, format, quality, and destination and reflects reported progress until completion or failure
+- **THEN** Downlet starts `yt-dlp` with the selected mode, format, and quality in an isolated staging directory, reflects reported transfer and processing phases, and publishes the final file only after successful process completion
 
 #### Scenario: A real download is cancelled
 
 - **WHEN** the user activates Cancel while `yt-dlp` is running
-- **THEN** Downlet terminates the process and returns to Ready with the prior choices preserved
+- **THEN** Downlet terminates and awaits the process tree, removes the attempt's staged and newly published artifacts, and returns to Ready with the prior choices preserved
 
 ### Requirement: Tool setup is explicit and verified
 

@@ -30,7 +30,7 @@ import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
 
 private const val CONTROLLER_WINDOW_TITLE = "Design Review Controller"
-private val DESIGN_REVIEW_PROGRESS = DownloadProgress(43)
+private val DESIGN_REVIEW_PROGRESS = DownloadProgress.Transferring(43)
 
 internal object DesignReviewApp {
     @JvmStatic
