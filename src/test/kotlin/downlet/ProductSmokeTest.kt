@@ -126,6 +126,7 @@ class ProductSmokeTest {
 
                 val linkField = onNodeWithContentDescription("YouTube link field")
                 linkField.assertExists()
+                onNodeWithContentDescription("YouTube link label").assertExists()
                 onNodeWithContentDescription(
                     "Status: Paste or type a YouTube link. Downlet checks it automatically.",
                 ).assertExists()
@@ -141,6 +142,10 @@ class ProductSmokeTest {
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
+                onNodeWithContentDescription("Download as label").assertExists()
+                onNodeWithContentDescription("Quality label").assertExists()
+                onNodeWithContentDescription("Save to label").assertExists()
+                onNodeWithContentDescription("Permission label").assertExists()
                 onNodeWithText("Video").assertExists()
                 onNodeWithContentDescription("Quality: Best available — 2160p").assertExists()
                 onNodeWithText("Download").assertIsNotEnabled()
@@ -151,6 +156,7 @@ class ProductSmokeTest {
                 onNodeWithText("Audio").performClick()
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Format & quality").assertExists()
+                onNodeWithContentDescription("Format & quality label").assertExists()
                 onNodeWithContentDescription(
                     "Format & quality: Original audio (no conversion)",
                 ).assertExists()
