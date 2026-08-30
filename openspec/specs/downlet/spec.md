@@ -46,12 +46,22 @@ Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A 
 
 ### Requirement: Ready exposes only useful choices
 
-Ready SHALL identify the resolved media with a thumbnail or stable missing-preview fallback, title, channel, duration, and provider. It SHALL expose Video or Audio, an understandable quality choice, the current destination with a Change action, a concise per-download authorization confirmation, a Read full terms action, and one Download action. Download SHALL remain disabled until the user selects that confirmation. It SHALL NOT expose format IDs, codecs, extractor details, raw logs, or advanced command-line options.
+Ready SHALL identify the resolved media with a thumbnail or stable missing-preview fallback, title, channel, duration, and provider. It SHALL expose Video or Audio, an understandable format and quality choice, the current destination with a Change action, a concise per-download authorization confirmation, a Read full terms action, and one Download action. Download SHALL remain disabled until the user selects that confirmation. It SHALL NOT expose format IDs, codecs, extractor details, raw logs, or advanced command-line options.
 
 #### Scenario: Media resolves
 
 - **WHEN** resolution succeeds
 - **THEN** Ready shows the media identity and the choices required to start a download
+
+#### Scenario: User chooses audio output
+
+- **WHEN** the user selects Audio
+- **THEN** Original audio without conversion is selected by default, and MP3 remains available at best, 160 kbps, and 128 kbps quality
+
+#### Scenario: User changes the destination
+
+- **WHEN** the user activates Change
+- **THEN** Downlet opens the native Windows folder picker, updates the destination after a selection, and preserves the current destination after cancellation
 
 #### Scenario: User authorizes one media download
 
@@ -92,7 +102,7 @@ Downloading SHALL preserve media context, lock choices that must not change, sho
 
 ### Requirement: Downloads use yt-dlp
 
-Normal product operation SHALL use a local `yt-dlp` process after Previewing and any required Setup to resolve authoritative YouTube metadata and download the selected Video or Audio quality into the chosen destination. It SHALL provide bundled QuickJS-NG to `yt-dlp` for YouTube JavaScript support and FFmpeg for merging and audio processing. Resolving SHALL use `--skip-download`, preserve preview identity while checking available formats, and download no media. Downlet SHALL translate process progress and failures into its existing product states, SHALL stop the active process when Cancel is activated, and SHALL keep command output and backend options out of the interface. The deterministic fake runtime MAY remain available only for tests and the Design Review app.
+Normal product operation SHALL use a local `yt-dlp` process after Previewing and any required Setup to resolve authoritative YouTube metadata and download the selected Video or Audio format and quality into the chosen destination. It SHALL provide bundled QuickJS-NG to `yt-dlp` for YouTube JavaScript support and FFmpeg for merging and audio processing. Resolving SHALL use `--skip-download`, preserve preview identity while checking available formats, and download no media. Downlet SHALL translate process progress and failures into its existing product states, SHALL stop the active process when Cancel is activated, and SHALL keep command output and backend options out of the interface. The deterministic fake runtime MAY remain available only for tests and the Design Review app.
 
 #### Scenario: A link resolves through yt-dlp
 
@@ -102,7 +112,7 @@ Normal product operation SHALL use a local `yt-dlp` process after Previewing and
 #### Scenario: A real download runs
 
 - **WHEN** the user activates Download in Ready
-- **THEN** Downlet starts `yt-dlp` with the selected mode, quality, and destination and reflects reported progress until completion or failure
+- **THEN** Downlet starts `yt-dlp` with the selected mode, format, quality, and destination and reflects reported progress until completion or failure
 
 #### Scenario: A real download is cancelled
 

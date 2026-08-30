@@ -4,7 +4,7 @@
 
 Downlet is a deliberately small, Windows-first desktop frontend for `yt-dlp`. It turns a pasted YouTube URL into a clear local audio or video download without exposing command-line machinery.
 
-Success means the user can identify the media, choose video or audio and an understandable quality, confirm the destination, start the download, and recognize progress or recovery states without documentation.
+Success means the user can identify the media, choose video or audio and an understandable format and quality, confirm the destination, start the download, and recognize progress or recovery states without documentation.
 
 ## Character
 
