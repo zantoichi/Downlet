@@ -34,16 +34,18 @@ class ProductSmokeTest {
     @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
     @Test
     fun `tool setup requires explicit consent`() {
-        val machineScheduler = TestCoroutineScheduler()
-        val machineDispatcher = UnconfinedTestDispatcher(machineScheduler)
+        val stateScheduler = TestCoroutineScheduler()
+        val stateDispatcher = UnconfinedTestDispatcher(stateScheduler)
         val stateHolder =
             DownloadStateHolder(
-                CoroutineScope(machineDispatcher + SupervisorJob()),
-                machineDispatcher = machineDispatcher,
+                CoroutineScope(stateDispatcher + SupervisorJob()),
+                PreviewDownloadRuntime(),
             )
         try {
-            stateHolder.onEvent(DownloadEvent.ShowPreviewing())
-            machineScheduler.runCurrent()
+            stateHolder.showDesignState(
+                DownloadUiState.Previewing(DownloadFixtures.normal, completesAutomatically = false),
+            )
+            stateScheduler.runCurrent()
 
             runComposeUiTest {
                 setContent {
@@ -58,8 +60,13 @@ class ProductSmokeTest {
                 assertEquals(WindowPresentationTier.Compact, stateHolder.state.windowPresentationTier)
                 onNodeWithContentDescription("Status: Finding this video…").assertExists()
 
-                stateHolder.onEvent(DownloadEvent.ShowSetup())
-                machineScheduler.runCurrent()
+                stateHolder.showDesignState(
+                    DownloadUiState.Setup(
+                        DownloadFixtures.normal,
+                        listOf(DownloadTool.YtDlp, DownloadTool.Ffmpeg),
+                    ),
+                )
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
                 onNodeWithText("Prepare this download").assertExists()
@@ -76,11 +83,11 @@ class ProductSmokeTest {
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Prepare this download").assertExists()
                 onNodeWithText("Download and continue").assertIsNotEnabled()
-                onNodeWithText(TOOL_SETUP_CONSENT_TEXT).performClick()
+                onNodeWithText(ProductCopy.TOOL_SETUP_CONSENT_TEXT).performClick()
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Download and continue").assertIsEnabled()
                 onNodeWithText("Download and continue").performClick()
-                machineScheduler.runCurrent()
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 onNodeWithContentDescription("Status: Checking available formats…").assertExists()
             }
@@ -94,12 +101,12 @@ class ProductSmokeTest {
     @Test
     fun `happy product flow reaches completed`() {
         val startedAt = System.nanoTime()
-        val machineScheduler = TestCoroutineScheduler()
-        val machineDispatcher = UnconfinedTestDispatcher(machineScheduler)
+        val stateScheduler = TestCoroutineScheduler()
+        val stateDispatcher = UnconfinedTestDispatcher(stateScheduler)
         val stateHolder =
             DownloadStateHolder(
-                CoroutineScope(machineDispatcher + SupervisorJob()),
-                machineDispatcher = machineDispatcher,
+                CoroutineScope(stateDispatcher + SupervisorJob()),
+                PreviewDownloadRuntime(),
             )
         try {
             runComposeUiTest {
@@ -121,12 +128,12 @@ class ProductSmokeTest {
                 mainClock.autoAdvance = false
                 linkField.performTextInput("https://youtu.be/smoke")
                 mainClock.advanceTimeBy(MANUAL_LINK_DEBOUNCE_MILLIS)
-                machineScheduler.runCurrent()
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 onNodeWithContentDescription("Status: Checking available formats…").assertExists()
 
-                machineScheduler.advanceTimeBy(FAKE_RESOLUTION_MILLIS)
-                machineScheduler.runCurrent()
+                stateScheduler.advanceTimeBy(FAKE_RESOLUTION_MILLIS)
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
                 onNodeWithText("Video").assertExists()
@@ -136,24 +143,24 @@ class ProductSmokeTest {
                     mediaContentDescription(DownloadFixtures.normal, thumbnailAvailable = true),
                 ).assertExists()
 
-                onNodeWithText(DOWNLOAD_AUTHORIZATION_TEXT).performClick()
+                onNodeWithText(ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT).performClick()
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Download").assertIsEnabled()
                 onNodeWithText("Download").performClick()
-                machineScheduler.runCurrent()
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
                 onNodeWithText("Cancel").assertExists()
                 linkField.assertIsNotEnabled()
 
-                machineScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS * fakeProgressSteps.size)
-                machineScheduler.runCurrent()
+                stateScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS * fakeProgressSteps.size)
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
                 onNodeWithText("Saved to Downloads").assertExists()
                 onNodeWithText("Open Folder").assertIsEnabled()
                 onNodeWithText("Download Another").performClick()
-                machineScheduler.runCurrent()
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Compact, stateHolder.state.windowPresentationTier)
                 onNodeWithContentDescription(
@@ -174,15 +181,15 @@ class ProductSmokeTest {
     @Test
     fun `recoverable product flow retries from error`() {
         val startedAt = System.nanoTime()
-        val machineScheduler = TestCoroutineScheduler()
-        val machineDispatcher = UnconfinedTestDispatcher(machineScheduler)
+        val stateScheduler = TestCoroutineScheduler()
+        val stateDispatcher = UnconfinedTestDispatcher(stateScheduler)
         val stateHolder =
             DownloadStateHolder(
-                CoroutineScope(machineDispatcher + SupervisorJob()),
-                machineDispatcher = machineDispatcher,
+                CoroutineScope(stateDispatcher + SupervisorJob()),
+                PreviewDownloadRuntime(),
             )
         try {
-            stateHolder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.failure))
+            stateHolder.showDesignState(DownloadUiState.Ready(DownloadFixtures.failure))
             runComposeUiTest {
                 setContent {
                     IntUiTheme(
@@ -194,20 +201,20 @@ class ProductSmokeTest {
                 }
 
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
-                onNodeWithText(DOWNLOAD_AUTHORIZATION_TEXT).performClick()
+                onNodeWithText(ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT).performClick()
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Download").performClick()
-                machineScheduler.runCurrent()
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Cancel").assertExists()
 
-                machineScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS * 3)
-                machineScheduler.runCurrent()
+                stateScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS * 3)
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
                 onNodeWithText("Couldn't download this media.").assertExists()
                 onNodeWithText("Retry").performClick()
-                machineScheduler.runCurrent()
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
                 onNodeWithContentDescription("Downloading: 0%. Starting download…").assertExists()
@@ -225,16 +232,16 @@ class ProductSmokeTest {
     @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
     @Test
     fun `clearing a resolved link returns to compact empty state and restores focus`() {
-        val machineScheduler = TestCoroutineScheduler()
-        val machineDispatcher = UnconfinedTestDispatcher(machineScheduler)
+        val stateScheduler = TestCoroutineScheduler()
+        val stateDispatcher = UnconfinedTestDispatcher(stateScheduler)
         val stateHolder =
             DownloadStateHolder(
-                CoroutineScope(machineDispatcher + SupervisorJob()),
-                machineDispatcher = machineDispatcher,
+                CoroutineScope(stateDispatcher + SupervisorJob()),
+                PreviewDownloadRuntime(),
             )
         try {
-            stateHolder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.normal))
-            machineScheduler.runCurrent()
+            stateHolder.showDesignState(DownloadUiState.Ready(DownloadFixtures.normal))
+            stateScheduler.runCurrent()
 
             runComposeUiTest {
                 setContent {
@@ -249,7 +256,7 @@ class ProductSmokeTest {
                 val linkField = onNodeWithContentDescription("YouTube link field")
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
                 linkField.performTextClearance()
-                machineScheduler.runCurrent()
+                stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
 
                 assertEquals(WindowPresentationTier.Compact, stateHolder.state.windowPresentationTier)

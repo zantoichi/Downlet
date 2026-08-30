@@ -41,8 +41,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -206,13 +208,7 @@ private fun LinkTextField(
                 .fillMaxWidth()
                 .focusRequester(focusRequester)
                 .onPreviewKeyEvent { event ->
-                    if (
-                        event.type == KeyEventType.KeyDown &&
-                        event.isCtrlPressed &&
-                        event.key == Key.V
-                    ) {
-                        onPasteIntent()
-                    }
+                    if (event.isPasteShortcut()) onPasteIntent()
                     false
                 }.semantics { contentDescription = "YouTube link field" },
         outline = if (hasValidationError) Outline.Error else Outline.None,
@@ -221,28 +217,24 @@ private fun LinkTextField(
     )
 }
 
+private fun KeyEvent.isPasteShortcut(): Boolean =
+    type == KeyEventType.KeyDown &&
+        ((isCtrlPressed && key == Key.V) || (isShiftPressed && key == Key.Insert))
+
 internal suspend fun collectLinkEdits(
     edits: Flow<String>,
     stateHolder: DownloadStateHolder,
     consumePasteIntent: () -> Boolean,
 ) {
+    var previousText = ""
     edits.collectLatest { text ->
+        val previousValue = previousText
+        previousText = text
         if (!stateHolder.observeLinkEdit(text)) return@collectLatest
 
-        when (val submission = linkSubmissionFor(text, consumePasteIntent())) {
-            LinkSubmission.None -> {
-                return@collectLatest
-            }
-
-            LinkSubmission.ResolveImmediately -> {
-                stateHolder.beginResolution(text)
-            }
-
-            is LinkSubmission.ResolveAfter -> {
-                delay(submission.delayMillis.milliseconds)
-                stateHolder.beginResolution(text)
-            }
-        }
+        val delayMillis = linkResolutionDelayMillis(previousValue, text, consumePasteIntent()) ?: return@collectLatest
+        if (delayMillis > 0) delay(delayMillis.milliseconds)
+        stateHolder.beginResolution(text)
     }
 }
 

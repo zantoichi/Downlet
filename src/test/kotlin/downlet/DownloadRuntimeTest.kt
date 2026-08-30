@@ -1,12 +1,17 @@
 package downlet
 
+import com.sun.jna.platform.win32.KnownFolders
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class DownloadRuntimeTest {
     @Test
@@ -40,13 +45,80 @@ class DownloadRuntimeTest {
     @Test
     fun `quality choices map to one yt-dlp format selection`() {
         assertEquals(
+            listOf("Best available — 2160p", "1440p", "1080p", "720p", "480p"),
+            videoQualityOptions.map(DownloadQuality::label),
+        )
+        assertEquals(
+            listOf("Best available — 251 kbps audio", "160 kbps audio", "128 kbps audio"),
+            audioQualityOptions.map(DownloadQuality::label),
+        )
+        assertEquals(
             listOf("--format", "bv*[height<=1080]+ba/b[height<=1080]"),
-            qualityArguments(DownloadMode.Video, qualityIndex = 2),
+            videoQualityOptions[2].ytDlpArguments,
         )
         assertEquals(
             listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "160K"),
-            qualityArguments(DownloadMode.Audio, qualityIndex = 1),
+            audioQualityOptions[1].ytDlpArguments,
         )
+    }
+
+    @Test
+    fun `bundled quickjs disables other runtimes before selecting quickjs`() {
+        assertEquals(
+            listOf("--no-js-runtimes", "--js-runtimes", "quickjs:C:\\Downlet\\qjs.exe"),
+            quickJsArguments("C:\\Downlet\\qjs.exe"),
+        )
+        assertEquals(emptyList(), quickJsArguments(null))
+    }
+
+    @Test
+    fun `typed tool metadata supplies labels and setup size`() {
+        assertEquals(listOf("yt-dlp", "FFmpeg"), DownloadTool.entries.map(DownloadTool::label))
+        assertEquals(123, DownloadTool.entries.sumOf(DownloadTool::estimatedDownloadMegabytes))
+    }
+
+    @Test
+    fun `known folder lookup uses native result or fallback`() {
+        val fallback = Path.of("fallback")
+
+        assertEquals(
+            Path.of("C:\\Users\\Downlet\\Downloads"),
+            knownFolderOrFallback(KnownFolders.FOLDERID_Downloads, fallback) { "C:\\Users\\Downlet\\Downloads" },
+        )
+        assertEquals(
+            fallback,
+            knownFolderOrFallback(KnownFolders.FOLDERID_Downloads, fallback) { "   " },
+        )
+        assertEquals(
+            fallback,
+            knownFolderOrFallback(KnownFolders.FOLDERID_Downloads, fallback) { error("unavailable") },
+        )
+    }
+
+    @Test
+    fun `process tree termination stops parent and descendants`() {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+
+        val process = ProcessBuilder("cmd.exe", "/c", "ping", "-t", "127.0.0.1").start()
+        try {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            var descendants = emptyList<ProcessHandle>()
+            while (descendants.isEmpty() && System.nanoTime() < deadline) {
+                descendants = process.descendants().toList()
+                if (descendants.isEmpty()) Thread.sleep(25)
+            }
+            assertTrue(descendants.isNotEmpty(), "Expected cmd.exe to start ping.exe")
+
+            terminateProcessTree(process)
+
+            assertTrue(process.waitFor(5, TimeUnit.SECONDS), "Parent process did not exit")
+            descendants.forEach { descendant ->
+                descendant.onExit().get(5, TimeUnit.SECONDS)
+                assertFalse(descendant.isAlive, "Descendant process did not exit")
+            }
+        } finally {
+            if (process.isAlive) terminateProcessTree(process)
+        }
     }
 
     @Test

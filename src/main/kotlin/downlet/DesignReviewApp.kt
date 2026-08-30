@@ -30,13 +30,14 @@ import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
 
 private const val CONTROLLER_WINDOW_TITLE = "Design Review Controller"
+private const val DESIGN_REVIEW_PROGRESS_PERCENT = 43
 
 internal object DesignReviewApp {
     @JvmStatic
     fun main(args: Array<String>) =
         application {
             val scope = rememberCoroutineScope()
-            val stateHolder = remember(scope) { DownloadStateHolder(scope) }
+            val stateHolder = remember(scope) { DownloadStateHolder(scope, PreviewDownloadRuntime()) }
             var productTheme by remember { mutableStateOf(DownletTheme.Light) }
             var motionDurationScale by remember { mutableStateOf(1f) }
 
@@ -50,9 +51,9 @@ internal object DesignReviewApp {
             ControllerWindow(
                 state = stateHolder.state,
                 theme = productTheme,
-                onEvent = stateHolder::onEvent,
+                onShowState = stateHolder::showDesignState,
                 onReset = {
-                    stateHolder.onEvent(DownloadEvent.Reset)
+                    stateHolder.showDesignState(DownloadUiState.Empty)
                     productTheme = DownletTheme.Light
                     motionDurationScale = 1f
                 },
@@ -69,13 +70,21 @@ internal object DesignReviewApp {
 private fun ControllerWindow(
     state: DownloadUiState,
     theme: DownletTheme,
-    onEvent: (DownloadEvent) -> Unit,
+    onShowState: (DownloadUiState, String, String?) -> Unit,
     onReset: () -> Unit,
     onThemeChange: (DownletTheme) -> Unit,
     motionDurationScale: Float,
     onMotionDurationScaleChange: (Float) -> Unit,
     onCloseRequest: () -> Unit,
 ) {
+    fun showState(
+        state: DownloadUiState,
+        linkText: String = state.fixtureOrNull?.sourceUrl.orEmpty(),
+        validationMessage: String? = null,
+    ) {
+        onShowState(state, linkText, validationMessage)
+    }
+
     val windowState =
         rememberWindowState(
             position = WindowPosition(800.dp, 48.dp),
@@ -106,30 +115,66 @@ private fun ControllerWindow(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Product state")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowEmpty) }) {
+                        OutlinedButton(onClick = { showState(DownloadUiState.Empty) }) {
                             Text("Empty")
                         }
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowPreviewing()) }) {
+                        OutlinedButton(
+                            onClick = {
+                                showState(
+                                    DownloadUiState.Previewing(
+                                        DownloadFixtures.normal,
+                                        completesAutomatically = false,
+                                    ),
+                                )
+                            },
+                        ) {
                             Text("Previewing")
                         }
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowSetup()) }) {
+                        OutlinedButton(
+                            onClick = {
+                                showState(
+                                    DownloadUiState.Setup(
+                                        DownloadFixtures.normal,
+                                        listOf(DownloadTool.YtDlp, DownloadTool.Ffmpeg),
+                                    ),
+                                )
+                            },
+                        ) {
                             Text("Setup")
                         }
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowResolving()) }) {
+                        OutlinedButton(
+                            onClick = {
+                                showState(
+                                    DownloadUiState.Resolving(
+                                        DownloadFixtures.normal,
+                                        completesAutomatically = false,
+                                    ),
+                                )
+                            },
+                        ) {
                             Text("Resolving")
                         }
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady()) }) {
+                        OutlinedButton(onClick = { showState(DownloadUiState.Ready(DownloadFixtures.normal)) }) {
                             Text("Ready")
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowDownloading()) }) {
+                        OutlinedButton(
+                            onClick = {
+                                showState(
+                                    DownloadUiState.Downloading(
+                                        DownloadFixtures.normal,
+                                        DESIGN_REVIEW_PROGRESS_PERCENT,
+                                    ),
+                                )
+                            },
+                        ) {
                             Text("Downloading")
                         }
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowCompleted()) }) {
+                        OutlinedButton(onClick = { showState(DownloadUiState.Completed(DownloadFixtures.normal)) }) {
                             Text("Completed")
                         }
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowError()) }) {
+                        OutlinedButton(onClick = { showState(DownloadUiState.Error(DownloadFixtures.failure)) }) {
                             Text("Error")
                         }
                         OutlinedButton(onClick = onReset) {
@@ -138,35 +183,43 @@ private fun ControllerWindow(
                     }
                     Text("Ready fixtures")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.normal)) }) {
+                        OutlinedButton(onClick = { showState(DownloadUiState.Ready(DownloadFixtures.normal)) }) {
                             Text("Normal")
                         }
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.longTitle)) }) {
+                        OutlinedButton(onClick = { showState(DownloadUiState.Ready(DownloadFixtures.longTitle)) }) {
                             Text("Long title")
                         }
                         OutlinedButton(
-                            onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.missingThumbnail)) },
+                            onClick = { showState(DownloadUiState.Ready(DownloadFixtures.missingThumbnail)) },
                         ) {
                             Text("No preview")
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
-                            onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.longDestination)) },
+                            onClick = { showState(DownloadUiState.Ready(DownloadFixtures.longDestination)) },
                         ) {
                             Text("Long path")
                         }
                         OutlinedButton(
-                            onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.disabledAction)) },
+                            onClick = { showState(DownloadUiState.Ready(DownloadFixtures.disabledAction)) },
                         ) {
                             Text("Disabled")
                         }
                         OutlinedButton(
-                            onClick = { onEvent(DownloadEvent.ShowReady(DownloadFixtures.failure)) },
+                            onClick = { showState(DownloadUiState.Ready(DownloadFixtures.failure)) },
                         ) {
                             Text("Failure")
                         }
-                        OutlinedButton(onClick = { onEvent(DownloadEvent.ShowInvalidInput) }) {
+                        OutlinedButton(
+                            onClick = {
+                                showState(
+                                    DownloadUiState.Empty,
+                                    linkText = "not a YouTube link",
+                                    validationMessage = ProductCopy.INVALID_LINK_MESSAGE,
+                                )
+                            },
+                        ) {
                             Text("Invalid input")
                         }
                     }

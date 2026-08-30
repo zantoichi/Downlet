@@ -7,15 +7,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.yield
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -23,32 +21,53 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@Suppress("LargeClass")
 class DownloadStateTest {
     private fun TestScope.testHolder(runtime: DownloadRuntime = PreviewDownloadRuntime()) =
         UnconfinedTestDispatcher(testScheduler).let { dispatcher ->
             DownloadStateHolder(
                 CoroutineScope(backgroundScope.coroutineContext + dispatcher),
-                machineDispatcher = dispatcher,
                 runtime = runtime,
             )
         }
 
-    private fun immediateHolder() = DownloadStateHolder(machineDispatcher = Dispatchers.Unconfined)
+    private fun immediateHolder(runtime: DownloadRuntime = PreviewDownloadRuntime()) =
+        DownloadStateHolder(
+            CoroutineScope(Dispatchers.Unconfined + SupervisorJob()),
+            runtime,
+        )
+
+    private fun DownloadStateHolder.showReady(fixture: DownloadFixture = DownloadFixtures.normal) {
+        showDesignState(DownloadUiState.Ready(fixture))
+    }
+
+    private fun DownloadStateHolder.showSetup(
+        fixture: DownloadFixture = DownloadFixtures.normal,
+        tools: List<DownloadTool> = listOf(DownloadTool.YtDlp, DownloadTool.Ffmpeg),
+    ) {
+        showDesignState(DownloadUiState.Setup(fixture, tools))
+    }
+
+    private fun DownloadStateHolder.showResolving(fixture: DownloadFixture = DownloadFixtures.normal) {
+        showDesignState(DownloadUiState.Resolving(fixture, completesAutomatically = false))
+    }
+
+    private fun DownloadStateHolder.showDownloading(
+        fixture: DownloadFixture = DownloadFixtures.normal,
+        progressPercent: Int = 43,
+    ) {
+        showDesignState(DownloadUiState.Downloading(fixture, progressPercent))
+    }
+
+    private fun DownloadStateHolder.showCompleted(fixture: DownloadFixture = DownloadFixtures.normal) {
+        showDesignState(DownloadUiState.Completed(fixture))
+    }
 
     private fun DownloadStateHolder.startAuthorizedDownload() {
         updateDownloadAuthorization(true)
         download()
-    }
-
-    private suspend fun DownloadStateHolder.awaitState(expected: DownloadUiState) {
-        withTimeout(5.seconds) {
-            while (state != expected) {
-                yield()
-            }
-        }
     }
 
     @Test
@@ -60,7 +79,7 @@ class DownloadStateTest {
             listOf(
                 DownloadUiState.Empty,
                 DownloadUiState.Previewing(normal),
-                DownloadUiState.Setup(normal, listOf("yt-dlp")),
+                DownloadUiState.Setup(normal, listOf(DownloadTool.YtDlp)),
                 DownloadUiState.Resolving(normal),
                 DownloadUiState.Ready(normal),
                 DownloadUiState.Downloading(normal, progressPercent = 43),
@@ -77,7 +96,7 @@ class DownloadStateTest {
     @Test
     fun `missing tools require explicit consent before installation and resolution`() =
         runTest {
-            val runtime = ControlledPreviewRuntime(listOf("yt-dlp", "FFmpeg"))
+            val runtime = ControlledPreviewRuntime(listOf(DownloadTool.YtDlp, DownloadTool.Ffmpeg))
             val holder = testHolder(runtime)
             val sourceUrl = "https://youtu.be/setup"
 
@@ -89,7 +108,7 @@ class DownloadStateTest {
             assertEquals(
                 DownloadUiState.Setup(
                     DownloadFixtures.normal.copy(sourceUrl = sourceUrl),
-                    listOf("yt-dlp", "FFmpeg"),
+                    listOf(DownloadTool.YtDlp, DownloadTool.Ffmpeg),
                 ),
                 holder.state,
             )
@@ -133,7 +152,7 @@ class DownloadStateTest {
     @Test
     fun `preview failure becomes recoverable without checking or installing tools`() =
         runTest {
-            val runtime = ControlledPreviewRuntime(listOf("yt-dlp", "FFmpeg"), failPreview = true)
+            val runtime = ControlledPreviewRuntime(DownloadTool.entries, failPreview = true)
             val holder = testHolder(runtime)
 
             holder.beginResolution("https://youtu.be/unavailable")
@@ -175,13 +194,13 @@ class DownloadStateTest {
     }
 
     @Test
-    fun `state holder handles only explicit events`() {
+    fun `state holder accepts explicit design states`() {
         val holder = immediateHolder()
 
-        holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.longTitle))
+        holder.showReady(DownloadFixtures.longTitle)
         assertEquals(DownloadUiState.Ready(DownloadFixtures.longTitle), holder.state)
 
-        holder.onEvent(DownloadEvent.ShowEmpty)
+        holder.showDesignState(DownloadUiState.Empty)
         assertEquals(DownloadUiState.Empty, holder.state)
     }
 
@@ -225,7 +244,7 @@ class DownloadStateTest {
             runCurrent()
             assertEquals(pastedUrl, (holder.state as DownloadUiState.Resolving).fixture.sourceUrl)
 
-            val typedUrl = "https://youtu.be/typed"
+            val typedUrl = "${pastedUrl}x"
             holder.linkFieldState.setTextAndPlaceCursorAtEnd(typedUrl)
             Snapshot.sendApplyNotifications()
             runCurrent()
@@ -252,7 +271,10 @@ class DownloadStateTest {
             runCurrent()
 
             advanceTimeBy(PASTE_INTENT_LIFETIME_MILLIS.milliseconds)
-            val typedUrl = "https://youtu.be/after-stale-paste"
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd("https://youtu.b")
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+            val typedUrl = "https://youtu.be"
             holder.linkFieldState.setTextAndPlaceCursorAtEnd(typedUrl)
             Snapshot.sendApplyNotifications()
             runCurrent()
@@ -277,11 +299,14 @@ class DownloadStateTest {
             }
             runCurrent()
 
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd("https://youtu.b/first")
+            Snapshot.sendApplyNotifications()
+            runCurrent()
             holder.linkFieldState.setTextAndPlaceCursorAtEnd("https://youtu.be/first")
             Snapshot.sendApplyNotifications()
             runCurrent()
             advanceTimeBy(200.milliseconds)
-            val newerUrl = "https://youtu.be/newer"
+            val newerUrl = "https://youtu.be/firstx"
             holder.linkFieldState.setTextAndPlaceCursorAtEnd(newerUrl)
             Snapshot.sendApplyNotifications()
             runCurrent()
@@ -371,18 +396,18 @@ class DownloadStateTest {
             Snapshot.sendApplyNotifications()
             runCurrent()
             assertEquals(DownloadUiState.Empty, holder.state)
-            assertEquals(INVALID_LINK_MESSAGE, holder.validationMessage)
+            assertEquals(ProductCopy.INVALID_LINK_MESSAGE, holder.validationMessage)
         }
 
     @Test
     fun `editing clears stale resolved state and forced resolving bypasses completion`() {
         val holder = immediateHolder()
-        holder.onEvent(DownloadEvent.ShowReady())
+        holder.showReady()
 
         assertTrue(holder.observeLinkEdit("https://youtube.com/watch?v=new"))
         assertEquals(DownloadUiState.Empty, holder.state)
 
-        holder.onEvent(DownloadEvent.ShowResolving())
+        holder.showResolving()
         val forced = holder.state as DownloadUiState.Resolving
         holder.completeResolution(forced.fixture)
         assertEquals(forced, holder.state)
@@ -392,10 +417,10 @@ class DownloadStateTest {
     fun `fresh ready defaults to video and resolved best quality`() {
         val holder = immediateHolder()
 
-        holder.onEvent(DownloadEvent.ShowReady())
+        holder.showReady()
 
         assertEquals(DownloadMode.Video, holder.selectedMode)
-        assertEquals(videoQualityOptions, holder.qualityOptions)
+        assertEquals(videoQualityOptions.map(DownloadQuality::label), holder.qualityOptions)
         assertEquals("Best available — 2160p", holder.selectedQualityLabel)
         assertEquals("Downloads", holder.destination)
         assertNull(holder.readyFeedback)
@@ -404,14 +429,14 @@ class DownloadStateTest {
     @Test
     fun `mode and quality changes stay mutually exclusive and reset best quality`() {
         val holder = immediateHolder()
-        holder.onEvent(DownloadEvent.ShowReady())
+        holder.showReady()
 
         holder.selectQuality(2)
         assertEquals("1080p", holder.selectedQualityLabel)
 
         holder.selectMode(DownloadMode.Audio)
         assertEquals(DownloadMode.Audio, holder.selectedMode)
-        assertEquals(audioQualityOptions, holder.qualityOptions)
+        assertEquals(audioQualityOptions.map(DownloadQuality::label), holder.qualityOptions)
         assertEquals("Best available — 251 kbps audio", holder.selectedQualityLabel)
 
         holder.selectQuality(1)
@@ -424,7 +449,7 @@ class DownloadStateTest {
     @Test
     fun `destination cycles deterministic fixtures and acknowledges the visible value`() {
         val holder = immediateHolder()
-        holder.onEvent(DownloadEvent.ShowReady())
+        holder.showReady()
 
         holder.changeDestination()
 
@@ -435,19 +460,19 @@ class DownloadStateTest {
     @Test
     fun `disabled fixture ignores download activation`() {
         val holder = immediateHolder()
-        holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.disabledAction))
+        holder.showReady(DownloadFixtures.disabledAction)
         holder.updateDownloadAuthorization(true)
         assertFalse(holder.downloadEnabled)
-        assertEquals(DOWNLOAD_UNAVAILABLE_MESSAGE, holder.readyStatus)
+        assertEquals(ProductCopy.DOWNLOAD_UNAVAILABLE_MESSAGE, holder.readyStatus)
         holder.download()
         assertNull(holder.readyFeedback)
-        assertEquals(DOWNLOAD_UNAVAILABLE_MESSAGE, holder.readyStatus)
+        assertEquals(ProductCopy.DOWNLOAD_UNAVAILABLE_MESSAGE, holder.readyStatus)
     }
 
     @Test
     fun `each ready media requires explicit download authorization`() {
         val holder = immediateHolder()
-        holder.onEvent(DownloadEvent.ShowReady())
+        holder.showReady()
 
         assertFalse(holder.downloadEnabled)
         holder.download()
@@ -456,7 +481,7 @@ class DownloadStateTest {
         holder.updateDownloadAuthorization(true)
         assertTrue(holder.downloadEnabled)
 
-        holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.longTitle))
+        holder.showReady(DownloadFixtures.longTitle)
         assertFalse(holder.downloadAuthorizationAccepted)
         assertFalse(holder.downloadEnabled)
     }
@@ -464,7 +489,7 @@ class DownloadStateTest {
     @Test
     fun `full terms preserve setup consent and ready choices`() {
         val holder = immediateHolder()
-        holder.onEvent(DownloadEvent.ShowSetup())
+        holder.showSetup()
         holder.updateToolSetupConsent(true)
 
         holder.showLegalDetails()
@@ -472,7 +497,7 @@ class DownloadStateTest {
         holder.hideLegalDetails()
         assertTrue(holder.toolSetupAccepted)
 
-        holder.onEvent(DownloadEvent.ShowReady())
+        holder.showReady()
         holder.selectMode(DownloadMode.Audio)
         holder.selectQuality(1)
         holder.changeDestination()
@@ -493,7 +518,7 @@ class DownloadStateTest {
     fun `success timeline advances on exact 350 millisecond boundaries`() =
         runTest {
             val holder = testHolder()
-            holder.onEvent(DownloadEvent.ShowReady())
+            holder.showReady()
             holder.startAuthorizedDownload()
             runCurrent()
             assertEquals(DownloadUiState.Downloading(DownloadFixtures.normal, 0), holder.state)
@@ -515,7 +540,7 @@ class DownloadStateTest {
     fun `failure fixture enters error at 68 percent`() =
         runTest {
             val holder = testHolder()
-            holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.failure))
+            holder.showReady(DownloadFixtures.failure)
             holder.startAuthorizedDownload()
             runCurrent()
 
@@ -534,7 +559,7 @@ class DownloadStateTest {
     fun `cancel preserves choices destination url and media`() =
         runTest {
             val holder = testHolder()
-            holder.onEvent(DownloadEvent.ShowReady())
+            holder.showReady()
             holder.selectMode(DownloadMode.Audio)
             holder.selectQuality(1)
             holder.changeDestination()
@@ -557,7 +582,7 @@ class DownloadStateTest {
     fun `retry restarts at zero with prior choices and cancels when forced`() =
         runTest {
             val holder = testHolder()
-            holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.failure))
+            holder.showReady(DownloadFixtures.failure)
             holder.selectMode(DownloadMode.Audio)
             holder.selectQuality(1)
             holder.changeDestination()
@@ -576,7 +601,7 @@ class DownloadStateTest {
             assertEquals(1, holder.selectedQualityIndex)
             assertEquals(destination, holder.destination)
 
-            holder.onEvent(DownloadEvent.ShowReady())
+            holder.showReady()
             runCurrent()
             advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 2).milliseconds)
             runCurrent()
@@ -587,11 +612,11 @@ class DownloadStateTest {
     @Test
     fun `open folder acknowledges without leaving completed and download another resets focus`() {
         val holder = immediateHolder()
-        holder.onEvent(DownloadEvent.ShowCompleted())
+        holder.showCompleted()
 
         holder.openFolder()
         assertEquals(DownloadUiState.Completed(DownloadFixtures.normal), holder.state)
-        assertEquals(OPEN_FOLDER_ACKNOWLEDGEMENT, holder.completedFeedback)
+        assertEquals(ProductCopy.OPEN_FOLDER_ACKNOWLEDGEMENT, holder.completedFeedback)
 
         val focusRequest = holder.linkFocusRequest
         holder.downloadAnother()
@@ -605,7 +630,7 @@ class DownloadStateTest {
     fun `link edit reset force and close cancel stale progress`() =
         runTest {
             val holder = testHolder()
-            holder.onEvent(DownloadEvent.ShowReady())
+            holder.showReady()
             holder.startAuthorizedDownload()
             runCurrent()
             holder.observeLinkEdit("https://youtu.be/new-link")
@@ -613,23 +638,23 @@ class DownloadStateTest {
             runCurrent()
             assertEquals(DownloadUiState.Empty, holder.state)
 
-            holder.onEvent(DownloadEvent.ShowReady())
+            holder.showReady()
             holder.startAuthorizedDownload()
             runCurrent()
-            holder.onEvent(DownloadEvent.Reset)
+            holder.showDesignState(DownloadUiState.Empty)
             advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 6).milliseconds)
             runCurrent()
             assertEquals(DownloadUiState.Empty, holder.state)
 
-            holder.onEvent(DownloadEvent.ShowReady())
+            holder.showReady()
             holder.startAuthorizedDownload()
             runCurrent()
-            holder.onEvent(DownloadEvent.ShowCompleted())
+            holder.showCompleted()
             advanceTimeBy((FAKE_PROGRESS_INTERVAL_MILLIS * 6).milliseconds)
             runCurrent()
             assertEquals(DownloadUiState.Completed(DownloadFixtures.normal), holder.state)
 
-            holder.onEvent(DownloadEvent.ShowReady())
+            holder.showReady()
             holder.startAuthorizedDownload()
             runCurrent()
             val stateAtClose = holder.state
@@ -643,7 +668,7 @@ class DownloadStateTest {
     fun `forced downloading bypasses timers and locks choices`() =
         runTest {
             val holder = testHolder()
-            holder.onEvent(DownloadEvent.ShowDownloading(progressPercent = 43))
+            holder.showDownloading(progressPercent = 43)
             holder.selectMode(DownloadMode.Audio)
             holder.selectQuality(2)
             holder.changeDestination()
@@ -658,26 +683,20 @@ class DownloadStateTest {
         }
 
     @Test
-    fun `queued stale progress cannot overwrite same fixture forced downloading`() =
-        runBlocking {
-            val holder = DownloadStateHolder(machineDispatcher = Dispatchers.Default.limitedParallelism(1))
-            val ready = DownloadUiState.Ready(DownloadFixtures.normal)
-            val downloading = DownloadUiState.Downloading(DownloadFixtures.normal, 0)
+    fun `stale progress callback cannot overwrite replacement downloading state`() =
+        runTest {
+            val runtime = CapturingDownloadRuntime()
+            val holder = testHolder(runtime)
             val forced = DownloadUiState.Downloading(DownloadFixtures.normal, 87)
             try {
-                holder.onEvent(DownloadEvent.ShowReady())
-                holder.awaitState(ready)
+                holder.showReady()
                 holder.startAuthorizedDownload()
-                holder.awaitState(downloading)
-                val submitStaleProgress =
-                    holder.captureProgressSubmissionForTest(
-                        fixture = DownloadFixtures.normal,
-                        progressPercent = 18,
-                    )
+                runCurrent()
+                val submitStaleProgress = runtime.progressCallbacks.single()
 
-                holder.onEvent(DownloadEvent.ShowDownloading(progressPercent = 87))
-                holder.awaitState(forced)
-                submitStaleProgress()
+                holder.showDownloading(progressPercent = 87)
+                submitStaleProgress(18)
+                runCurrent()
 
                 assertEquals(forced, holder.state)
             } finally {
@@ -688,7 +707,7 @@ class DownloadStateTest {
     @Test
     fun `source resolution fixture and reset clear stale ready choices and feedback`() {
         val holder = immediateHolder()
-        holder.onEvent(DownloadEvent.ShowReady())
+        holder.showReady()
         holder.selectMode(DownloadMode.Audio)
         holder.selectQuality(1)
         holder.changeDestination()
@@ -707,25 +726,25 @@ class DownloadStateTest {
         assertEquals("Downloads", holder.destination)
         assertEquals("Best available — 2160p", holder.selectedQualityLabel)
 
-        holder.onEvent(DownloadEvent.ShowReady(DownloadFixtures.longDestination))
+        holder.showReady(DownloadFixtures.longDestination)
         assertEquals(DownloadFixtures.longDestination.destination, holder.destination)
         assertNull(holder.readyFeedback)
 
-        holder.onEvent(DownloadEvent.Reset)
+        holder.showDesignState(DownloadUiState.Empty)
         assertEquals(DownloadUiState.Empty, holder.state)
         assertEquals(DownloadMode.Video, holder.selectedMode)
         assertEquals(0, holder.selectedQualityIndex)
         assertEquals("", holder.destination)
         assertNull(holder.readyFeedback)
 
-        holder.onEvent(DownloadEvent.ShowReady())
+        holder.showReady()
         assertEquals(DownloadUiState.Ready(DownloadFixtures.normal), holder.state)
         assertEquals("Best available — 2160p", holder.selectedQualityLabel)
         assertEquals("Downloads", holder.destination)
     }
 
     private class ControlledPreviewRuntime(
-        private val tools: List<String> = emptyList(),
+        private val tools: List<DownloadTool> = emptyList(),
         private val failPreview: Boolean = false,
     ) : DownloadRuntime by PreviewDownloadRuntime() {
         private val previewGate = CompletableDeferred<Unit>()
@@ -746,13 +765,25 @@ class DownloadStateTest {
             return DownloadFixtures.normal.copy(sourceUrl = sourceUrl)
         }
 
-        override fun missingTools(): List<String> {
+        override fun missingTools(): List<DownloadTool> {
             missingToolsCount += 1
             return if (installCount == 0) tools else emptyList()
         }
 
         override suspend fun installMissingTools() {
             installCount += 1
+        }
+    }
+
+    private class CapturingDownloadRuntime : DownloadRuntime by PreviewDownloadRuntime() {
+        val progressCallbacks = mutableListOf<suspend (Int) -> Unit>()
+
+        override suspend fun download(
+            request: DownloadRequest,
+            onProgress: suspend (Int) -> Unit,
+        ) {
+            progressCallbacks += onProgress
+            CompletableDeferred<Unit>().await()
         }
     }
 }

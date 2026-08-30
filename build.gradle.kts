@@ -26,7 +26,8 @@ dependencies {
     }
     implementation("org.jetbrains.jewel:jewel-int-ui-standalone:0.39.1-262.9437.29")
     implementation("org.jetbrains.jewel:jewel-int-ui-decorated-window:0.39.1-262.9437.29")
-    implementation("io.github.nsk90:kstatemachine-coroutines:0.38.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    implementation("net.java.dev.jna:jna-platform:5.17.0")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.jetbrains.compose.ui:ui-test:1.12.0")

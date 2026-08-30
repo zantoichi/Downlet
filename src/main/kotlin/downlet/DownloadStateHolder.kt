@@ -8,32 +8,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import ru.nsk.kstatemachine.event.Event
-import ru.nsk.kstatemachine.state.State
-import ru.nsk.kstatemachine.state.initialState
-import ru.nsk.kstatemachine.state.state
-import ru.nsk.kstatemachine.state.transitionOn
-import ru.nsk.kstatemachine.statemachine.StateMachine
-import ru.nsk.kstatemachine.statemachine.createStateMachineBlocking
-import ru.nsk.kstatemachine.statemachine.destroy
-import ru.nsk.kstatemachine.transition.onComplete
-import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.withContext
 
 @Stable
 @Suppress("TooManyFunctions")
 internal class DownloadStateHolder(
-    scope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob()),
-    machineDispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val runtime: DownloadRuntime = PreviewDownloadRuntime(),
+    scope: CoroutineScope,
+    private val runtime: DownloadRuntime,
 ) {
     val linkFieldState = TextFieldState()
 
@@ -71,10 +57,10 @@ internal class DownloadStateHolder(
         private set
 
     val qualityOptions: List<String>
-        get() = if (selectedMode == DownloadMode.Video) videoQualityOptions else audioQualityOptions
+        get() = availableQualities.map(DownloadQuality::label)
 
     val selectedQualityLabel: String
-        get() = qualityOptions[selectedQualityIndex]
+        get() = selectedQuality.label
 
     val downloadEnabled: Boolean
         get() =
@@ -88,27 +74,34 @@ internal class DownloadStateHolder(
     val readyStatus: String?
         get() =
             (state as? DownloadUiState.Ready)?.fixture?.let { fixture ->
-                if (fixture.canDownload) readyFeedback else DOWNLOAD_UNAVAILABLE_MESSAGE
+                if (fixture.canDownload) readyFeedback else ProductCopy.DOWNLOAD_UNAVAILABLE_MESSAGE
             }
 
-    private val machineJob = SupervisorJob(scope.coroutineContext[Job])
-    private val machineScope = CoroutineScope(machineDispatcher + machineJob)
-    private val machine = createDownloadMachine()
-    private val machineEventMutex = Mutex()
-    private val downloadGeneration = AtomicLong()
-    private var resolutionJob: Job? = null
-    private var progressJob: Job? = null
+    private val stateContext = scope.coroutineContext.minusKey(Job)
+    private val holderJob = SupervisorJob(scope.coroutineContext[Job])
+    private val holderScope = CoroutineScope(stateContext + holderJob)
+    private var downloadGeneration = 0L
+    private var metadataJob: Job? = null
+    private var downloadJob: Job? = null
     private var observedLinkText = ""
+
+    private val availableQualities: List<DownloadQuality>
+        get() = if (selectedMode == DownloadMode.Video) videoQualityOptions else audioQualityOptions
+
+    private val selectedQuality: DownloadQuality
+        get() = availableQualities[selectedQualityIndex]
 
     fun observeLinkEdit(text: String): Boolean {
         if (text == observedLinkText) return false
 
         observedLinkText = text
-        showingLegalDetails = false
-        validationMessage = text.takeIf { it.isNotBlank() && !isValidYouTubeUrl(it) }?.let { INVALID_LINK_MESSAGE }
+        validationMessage =
+            text
+                .takeIf { it.isNotBlank() && !isValidYouTubeUrl(it) }
+                ?.let { ProductCopy.INVALID_LINK_MESSAGE }
         clearReadySelection()
-        cancelTimers()
-        process(MachineEvent.LinkEdited)
+        cancelActiveWork()
+        transitionTo(DownloadUiState.Empty)
         return true
     }
 
@@ -119,9 +112,9 @@ internal class DownloadStateHolder(
         replaceLink(value)
         validationMessage = null
         clearReadySelection()
-        val requestFixture = DownloadFixtures.normal.copy(sourceUrl = value)
-        cancelTimers()
-        startPreview(requestFixture)
+        cancelActiveWork()
+        transitionTo(DownloadUiState.Empty)
+        startPreview(DownloadFixtures.normal.copy(sourceUrl = value))
     }
 
     fun updateToolSetupConsent(accepted: Boolean) {
@@ -136,33 +129,22 @@ internal class DownloadStateHolder(
         val setup = state as? DownloadUiState.Setup ?: return
         if (!toolSetupEnabled) return
 
-        cancelTimers()
-        resolutionJob =
-            machineScope.launch {
-                submitMachineEvent(MachineEvent.InstallTools(setup.fixture, setup.tools))
+        cancelActiveWork()
+        transitionTo(setup.copy(installing = true, failed = false))
+        metadataJob =
+            holderScope.launch {
                 try {
                     runtime.installMissingTools()
                     if (runtime.missingTools().isNotEmpty()) throw DownloadRuntimeException()
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
-                    submitMachineEvent(MachineEvent.ToolInstallationFailed(setup.fixture, setup.tools))
+                    if (isCurrentInstallingSetup(setup)) {
+                        transitionTo(setup.copy(failed = true))
+                    }
                     return@launch
                 }
-                submitMachineEvent(MachineEvent.Resolve(setup.fixture))
-                try {
-                    val resolvedFixture = runtime.resolve(setup.fixture.sourceUrl)
-                    submitMachineEvent(
-                        MachineEvent.ResolutionCompleted(
-                            setup.fixture,
-                            resolvedFixture.withPreviewFrom(setup.fixture),
-                        ),
-                    )
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    submitMachineEvent(MachineEvent.ResolutionFailed(setup.fixture))
-                }
+                if (isCurrentInstallingSetup(setup)) resolve(setup.fixture)
             }
     }
 
@@ -182,7 +164,9 @@ internal class DownloadStateHolder(
     }
 
     internal fun completeResolution(fixture: DownloadFixture) {
-        process(MachineEvent.ResolutionCompleted(fixture, fixture))
+        if (!isCurrentResolution(fixture)) return
+        prepareReady(fixture)
+        transitionTo(DownloadUiState.Ready(fixture))
     }
 
     fun selectMode(mode: DownloadMode) {
@@ -194,7 +178,9 @@ internal class DownloadStateHolder(
     }
 
     fun selectQuality(index: Int) {
-        if (state !is DownloadUiState.Ready || index !in qualityOptions.indices || selectedQualityIndex == index) return
+        if (state !is DownloadUiState.Ready || index !in availableQualities.indices || selectedQualityIndex == index) {
+            return
+        }
 
         selectedQualityIndex = index
         readyFeedback = null
@@ -211,13 +197,13 @@ internal class DownloadStateHolder(
         val fixture = (state as? DownloadUiState.Ready)?.fixture ?: return
         if (!downloadEnabled) return
 
-        startProgress(fixture, MachineEvent.StartDownload(fixture))
+        startDownload(fixture)
     }
 
     fun cancelDownload() {
         val fixture = (state as? DownloadUiState.Downloading)?.fixture ?: return
-        cancelTimers()
-        process(MachineEvent.CancelDownload(fixture))
+        cancelActiveWork()
+        transitionTo(DownloadUiState.Ready(fixture))
     }
 
     fun retryDownload() {
@@ -225,7 +211,7 @@ internal class DownloadStateHolder(
         if (error.kind == DownloadErrorKind.Resolution) {
             beginResolution(error.fixture.sourceUrl)
         } else {
-            startProgress(error.fixture, MachineEvent.RetryDownload(error.fixture))
+            startDownload(error.fixture)
         }
     }
 
@@ -238,387 +224,175 @@ internal class DownloadStateHolder(
     fun downloadAnother() {
         if (state !is DownloadUiState.Completed) return
 
-        cancelTimers()
+        cancelActiveWork()
         observedLinkText = ""
         linkFieldState.clearText()
         validationMessage = null
-        process(MachineEvent.DownloadAnother)
+        clearReadySelection()
+        requestLinkFocus()
+        transitionTo(DownloadUiState.Empty)
     }
 
-    @Suppress("LongMethod")
-    fun onEvent(event: DownloadEvent) {
-        cancelTimers()
-        when (event) {
-            DownloadEvent.Reset,
-            DownloadEvent.ShowEmpty,
-            -> {
-                observedLinkText = ""
-                linkFieldState.clearText()
-                validationMessage = null
-                clearReadySelection()
-                requestLinkFocus()
-                process(MachineEvent.ForceEmpty)
-            }
-
-            is DownloadEvent.ShowResolving -> {
-                replaceLink(event.fixture.sourceUrl)
-                validationMessage = null
-                clearReadySelection()
-                process(MachineEvent.ForceResolving(event.fixture))
-            }
-
-            is DownloadEvent.ShowPreviewing -> {
-                replaceLink(event.fixture.sourceUrl)
-                validationMessage = null
-                clearReadySelection()
-                process(MachineEvent.ForcePreviewing(event.fixture))
-            }
-
-            is DownloadEvent.ShowSetup -> {
-                replaceLink(event.fixture.sourceUrl)
-                validationMessage = null
-                clearReadySelection()
-                process(
-                    MachineEvent.ForceSetup(
-                        fixture = event.fixture,
-                        tools = event.tools,
-                        installing = event.installing,
-                        failed = event.failed,
-                    ),
-                )
-            }
-
-            is DownloadEvent.ShowReady -> {
-                replaceLink(event.fixture.sourceUrl)
-                validationMessage = null
-                process(MachineEvent.ForceReady(event.fixture))
-            }
-
-            is DownloadEvent.ShowDownloading -> {
-                replaceLink(event.fixture.sourceUrl)
-                validationMessage = null
-                prepareReady(event.fixture)
-                process(MachineEvent.ForceDownloading(event.fixture, event.progressPercent))
-            }
-
-            is DownloadEvent.ShowCompleted -> {
-                replaceLink(event.fixture.sourceUrl)
-                validationMessage = null
-                prepareReady(event.fixture)
-                process(MachineEvent.ForceCompleted(event.fixture))
-            }
-
-            is DownloadEvent.ShowError -> {
-                replaceLink(event.fixture.sourceUrl)
-                validationMessage = null
-                prepareReady(event.fixture)
-                process(MachineEvent.ForceError(event.fixture))
-            }
-
-            DownloadEvent.ShowInvalidInput -> {
-                val invalidText = "not a YouTube link"
-                replaceLink(invalidText)
-                validationMessage = INVALID_LINK_MESSAGE
-                clearReadySelection()
-                process(MachineEvent.ForceEmpty)
-            }
+    internal fun showDesignState(
+        state: DownloadUiState,
+        linkText: String = state.fixtureOrNull?.sourceUrl.orEmpty(),
+        validationMessage: String? = null,
+    ) {
+        cancelActiveWork()
+        observedLinkText = linkText
+        if (linkText.isEmpty()) {
+            linkFieldState.clearText()
+        } else {
+            linkFieldState.setTextAndPlaceCursorAtEnd(linkText)
         }
+        this.validationMessage = validationMessage
+        clearReadySelection()
+        when (state) {
+            is DownloadUiState.Ready -> prepareReady(state.fixture)
+            is DownloadUiState.Downloading -> prepareReady(state.fixture)
+            is DownloadUiState.Completed -> prepareReady(state.fixture)
+            is DownloadUiState.Error -> prepareReady(state.fixture)
+            else -> Unit
+        }
+        if (state == DownloadUiState.Empty && linkText.isEmpty()) requestLinkFocus()
+        transitionTo(state)
     }
 
     fun close() {
-        cancelTimers()
-        machineScope.launch(start = CoroutineStart.UNDISPATCHED) {
-            try {
-                machine.destroy()
-            } finally {
-                machineScope.cancel()
-            }
-        }
+        cancelActiveWork()
+        holderJob.cancel()
     }
 
-    private fun createDownloadMachine(): StateMachine {
-        lateinit var empty: State
-        lateinit var previewing: State
-        lateinit var setup: State
-        lateinit var resolving: State
-        lateinit var ready: State
-        lateinit var downloading: State
-        lateinit var completed: State
-        lateinit var error: State
+    private fun startPreview(requestFixture: DownloadFixture) {
+        if (state !is DownloadUiState.Empty || observedLinkText != requestFixture.sourceUrl) return
 
-        fun State.routeEvents() {
-            transitionOn<MachineEvent> {
-                targetState = {
-                    when (event.target) {
-                        MachinePhase.Empty -> empty
-                        MachinePhase.Previewing -> previewing
-                        MachinePhase.Setup -> setup
-                        MachinePhase.Resolving -> resolving
-                        MachinePhase.Ready -> ready
-                        MachinePhase.Downloading -> downloading
-                        MachinePhase.Completed -> completed
-                        MachinePhase.Error -> error
+        transitionTo(DownloadUiState.Previewing(requestFixture))
+        metadataJob =
+            holderScope.launch {
+                val previewFixture =
+                    try {
+                        runtime.preview(requestFixture.sourceUrl)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        if (isCurrentPreview(requestFixture)) {
+                            clearReadySelection()
+                            transitionTo(DownloadUiState.Error(requestFixture, DownloadErrorKind.Resolution))
+                        }
+                        return@launch
                     }
-                }
-                guard = { acceptsMachineEvent(event) }
-                onComplete { _, params -> applyMachineEvent(params.event) }
-            }
-        }
+                if (!isCurrentPreview(requestFixture)) return@launch
 
-        return createStateMachineBlocking(machineScope, name = "Download flow") {
-            empty = initialState("Empty")
-            previewing = state("Previewing")
-            setup = state("Setup")
-            resolving = state("Resolving")
-            ready = state("Ready")
-            downloading = state("Downloading")
-            completed = state("Completed")
-            error = state("Error")
-            empty.routeEvents()
-            previewing.routeEvents()
-            setup.routeEvents()
-            resolving.routeEvents()
-            ready.routeEvents()
-            downloading.routeEvents()
-            completed.routeEvents()
-            error.routeEvents()
-        }
-    }
-
-    @Suppress("CyclomaticComplexMethod", "LongMethod")
-    private fun applyMachineEvent(event: MachineEvent) {
-        showingLegalDetails = false
-        state =
-            when (event) {
-                MachineEvent.LinkEdited,
-                MachineEvent.ForceEmpty,
-                MachineEvent.DownloadAnother,
-                -> {
+                val missingTools = runtime.missingTools()
+                if (missingTools.isNotEmpty()) {
                     clearReadySelection()
-                    completedFeedback = null
-                    if (event is MachineEvent.DownloadAnother) requestLinkFocus()
-                    DownloadUiState.Empty
+                    transitionTo(DownloadUiState.Setup(previewFixture, missingTools))
+                    return@launch
                 }
-
-                is MachineEvent.Preview -> {
-                    DownloadUiState.Previewing(event.fixture)
-                }
-
-                is MachineEvent.ForcePreviewing -> {
-                    DownloadUiState.Previewing(
-                        event.fixture,
-                        completesAutomatically = false,
-                    )
-                }
-
-                is MachineEvent.RequireSetup -> {
-                    clearReadySelection()
-                    DownloadUiState.Setup(event.fixture, event.tools)
-                }
-
-                is MachineEvent.InstallTools -> {
-                    DownloadUiState.Setup(event.fixture, event.tools, installing = true)
-                }
-
-                is MachineEvent.ToolInstallationFailed -> {
-                    DownloadUiState.Setup(event.fixture, event.tools, failed = true)
-                }
-
-                is MachineEvent.Resolve -> {
-                    DownloadUiState.Resolving(event.fixture)
-                }
-
-                is MachineEvent.ForceResolving -> {
-                    DownloadUiState.Resolving(
-                        event.fixture,
-                        completesAutomatically = false,
-                    )
-                }
-
-                is MachineEvent.ForceSetup -> {
-                    DownloadUiState.Setup(
-                        fixture = event.fixture,
-                        tools = event.tools,
-                        installing = event.installing,
-                        failed = event.failed,
-                    )
-                }
-
-                is MachineEvent.ResolutionCompleted -> {
-                    prepareReady(event.resolvedFixture)
-                    DownloadUiState.Ready(event.resolvedFixture)
-                }
-
-                is MachineEvent.ResolutionFailed -> {
-                    clearReadySelection()
-                    DownloadUiState.Error(event.fixture, DownloadErrorKind.Resolution)
-                }
-
-                is MachineEvent.PreviewFailed -> {
-                    clearReadySelection()
-                    DownloadUiState.Error(event.fixture, DownloadErrorKind.Resolution)
-                }
-
-                is MachineEvent.ForceReady -> {
-                    prepareReady(event.fixture)
-                    DownloadUiState.Ready(event.fixture)
-                }
-
-                is MachineEvent.StartDownload -> {
-                    readyFeedback = null
-                    completedFeedback = null
-                    DownloadUiState.Downloading(event.fixture, progressPercent = 0)
-                }
-
-                is MachineEvent.RetryDownload -> {
-                    readyFeedback = null
-                    completedFeedback = null
-                    DownloadUiState.Downloading(event.fixture, progressPercent = 0)
-                }
-
-                is MachineEvent.Progress -> {
-                    DownloadUiState.Downloading(event.fixture, event.progressPercent)
-                }
-
-                is MachineEvent.DownloadCompleted -> {
-                    invalidateDownloadGeneration()
-                    progressJob = null
-                    completedFeedback = null
-                    DownloadUiState.Completed(event.fixture)
-                }
-
-                is MachineEvent.DownloadFailed -> {
-                    invalidateDownloadGeneration()
-                    progressJob = null
-                    DownloadUiState.Error(event.fixture)
-                }
-
-                is MachineEvent.CancelDownload -> {
-                    DownloadUiState.Ready(event.fixture)
-                }
-
-                is MachineEvent.ForceDownloading -> {
-                    DownloadUiState.Downloading(event.fixture, event.progressPercent)
-                }
-
-                is MachineEvent.ForceCompleted -> {
-                    completedFeedback = null
-                    DownloadUiState.Completed(event.fixture)
-                }
-
-                is MachineEvent.ForceError -> {
-                    DownloadUiState.Error(event.fixture)
-                }
+                resolve(previewFixture)
             }
     }
 
-    @Suppress("CyclomaticComplexMethod", "LongMethod")
-    private fun acceptsMachineEvent(event: MachineEvent): Boolean =
-        when (event) {
-            MachineEvent.LinkEdited,
-            MachineEvent.ForceEmpty,
-            MachineEvent.DownloadAnother,
-            is MachineEvent.ForcePreviewing,
-            is MachineEvent.ForceResolving,
-            is MachineEvent.ForceSetup,
-            is MachineEvent.ForceReady,
-            is MachineEvent.ForceDownloading,
-            is MachineEvent.ForceCompleted,
-            is MachineEvent.ForceError,
-            -> {
-                true
-            }
+    private suspend fun resolve(requestFixture: DownloadFixture) {
+        if (!canResolve(requestFixture)) return
 
-            is MachineEvent.Preview -> {
-                state is DownloadUiState.Empty && observedLinkText == event.fixture.sourceUrl
-            }
-
-            is MachineEvent.RequireSetup -> {
-                val previewingState = state as? DownloadUiState.Previewing
-                previewingState?.completesAutomatically == true &&
-                    previewingState.fixture.sourceUrl == event.fixture.sourceUrl
-            }
-
-            is MachineEvent.Resolve -> {
-                when (val current = state) {
-                    is DownloadUiState.Previewing -> {
-                        current.completesAutomatically && current.fixture.sourceUrl == event.fixture.sourceUrl
-                    }
-
-                    is DownloadUiState.Setup -> {
-                        current.installing && current.fixture == event.fixture
-                    }
-
-                    else -> {
-                        false
-                    }
-                }
-            }
-
-            is MachineEvent.InstallTools -> {
-                val setupState = state as? DownloadUiState.Setup
-                setupState?.fixture == event.fixture && setupState.tools == event.tools && !setupState.installing
-            }
-
-            is MachineEvent.ToolInstallationFailed -> {
-                val setupState = state as? DownloadUiState.Setup
-                setupState?.fixture == event.fixture && setupState.tools == event.tools && setupState.installing
-            }
-
-            is MachineEvent.ResolutionCompleted -> {
-                val resolvingState = state as? DownloadUiState.Resolving
-                resolvingState?.completesAutomatically == true && resolvingState.fixture == event.requestFixture
-            }
-
-            is MachineEvent.ResolutionFailed -> {
-                val resolvingState = state as? DownloadUiState.Resolving
-                resolvingState?.completesAutomatically == true && resolvingState.fixture == event.fixture
-            }
-
-            is MachineEvent.PreviewFailed -> {
-                val previewingState = state as? DownloadUiState.Previewing
-                previewingState?.completesAutomatically == true && previewingState.fixture == event.fixture
-            }
-
-            is MachineEvent.StartDownload -> {
-                state == DownloadUiState.Ready(event.fixture)
-            }
-
-            is MachineEvent.Progress -> {
-                event.generation == downloadGeneration.get() &&
-                    (state as? DownloadUiState.Downloading)?.fixture == event.fixture
-            }
-
-            is MachineEvent.DownloadCompleted -> {
-                event.generation == downloadGeneration.get() &&
-                    (state as? DownloadUiState.Downloading)?.fixture == event.fixture
-            }
-
-            is MachineEvent.DownloadFailed -> {
-                event.generation == downloadGeneration.get() &&
-                    (state as? DownloadUiState.Downloading)?.fixture == event.fixture
-            }
-
-            is MachineEvent.CancelDownload -> {
-                (state as? DownloadUiState.Downloading)?.fixture == event.fixture
-            }
-
-            is MachineEvent.RetryDownload -> {
-                state == DownloadUiState.Error(event.fixture)
-            }
-        }
-
-    private fun process(event: MachineEvent) {
-        machineScope.launch { submitMachineEvent(event) }
-    }
-
-    private suspend fun submitMachineEvent(event: MachineEvent) {
-        machineEventMutex.lock()
+        transitionTo(DownloadUiState.Resolving(requestFixture))
         try {
-            machine.processEvent(event)
-        } finally {
-            machineEventMutex.unlock()
+            val resolvedFixture = runtime.resolve(requestFixture.sourceUrl).withPreviewFrom(requestFixture)
+            if (isCurrentResolution(requestFixture)) {
+                prepareReady(resolvedFixture)
+                transitionTo(DownloadUiState.Ready(resolvedFixture))
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            if (isCurrentResolution(requestFixture)) {
+                clearReadySelection()
+                transitionTo(DownloadUiState.Error(requestFixture, DownloadErrorKind.Resolution))
+            }
         }
+    }
+
+    private fun startDownload(fixture: DownloadFixture) {
+        val canStart =
+            state == DownloadUiState.Ready(fixture) ||
+                (state as? DownloadUiState.Error)?.let {
+                    it.fixture == fixture && it.kind == DownloadErrorKind.Download
+                } == true
+        if (!canStart) return
+
+        downloadJob?.cancel()
+        downloadGeneration += 1
+        val generation = downloadGeneration
+        val request = DownloadRequest(fixture, selectedQuality, destination)
+        readyFeedback = null
+        completedFeedback = null
+        transitionTo(DownloadUiState.Downloading(fixture, progressPercent = 0))
+        downloadJob =
+            holderScope.launch {
+                try {
+                    runtime.download(request) { progress ->
+                        withContext(stateContext) {
+                            if (isCurrentDownload(fixture, generation)) {
+                                transitionTo(DownloadUiState.Downloading(fixture, progress))
+                            }
+                        }
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    if (isCurrentDownload(fixture, generation)) {
+                        downloadJob = null
+                        transitionTo(DownloadUiState.Error(fixture))
+                    }
+                    return@launch
+                }
+                if (isCurrentDownload(fixture, generation)) {
+                    downloadJob = null
+                    completedFeedback = null
+                    transitionTo(DownloadUiState.Completed(fixture))
+                }
+            }
+    }
+
+    private fun isCurrentPreview(fixture: DownloadFixture): Boolean =
+        (state as? DownloadUiState.Previewing)?.let {
+            it.completesAutomatically && it.fixture == fixture && observedLinkText == fixture.sourceUrl
+        } == true
+
+    private fun isCurrentInstallingSetup(setup: DownloadUiState.Setup): Boolean =
+        (state as? DownloadUiState.Setup)?.let {
+            it.fixture == setup.fixture && it.tools == setup.tools && it.installing
+        } == true
+
+    private fun canResolve(fixture: DownloadFixture): Boolean =
+        when (val current = state) {
+            is DownloadUiState.Previewing -> {
+                current.completesAutomatically && current.fixture.sourceUrl == fixture.sourceUrl
+            }
+
+            is DownloadUiState.Setup -> {
+                current.installing && current.fixture == fixture
+            }
+
+            else -> {
+                false
+            }
+        }
+
+    private fun isCurrentResolution(fixture: DownloadFixture): Boolean =
+        (state as? DownloadUiState.Resolving)?.let {
+            it.completesAutomatically && it.fixture == fixture
+        } == true
+
+    private fun isCurrentDownload(
+        fixture: DownloadFixture,
+        generation: Long,
+    ): Boolean = generation == downloadGeneration && (state as? DownloadUiState.Downloading)?.fixture == fixture
+
+    private fun transitionTo(nextState: DownloadUiState) {
+        showingLegalDetails = false
+        state = nextState
     }
 
     private fun prepareReady(fixture: DownloadFixture) {
@@ -641,83 +415,13 @@ internal class DownloadStateHolder(
         downloadAuthorizationAccepted = false
     }
 
-    private fun startPreview(requestFixture: DownloadFixture) {
-        resolutionJob =
-            machineScope.launch {
-                submitMachineEvent(MachineEvent.Preview(requestFixture))
-                val previewFixture =
-                    try {
-                        runtime.preview(requestFixture.sourceUrl)
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Exception) {
-                        submitMachineEvent(MachineEvent.PreviewFailed(requestFixture))
-                        return@launch
-                    }
-                val missingTools = runtime.missingTools()
-                if (missingTools.isNotEmpty()) {
-                    submitMachineEvent(MachineEvent.RequireSetup(previewFixture, missingTools))
-                    return@launch
-                }
-                resolve(previewFixture)
-            }
-    }
-
-    private suspend fun resolve(requestFixture: DownloadFixture) {
-        submitMachineEvent(MachineEvent.Resolve(requestFixture))
-        try {
-            val resolvedFixture = runtime.resolve(requestFixture.sourceUrl).withPreviewFrom(requestFixture)
-            submitMachineEvent(MachineEvent.ResolutionCompleted(requestFixture, resolvedFixture))
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            submitMachineEvent(MachineEvent.ResolutionFailed(requestFixture))
-        }
-    }
-
-    private fun startProgress(
-        fixture: DownloadFixture,
-        startEvent: MachineEvent,
-    ) {
-        progressJob?.cancel()
-        val generation = downloadGeneration.incrementAndGet()
-        progressJob =
-            machineScope.launch {
-                submitMachineEvent(startEvent)
-                val request = DownloadRequest(fixture, selectedMode, selectedQualityIndex, destination)
-                try {
-                    runtime.download(request) { progress ->
-                        submitMachineEvent(MachineEvent.Progress(fixture, progress, generation))
-                    }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    submitMachineEvent(MachineEvent.DownloadFailed(fixture, generation))
-                    return@launch
-                }
-                submitMachineEvent(MachineEvent.DownloadCompleted(fixture, generation))
-            }
-    }
-
-    private fun cancelTimers() {
-        invalidateDownloadGeneration()
+    private fun cancelActiveWork() {
+        downloadGeneration += 1
         runtime.cancel()
-        resolutionJob?.cancel()
-        resolutionJob = null
-        progressJob?.cancel()
-        progressJob = null
-    }
-
-    private fun invalidateDownloadGeneration() {
-        downloadGeneration.incrementAndGet()
-    }
-
-    internal fun captureProgressSubmissionForTest(
-        fixture: DownloadFixture,
-        progressPercent: Int,
-    ): suspend () -> Unit {
-        val event = MachineEvent.Progress(fixture, progressPercent, downloadGeneration.get())
-        return { submitMachineEvent(event) }
+        metadataJob?.cancel()
+        metadataJob = null
+        downloadJob?.cancel()
+        downloadJob = null
     }
 
     private fun requestLinkFocus() {
@@ -737,168 +441,3 @@ private fun DownloadFixture.withPreviewFrom(preview: DownloadFixture): DownloadF
         thumbnailAvailable = thumbnailAvailable || preview.thumbnailAvailable,
         thumbnailData = thumbnailData ?: preview.thumbnailData,
     )
-
-private enum class MachinePhase {
-    Empty,
-    Previewing,
-    Setup,
-    Resolving,
-    Ready,
-    Downloading,
-    Completed,
-    Error,
-}
-
-private sealed interface MachineEvent : Event {
-    val target: MachinePhase
-
-    data object LinkEdited : MachineEvent {
-        override val target = MachinePhase.Empty
-    }
-
-    data class Preview(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Previewing
-    }
-
-    data class Resolve(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Resolving
-    }
-
-    data class RequireSetup(
-        val fixture: DownloadFixture,
-        val tools: List<String>,
-    ) : MachineEvent {
-        override val target = MachinePhase.Setup
-    }
-
-    data class InstallTools(
-        val fixture: DownloadFixture,
-        val tools: List<String>,
-    ) : MachineEvent {
-        override val target = MachinePhase.Setup
-    }
-
-    data class ToolInstallationFailed(
-        val fixture: DownloadFixture,
-        val tools: List<String>,
-    ) : MachineEvent {
-        override val target = MachinePhase.Setup
-    }
-
-    data class ResolutionCompleted(
-        val requestFixture: DownloadFixture,
-        val resolvedFixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Ready
-    }
-
-    data class ResolutionFailed(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Error
-    }
-
-    data class PreviewFailed(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Error
-    }
-
-    data object ForceEmpty : MachineEvent {
-        override val target = MachinePhase.Empty
-    }
-
-    data class ForcePreviewing(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Previewing
-    }
-
-    data class ForceResolving(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Resolving
-    }
-
-    data class ForceSetup(
-        val fixture: DownloadFixture,
-        val tools: List<String>,
-        val installing: Boolean,
-        val failed: Boolean,
-    ) : MachineEvent {
-        override val target = MachinePhase.Setup
-    }
-
-    data class ForceReady(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Ready
-    }
-
-    data class StartDownload(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Downloading
-    }
-
-    data class Progress(
-        val fixture: DownloadFixture,
-        val progressPercent: Int,
-        val generation: Long,
-    ) : MachineEvent {
-        override val target = MachinePhase.Downloading
-    }
-
-    data class DownloadCompleted(
-        val fixture: DownloadFixture,
-        val generation: Long,
-    ) : MachineEvent {
-        override val target = MachinePhase.Completed
-    }
-
-    data class DownloadFailed(
-        val fixture: DownloadFixture,
-        val generation: Long,
-    ) : MachineEvent {
-        override val target = MachinePhase.Error
-    }
-
-    data class CancelDownload(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Ready
-    }
-
-    data class RetryDownload(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Downloading
-    }
-
-    data object DownloadAnother : MachineEvent {
-        override val target = MachinePhase.Empty
-    }
-
-    data class ForceDownloading(
-        val fixture: DownloadFixture,
-        val progressPercent: Int,
-    ) : MachineEvent {
-        override val target = MachinePhase.Downloading
-    }
-
-    data class ForceCompleted(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Completed
-    }
-
-    data class ForceError(
-        val fixture: DownloadFixture,
-    ) : MachineEvent {
-        override val target = MachinePhase.Error
-    }
-}

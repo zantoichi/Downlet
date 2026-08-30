@@ -9,16 +9,8 @@ internal const val FAKE_RESOLUTION_MILLIS = 550L
 internal const val PASTE_INTENT_LIFETIME_MILLIS = 1_000L
 internal const val FAKE_PROGRESS_INTERVAL_MILLIS = 350L
 internal const val COMPLETE_PROGRESS_PERCENT = 100
-internal const val INVALID_LINK_MESSAGE = "Enter a valid YouTube link."
-internal const val DOWNLOAD_UNAVAILABLE_MESSAGE = "Download is unavailable for this item."
-internal const val TOOL_SETUP_FAILURE_MESSAGE =
-    "Couldn't install the required tools. Check your connection and try again."
-internal const val TOOL_SETUP_CONSENT_TEXT =
-    "I choose to download these tools and accept the tool terms."
-internal const val DOWNLOAD_AUTHORIZATION_TEXT =
-    "I am authorized to download this media and accept responsibility for this download."
-internal const val OPEN_FOLDER_ACKNOWLEDGEMENT = "Folder opening is unavailable in this design preview."
-internal const val OPEN_FOLDER_FAILURE_MESSAGE = "Couldn't open the download folder."
+private const val YT_DLP_ESTIMATED_DOWNLOAD_MEGABYTES = 17
+private const val FFMPEG_ESTIMATED_DOWNLOAD_MEGABYTES = 106
 internal val fakeProgressSteps = listOf(18, 43, 68, 87, COMPLETE_PROGRESS_PERCENT)
 
 internal enum class DownloadMode {
@@ -31,8 +23,42 @@ internal enum class DownloadErrorKind {
     Download,
 }
 
-internal val videoQualityOptions = listOf("Best available — 2160p", "1440p", "1080p", "720p", "480p")
-internal val audioQualityOptions = listOf("Best available — 251 kbps audio", "160 kbps audio", "128 kbps audio")
+internal data class DownloadQuality(
+    val label: String,
+    val ytDlpArguments: List<String>,
+)
+
+internal enum class DownloadTool(
+    val label: String,
+    val estimatedDownloadMegabytes: Int,
+) {
+    YtDlp("yt-dlp", YT_DLP_ESTIMATED_DOWNLOAD_MEGABYTES),
+    Ffmpeg("FFmpeg", FFMPEG_ESTIMATED_DOWNLOAD_MEGABYTES),
+}
+
+internal val videoQualityOptions =
+    listOf(
+        DownloadQuality("Best available — 2160p", listOf("--format", "bv*[height<=2160]+ba/b[height<=2160]")),
+        DownloadQuality("1440p", listOf("--format", "bv*[height<=1440]+ba/b[height<=1440]")),
+        DownloadQuality("1080p", listOf("--format", "bv*[height<=1080]+ba/b[height<=1080]")),
+        DownloadQuality("720p", listOf("--format", "bv*[height<=720]+ba/b[height<=720]")),
+        DownloadQuality("480p", listOf("--format", "bv*[height<=480]+ba/b[height<=480]")),
+    )
+internal val audioQualityOptions =
+    listOf(
+        DownloadQuality(
+            "Best available — 251 kbps audio",
+            listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "0"),
+        ),
+        DownloadQuality(
+            "160 kbps audio",
+            listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "160K"),
+        ),
+        DownloadQuality(
+            "128 kbps audio",
+            listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "128K"),
+        ),
+    )
 
 private val YOUTUBE_HOSTS = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be")
 private const val MAX_INCOMPLETE_PROGRESS = 99
@@ -46,25 +72,33 @@ internal fun isValidYouTubeUrl(value: String): Boolean =
         false
     }
 
-internal sealed interface LinkSubmission {
-    data object None : LinkSubmission
-
-    data object ResolveImmediately : LinkSubmission
-
-    data class ResolveAfter(
-        val delayMillis: Long,
-    ) : LinkSubmission
-}
-
-internal fun linkSubmissionFor(
+internal fun linkResolutionDelayMillis(
+    previousValue: String,
     value: String,
-    pasteIntent: Boolean,
-): LinkSubmission =
+    explicitPaste: Boolean,
+): Long? =
     when {
-        !isValidYouTubeUrl(value) -> LinkSubmission.None
-        pasteIntent -> LinkSubmission.ResolveImmediately
-        else -> LinkSubmission.ResolveAfter(MANUAL_LINK_DEBOUNCE_MILLIS)
+        !isValidYouTubeUrl(value) -> null
+        explicitPaste || insertedCharacterCount(previousValue, value) > 1 -> 0L
+        else -> MANUAL_LINK_DEBOUNCE_MILLIS
     }
+
+private fun insertedCharacterCount(
+    previousValue: String,
+    value: String,
+): Int {
+    val prefixLength = previousValue.commonPrefixWith(value).length
+    val previousRemainder = previousValue.length - prefixLength
+    val valueRemainder = value.length - prefixLength
+    var suffixLength = 0
+    while (
+        suffixLength < minOf(previousRemainder, valueRemainder) &&
+        previousValue[previousValue.lastIndex - suffixLength] == value[value.lastIndex - suffixLength]
+    ) {
+        suffixLength += 1
+    }
+    return value.length - prefixLength - suffixLength
+}
 
 internal enum class DownletTheme {
     Light,
@@ -165,7 +199,7 @@ internal sealed interface DownloadUiState {
 
     data class Setup(
         val fixture: DownloadFixture,
-        val tools: List<String>,
+        val tools: List<DownloadTool>,
         val installing: Boolean = false,
         val failed: Boolean = false,
     ) : DownloadUiState {
@@ -215,42 +249,15 @@ internal val DownloadUiState.label: String
             is DownloadUiState.Error -> "Error"
         }
 
-internal sealed interface DownloadEvent {
-    data object Reset : DownloadEvent
-
-    data object ShowEmpty : DownloadEvent
-
-    data class ShowPreviewing(
-        val fixture: DownloadFixture = DownloadFixtures.normal,
-    ) : DownloadEvent
-
-    data class ShowResolving(
-        val fixture: DownloadFixture = DownloadFixtures.normal,
-    ) : DownloadEvent
-
-    data class ShowSetup(
-        val fixture: DownloadFixture = DownloadFixtures.normal,
-        val tools: List<String> = listOf("yt-dlp", "FFmpeg"),
-        val installing: Boolean = false,
-        val failed: Boolean = false,
-    ) : DownloadEvent
-
-    data class ShowReady(
-        val fixture: DownloadFixture = DownloadFixtures.normal,
-    ) : DownloadEvent
-
-    data class ShowDownloading(
-        val fixture: DownloadFixture = DownloadFixtures.normal,
-        val progressPercent: Int = 43,
-    ) : DownloadEvent
-
-    data class ShowCompleted(
-        val fixture: DownloadFixture = DownloadFixtures.normal,
-    ) : DownloadEvent
-
-    data class ShowError(
-        val fixture: DownloadFixture = DownloadFixtures.failure,
-    ) : DownloadEvent
-
-    data object ShowInvalidInput : DownloadEvent
-}
+internal val DownloadUiState.fixtureOrNull: DownloadFixture?
+    get() =
+        when (this) {
+            is DownloadUiState.Previewing -> fixture
+            is DownloadUiState.Setup -> fixture
+            is DownloadUiState.Resolving -> fixture
+            is DownloadUiState.Ready -> fixture
+            is DownloadUiState.Downloading -> fixture
+            is DownloadUiState.Completed -> fixture
+            is DownloadUiState.Error -> fixture
+            DownloadUiState.Empty -> null
+        }

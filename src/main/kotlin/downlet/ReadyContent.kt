@@ -22,7 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.decodeToImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -49,11 +49,6 @@ import org.jetbrains.jewel.ui.component.Link
 import org.jetbrains.jewel.ui.component.ListComboBox
 import org.jetbrains.jewel.ui.component.RadioButtonRow
 import org.jetbrains.jewel.ui.component.Text
-import org.jetbrains.jewel.ui.component.styling.ComboBoxIcons
-import org.jetbrains.jewel.ui.component.styling.ComboBoxStyle
-import org.jetbrains.jewel.ui.icon.PathIconKey
-import org.jetbrains.jewel.ui.theme.comboBoxStyle
-import org.jetbrains.skia.Image as SkiaImage
 
 @Composable
 @Suppress("LongMethod")
@@ -71,13 +66,14 @@ internal fun ToolSetupContent(
             style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.SemiBold),
         )
         Text(
-            "Downlet needs ${state.tools.toReadableList()} to check formats and create your file. " +
-                "They are not included with Downlet. Downloading them does not download this media. " +
-                "Download size is about ${state.tools.estimatedDownloadMegabytes()} MB.",
+            ProductCopy.toolSetupDescription(
+                toolNames = state.tools.map(DownloadTool::label).toReadableList(),
+                estimatedDownloadMegabytes = state.tools.sumOf(DownloadTool::estimatedDownloadMegabytes),
+            ),
         )
         Link("Read full terms", onClick = stateHolder::showLegalDetails)
         CheckboxRow(
-            text = TOOL_SETUP_CONSENT_TEXT,
+            text = ProductCopy.TOOL_SETUP_CONSENT_TEXT,
             checked = stateHolder.toolSetupAccepted,
             onCheckedChange = stateHolder::updateToolSetupConsent,
             enabled = !state.installing,
@@ -92,11 +88,11 @@ internal fun ToolSetupContent(
                     Modifier
                         .fillMaxWidth()
                         .semantics {
-                            contentDescription = "Error: Tool setup failed. $TOOL_SETUP_FAILURE_MESSAGE"
+                            contentDescription = "Error: Tool setup failed. ${ProductCopy.TOOL_SETUP_FAILURE_MESSAGE}"
                             liveRegion = LiveRegionMode.Polite
                         },
             ) {
-                Text(TOOL_SETUP_FAILURE_MESSAGE)
+                Text(ProductCopy.TOOL_SETUP_FAILURE_MESSAGE)
             }
         }
         Row(
@@ -146,39 +142,9 @@ internal fun LegalDetailsContent(
             text = "Full terms",
             style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.SemiBold),
         )
-        LegalSection(
-            title = "Before setup",
-            body =
-                "After you enter a link, Downlet asks YouTube for its title, channel, and thumbnail so you can " +
-                    "identify the media before deciding whether to install tools. It does not download media.",
-        )
-        LegalSection(
-            title = "Third-party tools",
-            body =
-                "Downlet includes QuickJS-NG for YouTube JavaScript support. If you choose to continue, Downlet " +
-                    "downloads only missing pinned copies of yt-dlp and FFmpeg, verifies each SHA-256 hash, stores " +
-                    "them in your local application-data folder, and runs the tools as separate programs.",
-        )
-        LegalSection(
-            title = "Licenses",
-            body =
-                "QuickJS-NG is MIT, the official yt-dlp Windows executable is GPLv3+, and the FFmpeg Windows build " +
-                    "is GPLv3. Those licenses apply to those tools. Downlet's original code remains 0BSD.",
-        )
-        LegalSection(
-            title = "Your responsibility",
-            body =
-                "You choose whether to install the tools, which URL to use, what to download, where to save it, " +
-                    "and how to use it. Before each media download, you must confirm that you own the media or have " +
-                    "permission and that your use follows applicable law and YouTube's terms.",
-        )
-        LegalSection(
-            title = "Limits",
-            body =
-                "Downlet grants no rights to media and comes without warranty. Its authors disclaim liability to " +
-                    "the fullest extent permitted by law. Your consent cannot bind YouTube or a rights holder, " +
-                    "override law or platform terms, or waive liability that the law does not allow a party to waive.",
-        )
+        ProductCopy.legalSections.forEach { section ->
+            LegalSection(title = section.title, body = section.body)
+        }
     }
 }
 
@@ -251,7 +217,7 @@ private fun DownloadAuthorizationRow(stateHolder: DownloadStateHolder) {
     FormRow("Permission") {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             CheckboxRow(
-                text = DOWNLOAD_AUTHORIZATION_TEXT,
+                text = ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT,
                 checked = stateHolder.downloadAuthorizationAccepted,
                 onCheckedChange = stateHolder::updateDownloadAuthorization,
                 modifier = Modifier.fillMaxWidth(),
@@ -291,16 +257,6 @@ private fun QualityRow(
     compact: Boolean,
     enabled: Boolean,
 ) {
-    val comboBoxStyle = JewelTheme.comboBoxStyle
-    val qualityComboBoxStyle =
-        remember(comboBoxStyle) {
-            ComboBoxStyle(
-                colors = comboBoxStyle.colors,
-                metrics = comboBoxStyle.metrics,
-                icons = ComboBoxIcons(PathIconKey("chevron-down.svg", DownloadStateHolder::class.java)),
-            )
-        }
-
     FormRow("Quality") {
         ListComboBox(
             items = stateHolder.qualityOptions,
@@ -311,7 +267,6 @@ private fun QualityRow(
                     .width(if (compact) 300.dp else 336.dp)
                     .semantics { contentDescription = "Quality: ${stateHolder.selectedQualityLabel}" },
             enabled = enabled,
-            style = qualityComboBoxStyle,
         )
     }
 }
@@ -535,7 +490,7 @@ private fun MediaIdentity(
     val remoteThumbnail =
         remember(fixture.thumbnailData) {
             fixture.thumbnailData?.let { thumbnail ->
-                runCatching { SkiaImage.makeFromEncoded(thumbnail.bytes).toComposeImageBitmap() }.getOrNull()
+                runCatching { thumbnail.bytes.decodeToImageBitmap() }.getOrNull()
             }
         }
     val hasThumbnail = remoteThumbnail != null || fixture.thumbnailAvailable
@@ -637,8 +592,6 @@ internal fun downloadProgressStatus(progressPercent: Int): String =
     }
 
 private const val MAX_PROGRESS_BEFORE_FINISHING = 99
-private const val YT_DLP_DOWNLOAD_MEGABYTES = 17
-private const val FFMPEG_DOWNLOAD_MEGABYTES = 106
 
 private fun List<String>.toReadableList(): String =
     when (size) {
@@ -646,23 +599,3 @@ private fun List<String>.toReadableList(): String =
         2 -> joinToString(" and ")
         else -> dropLast(1).joinToString(", ") + ", and " + last()
     }
-
-private fun List<String>.estimatedDownloadMegabytes(): Int =
-    sumOf { tool ->
-        when (tool) {
-            "yt-dlp" -> YT_DLP_DOWNLOAD_MEGABYTES
-            "FFmpeg" -> FFMPEG_DOWNLOAD_MEGABYTES
-            else -> 0
-        }
-    }
-
-private val DownloadUiState.fixtureOrNull: DownloadFixture?
-    get() =
-        when (this) {
-            is DownloadUiState.Setup -> fixture
-            is DownloadUiState.Ready -> fixture
-            is DownloadUiState.Downloading -> fixture
-            is DownloadUiState.Completed -> fixture
-            is DownloadUiState.Error -> fixture
-            else -> null
-        }

@@ -23,6 +23,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Duration
+import java.util.HexFormat
 import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipInputStream
 import javax.swing.JFileChooser
@@ -34,15 +35,14 @@ import kotlin.time.Duration.Companion.milliseconds
 
 internal data class DownloadRequest(
     val fixture: DownloadFixture,
-    val mode: DownloadMode,
-    val qualityIndex: Int,
+    val quality: DownloadQuality,
     val destination: String,
 )
 
 internal interface DownloadRuntime {
     suspend fun preview(sourceUrl: String): DownloadFixture
 
-    fun missingTools(): List<String> = emptyList()
+    fun missingTools(): List<DownloadTool> = emptyList()
 
     suspend fun installMissingTools() = Unit
 
@@ -90,7 +90,7 @@ internal class PreviewDownloadRuntime : DownloadRuntime {
         return readyDestinations[(currentIndex + 1).mod(readyDestinations.size)]
     }
 
-    override fun openDestination(destination: String) = OPEN_FOLDER_ACKNOWLEDGEMENT
+    override fun openDestination(destination: String) = ProductCopy.OPEN_FOLDER_ACKNOWLEDGEMENT
 }
 
 @Suppress("TooManyFunctions")
@@ -112,10 +112,10 @@ internal class YtDlpDownloadRuntime(
     private val provisionedFfmpeg = provisionedFfmpegDirectory.resolve("ffmpeg.exe")
     private val provisionedFfprobe = provisionedFfmpegDirectory.resolve("ffprobe.exe")
 
-    override fun missingTools(): List<String> =
+    override fun missingTools(): List<DownloadTool> =
         buildList {
-            if (ytDlpExecutable() == null) add("yt-dlp")
-            if (ffmpegExecutable() == null || ffprobeExecutable() == null) add("FFmpeg")
+            if (ytDlpExecutable() == null) add(DownloadTool.YtDlp)
+            if (ffmpegExecutable() == null || ffprobeExecutable() == null) add(DownloadTool.Ffmpeg)
         }
 
     override suspend fun installMissingTools() {
@@ -204,10 +204,7 @@ internal class YtDlpDownloadRuntime(
     }
 
     override fun cancel() {
-        currentProcess.get()?.let { process ->
-            process.destroy()
-            if (process.isAlive) process.destroyForcibly()
-        }
+        currentProcess.get()?.let(::terminateProcessTree)
     }
 
     override fun chooseDestination(current: String): String? {
@@ -226,7 +223,7 @@ internal class YtDlpDownloadRuntime(
     override fun openDestination(destination: String): String? =
         runCatching {
             Desktop.getDesktop().open(Path.of(destination).toFile())
-        }.fold(onSuccess = { null }, onFailure = { OPEN_FOLDER_FAILURE_MESSAGE })
+        }.fold(onSuccess = { null }, onFailure = { ProductCopy.OPEN_FOLDER_FAILURE_MESSAGE })
 
     private suspend fun requestPreview(sourceUrl: String): OEmbedMetadata =
         withContext(Dispatchers.IO) {
@@ -298,13 +295,13 @@ internal class YtDlpDownloadRuntime(
                 "--output",
                 "%(title).180B [%(id)s].%(ext)s",
             ) +
-            qualityArguments(request.mode, request.qualityIndex) +
+            request.quality.ytDlpArguments +
             request.fixture.sourceUrl
 
     private fun commonArguments(): List<String> =
         buildList {
             addAll(listOf("--ignore-config", "--encoding", "UTF-8", "--no-colors", "--no-playlist"))
-            quickJsExecutable()?.let { addAll(listOf("--js-runtimes", "quickjs:$it")) }
+            addAll(quickJsArguments(quickJsExecutable()))
             ffmpegExecutable()?.let { executable ->
                 runCatching { Path.of(executable).parent }
                     .getOrNull()
@@ -560,21 +557,8 @@ internal fun parseProgress(line: String): Int? =
         ?.roundToInt()
         ?.coerceIn(0, MAX_PROGRESS_BEFORE_COMPLETE)
 
-internal fun qualityArguments(
-    mode: DownloadMode,
-    qualityIndex: Int,
-): List<String> =
-    when (mode) {
-        DownloadMode.Video -> {
-            val height = listOf(2160, 1440, 1080, 720, 480)[qualityIndex]
-            listOf("--format", "bv*[height<=$height]+ba/b[height<=$height]")
-        }
-
-        DownloadMode.Audio -> {
-            val quality = listOf("0", "160K", "128K")[qualityIndex]
-            listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", quality)
-        }
-    }
+internal fun quickJsArguments(executable: String?): List<String> =
+    executable?.let { listOf("--no-js-runtimes", "--js-runtimes", "quickjs:$it") }.orEmpty()
 
 internal fun requireSha256(
     path: Path,
@@ -589,7 +573,7 @@ internal fun requireSha256(
             digest.update(buffer, 0, read)
         }
     }
-    val actual = digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+    val actual = HexFormat.of().formatHex(digest.digest())
     if (!actual.equals(expected, ignoreCase = true)) throw DownloadRuntimeException()
 }
 
@@ -621,17 +605,12 @@ private fun moveReplacing(
     }
 }
 
-private fun defaultDownloadDirectory(): Path = Path.of(System.getProperty("user.home"), "Downloads")
+internal fun defaultDownloadDirectory(): Path = WindowsKnownFolders.downloads()
 
-private fun defaultToolsDirectory(): Path =
-    Path.of(
-        System.getenv("LOCALAPPDATA")
-            ?: Path.of(System.getProperty("user.home"), "AppData", "Local").toString(),
-        "Downlet",
-        "tools",
-    )
+internal fun defaultToolsDirectory(): Path = WindowsKnownFolders.localAppData().resolve("Downlet").resolve("tools")
 
 private data class ToolAsset(
+    val tool: DownloadTool,
     val uri: URI,
     val sha256: String,
 )
@@ -655,11 +634,13 @@ private const val QUICKJS_RESOURCE_PATH = "/tools/quickjs-ng/$QUICKJS_VERSION/qj
 private const val QUICKJS_SHA256 = "7b27412de844403545bd151fbe49191b4d5b91a9e15b5db7c863fea54639a82b"
 private val YT_DLP_ASSET =
     ToolAsset(
+        DownloadTool.YtDlp,
         URI("https://github.com/yt-dlp/yt-dlp/releases/download/$YT_DLP_VERSION/yt-dlp.exe"),
         "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
     )
 private val FFMPEG_ASSET =
     ToolAsset(
+        DownloadTool.Ffmpeg,
         URI("https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-$FFMPEG_VERSION-essentials_build.zip"),
         "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9",
     )
