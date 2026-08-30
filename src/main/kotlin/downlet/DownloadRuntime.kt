@@ -166,6 +166,8 @@ internal class YtDlpDownloadRuntime(
                 commonArguments() +
                     listOf(
                         "--skip-download",
+                        "--format",
+                        "ba",
                         "--replace-in-metadata",
                         "title,channel,uploader",
                         "[\\r\\n\\t]+",
@@ -178,6 +180,10 @@ internal class YtDlpDownloadRuntime(
                         "DOWNLET_UPLOADER=%(uploader|)s",
                         "--print",
                         "DOWNLET_DURATION_SECONDS=%(duration|)s",
+                        "--print",
+                        "DOWNLET_AUDIO_FORMAT=%(ext|)s",
+                        "--print",
+                        "DOWNLET_AUDIO_BITRATE_KBPS=%(abr,tbr|)s",
                         source.toString(),
                     ),
             )
@@ -192,6 +198,7 @@ internal class YtDlpDownloadRuntime(
                     .ifBlank { "Unknown channel" },
             duration = metadata["DURATION_SECONDS"]?.toDoubleOrNull()?.seconds,
             destination = defaultDownloadDirectory(),
+            originalAudio = parseOriginalAudio(metadata),
             thumbnail = MediaThumbnail.Unavailable,
         )
     }
@@ -460,6 +467,21 @@ internal fun parseMetadata(output: List<String>): Map<String, String> {
     return metadata
 }
 
+internal fun parseOriginalAudio(metadata: Map<String, String>): OriginalAudio? =
+    metadata["AUDIO_FORMAT"]
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?.let { format ->
+            OriginalAudio(
+                format = format,
+                bitRateKilobitsPerSecond =
+                    metadata["AUDIO_BITRATE_KBPS"]
+                        ?.toDoubleOrNull()
+                        ?.roundToInt()
+                        ?.takeIf { it > 0 },
+            )
+        }
+
 internal data class OEmbedMetadata(
     val title: String,
     val channel: String,
@@ -615,6 +637,8 @@ private val METADATA_PREFIXES =
         "DOWNLET_CHANNEL=",
         "DOWNLET_UPLOADER=",
         "DOWNLET_DURATION_SECONDS=",
+        "DOWNLET_AUDIO_FORMAT=",
+        "DOWNLET_AUDIO_BITRATE_KBPS=",
     )
 private val PROGRESS_PATTERN = Regex("DOWNLET_PROGRESS=\\s*([0-9]+(?:\\.[0-9]+)?)%")
 private val PREVIEW_FAILURE_PROGRESS = DownloadProgress(68)

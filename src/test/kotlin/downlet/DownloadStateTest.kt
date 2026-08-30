@@ -461,8 +461,11 @@ class DownloadStateTest {
 
         holder.selectMode(DownloadMode.Audio)
         assertEquals(DownloadMode.Audio, holder.selectedMode)
-        assertEquals(audioQualityOptions.map(DownloadQuality::label), holder.qualityOptions)
-        assertEquals("Original audio (no conversion)", holder.selectedQualityLabel)
+        assertEquals(
+            audioQualityOptions(DownloadFixtures.normal.originalAudio).map(DownloadQuality::label),
+            holder.qualityOptions,
+        )
+        assertEquals("Original audio — WebM · 130 kbps", holder.selectedQualityLabel)
 
         holder.selectQuality(1)
         assertEquals("MP3 — Best quality", holder.selectedQualityLabel)

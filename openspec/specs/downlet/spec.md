@@ -56,7 +56,7 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 #### Scenario: User chooses audio output
 
 - **WHEN** the user selects Audio
-- **THEN** Original audio without conversion is selected by default, and MP3 remains available at best, 160 kbps, and 128 kbps quality
+- **THEN** Original audio without conversion is selected by default and shows its source file format and average bitrate, while MP3 remains available at best, 160 kbps, and 128 kbps quality
 
 #### Scenario: User changes the destination
 

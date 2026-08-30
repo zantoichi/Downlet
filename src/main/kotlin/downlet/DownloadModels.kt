@@ -53,6 +53,19 @@ internal data class DownloadQuality(
     val ytDlpArguments: List<String>,
 )
 
+internal data class OriginalAudio(
+    val format: String,
+    val bitRateKilobitsPerSecond: Int?,
+) {
+    init {
+        require(format.isNotBlank())
+        require(bitRateKilobitsPerSecond == null || bitRateKilobitsPerSecond > 0)
+    }
+
+    val description: String
+        get() = "${format.toAudioFormatLabel()} · ${bitRateKilobitsPerSecond?.let { "$it kbps" } ?: "unknown bitrate"}"
+}
+
 internal enum class DownloadTool(
     val label: String,
     val estimatedDownloadMegabytes: Int,
@@ -70,16 +83,25 @@ internal val videoQualityOptions =
         videoQuality(maxHeightPixels = 480),
     )
 
-internal val audioQualityOptions =
+internal fun audioQualityOptions(originalAudio: OriginalAudio?) =
     listOf(
         DownloadQuality(
-            label = "Original audio (no conversion)",
+            label = "Original audio — ${originalAudio?.description ?: "unknown format · unknown bitrate"}",
             ytDlpArguments = listOf("--format", "ba"),
         ),
         mp3Quality(),
         mp3Quality(bitRateKilobitsPerSecond = 160),
         mp3Quality(bitRateKilobitsPerSecond = 128),
     )
+
+private fun String.toAudioFormatLabel(): String =
+    when (lowercase(Locale.ROOT)) {
+        "webm" -> "WebM"
+        "m4a" -> "M4A"
+        "mp4" -> "MP4"
+        "ogg" -> "Ogg"
+        else -> uppercase(Locale.ROOT)
+    }
 
 private fun videoQuality(
     maxHeightPixels: Int,
@@ -200,6 +222,7 @@ internal data class DownloadItem(
     val channel: String,
     val duration: Duration?,
     val destination: Path,
+    val originalAudio: OriginalAudio? = null,
     val thumbnail: MediaThumbnail = MediaThumbnail.BundledPreview,
 ) {
     init {
@@ -217,6 +240,7 @@ internal object DownloadFixtures {
             channel = "North Window",
             duration = 12.minutes + 34.seconds,
             destination = Path.of("Downloads"),
+            originalAudio = OriginalAudio(format = "webm", bitRateKilobitsPerSecond = 130),
         )
 
     val longTitle =

@@ -93,7 +93,12 @@ internal class DownloadStateHolder(
     private var observedLinkText = ""
 
     private val availableQualities: List<DownloadQuality>
-        get() = if (selectedMode == DownloadMode.Video) videoQualityOptions else audioQualityOptions
+        get() =
+            if (selectedMode == DownloadMode.Video) {
+                videoQualityOptions
+            } else {
+                audioQualityOptions(state.itemOrNull?.originalAudio)
+            }
 
     private val selectedQuality: DownloadQuality
         get() = availableQualities[selectedQualityIndex]

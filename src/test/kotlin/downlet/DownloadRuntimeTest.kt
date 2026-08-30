@@ -34,12 +34,15 @@ class DownloadRuntimeTest {
                     "DOWNLET_CHANNEL=North Window",
                     "DOWNLET_UPLOADER=Fallback uploader",
                     "DOWNLET_DURATION_SECONDS=754.0",
+                    "DOWNLET_AUDIO_FORMAT=webm",
+                    "DOWNLET_AUDIO_BITRATE_KBPS=129.7",
                 ),
             )
 
         assertEquals("City after rain", metadata["TITLE"])
         assertEquals("North Window", metadata["CHANNEL"])
         assertEquals("754.0", metadata["DURATION_SECONDS"])
+        assertEquals(OriginalAudio(format = "webm", bitRateKilobitsPerSecond = 130), parseOriginalAudio(metadata))
     }
 
     @Test
@@ -66,12 +69,12 @@ class DownloadRuntimeTest {
         )
         assertEquals(
             listOf(
-                "Original audio (no conversion)",
+                "Original audio — WebM · 130 kbps",
                 "MP3 — Best quality",
                 "MP3 — 160 kbps",
                 "MP3 — 128 kbps",
             ),
-            audioQualityOptions.map(DownloadQuality::label),
+            audioQualityOptions(DownloadFixtures.normal.originalAudio).map(DownloadQuality::label),
         )
         assertEquals(
             listOf("--format", "bv*[height<=1080]+ba/b[height<=1080]"),
@@ -79,11 +82,11 @@ class DownloadRuntimeTest {
         )
         assertEquals(
             listOf("--format", "ba"),
-            audioQualityOptions[0].ytDlpArguments,
+            audioQualityOptions(DownloadFixtures.normal.originalAudio)[0].ytDlpArguments,
         )
         assertEquals(
             listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "160K"),
-            audioQualityOptions[2].ytDlpArguments,
+            audioQualityOptions(DownloadFixtures.normal.originalAudio)[2].ytDlpArguments,
         )
     }
 

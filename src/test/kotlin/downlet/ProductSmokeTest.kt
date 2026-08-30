@@ -159,7 +159,7 @@ class ProductSmokeTest {
                 onNodeWithText("Format & quality").assertExists()
                 onNodeWithContentDescription("Format & quality label").assertExists()
                 onNodeWithContentDescription(
-                    "Format & quality: Original audio (no conversion)",
+                    "Format & quality: Original audio — WebM · 130 kbps",
                 ).assertExists()
 
                 onNodeWithText(ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT).performClick()
