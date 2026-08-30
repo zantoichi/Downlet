@@ -27,7 +27,6 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
 import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipInputStream
-import javax.swing.JFileChooser
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.parsers.ParserConfigurationException
@@ -216,19 +215,7 @@ internal class YtDlpDownloadRuntime(
         currentProcess.get()?.let(::terminateProcessTree)
     }
 
-    override fun chooseDestination(current: Path): Path? {
-        val chooser =
-            JFileChooser(current.toFile()).apply {
-                dialogTitle = "Choose download folder"
-                fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-                isAcceptAllFileFilterUsed = false
-            }
-        return chooser
-            .takeIf { it.showOpenDialog(null) == JFileChooser.APPROVE_OPTION }
-            ?.selectedFile
-            ?.toPath()
-            ?.toAbsolutePath()
-    }
+    override fun chooseDestination(current: Path): Path? = WindowsFolderPicker.choose(current)
 
     override fun openDestination(destination: Path): String? =
         runCatching {
