@@ -22,7 +22,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
-import java.time.Duration
 import java.util.HexFormat
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
@@ -33,66 +32,67 @@ import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.parsers.ParserConfigurationException
 import kotlin.math.roundToInt
-import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 
 internal data class DownloadRequest(
-    val fixture: DownloadFixture,
+    val item: DownloadItem,
     val quality: DownloadQuality,
-    val destination: String,
 )
 
 internal interface DownloadRuntime {
-    suspend fun preview(sourceUrl: String): DownloadFixture
+    suspend fun preview(source: YouTubeUrl): DownloadItem
 
     fun missingTools(): List<DownloadTool> = emptyList()
 
     suspend fun installMissingTools() = Unit
 
-    suspend fun resolve(sourceUrl: String): DownloadFixture
+    suspend fun resolve(source: YouTubeUrl): DownloadItem
 
     suspend fun download(
         request: DownloadRequest,
-        onProgress: suspend (Int) -> Unit,
+        onProgress: suspend (DownloadProgress) -> Unit,
     )
 
     fun cancel()
 
-    fun chooseDestination(current: String): String?
+    fun chooseDestination(current: Path): Path?
 
-    fun openDestination(destination: String): String?
+    fun openDestination(destination: Path): String?
 }
 
 internal class PreviewDownloadRuntime : DownloadRuntime {
-    override suspend fun preview(sourceUrl: String): DownloadFixture =
-        DownloadFixtures.normal.copy(sourceUrl = sourceUrl)
+    override suspend fun preview(source: YouTubeUrl): DownloadItem = DownloadFixtures.normal.copy(source = source)
 
-    override suspend fun resolve(sourceUrl: String): DownloadFixture {
-        delay(FAKE_RESOLUTION_MILLIS.milliseconds)
-        return DownloadFixtures.normal.copy(sourceUrl = sourceUrl)
+    override suspend fun resolve(source: YouTubeUrl): DownloadItem {
+        delay(FAKE_RESOLUTION_DELAY)
+        return DownloadFixtures.normal.copy(source = source)
     }
 
     override suspend fun download(
         request: DownloadRequest,
-        onProgress: suspend (Int) -> Unit,
+        onProgress: suspend (DownloadProgress) -> Unit,
     ) {
         for (progress in fakeProgressSteps) {
-            delay(FAKE_PROGRESS_INTERVAL_MILLIS.milliseconds)
-            if (progress == COMPLETE_PROGRESS_PERCENT) return
-            if (request.fixture.outcome == FakeDownloadOutcome.Failure(progress)) {
+            delay(FAKE_PROGRESS_INTERVAL)
+            if (request.item.source == DownloadFixtures.failure.source && progress == PREVIEW_FAILURE_PROGRESS) {
                 throw DownloadRuntimeException()
             }
             onProgress(progress)
         }
+        delay(FAKE_PROGRESS_INTERVAL)
     }
 
     override fun cancel() = Unit
 
-    override fun chooseDestination(current: String): String {
+    override fun chooseDestination(current: Path): Path {
         val currentIndex = readyDestinations.indexOf(current)
         return readyDestinations[(currentIndex + 1).mod(readyDestinations.size)]
     }
 
-    override fun openDestination(destination: String) = ProductCopy.OPEN_FOLDER_ACKNOWLEDGEMENT
+    override fun openDestination(destination: Path) = ProductCopy.OPEN_FOLDER_ACKNOWLEDGEMENT
 }
 
 @Suppress("TooManyFunctions")
@@ -103,7 +103,7 @@ internal class YtDlpDownloadRuntime(
         HttpClient
             .newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
-            .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
+            .connectTimeout(CONNECT_TIMEOUT.toJavaDuration())
             .build(),
 ) : DownloadRuntime {
     private val currentProcess = AtomicReference<Process?>()
@@ -134,8 +134,8 @@ internal class YtDlpDownloadRuntime(
         if (missingTools().isNotEmpty()) throw DownloadRuntimeException()
     }
 
-    override suspend fun preview(sourceUrl: String): DownloadFixture {
-        val metadata = requestPreview(sourceUrl)
+    override suspend fun preview(source: YouTubeUrl): DownloadItem {
+        val metadata = requestPreview(source)
         val thumbnailBytes =
             metadata.thumbnailUri?.let { uri ->
                 try {
@@ -146,20 +146,21 @@ internal class YtDlpDownloadRuntime(
                     null
                 }
             }
-        return DownloadFixture(
-            id = sourceUrl,
-            sourceUrl = sourceUrl,
+        return DownloadItem(
+            source = source,
             title = metadata.title,
             channel = metadata.channel,
-            duration = "",
-            destination = defaultDownloadDirectory().toString(),
-            thumbnailAvailable = false,
-            thumbnailData = thumbnailBytes?.let(::ThumbnailData),
-            canDownload = false,
+            duration = null,
+            destination = defaultDownloadDirectory(),
+            thumbnail =
+                thumbnailBytes
+                    ?.let(::ThumbnailData)
+                    ?.let(MediaThumbnail::Remote)
+                    ?: MediaThumbnail.Unavailable,
         )
     }
 
-    override suspend fun resolve(sourceUrl: String): DownloadFixture {
+    override suspend fun resolve(source: YouTubeUrl): DownloadItem {
         ensureQuickJs()
         val output =
             execute(
@@ -171,41 +172,38 @@ internal class YtDlpDownloadRuntime(
                         "[\\r\\n\\t]+",
                         " ",
                         "--print",
-                        "DOWNLET_ID=%(id)s",
-                        "--print",
                         "DOWNLET_TITLE=%(title)s",
                         "--print",
                         "DOWNLET_CHANNEL=%(channel|)s",
                         "--print",
                         "DOWNLET_UPLOADER=%(uploader|)s",
                         "--print",
-                        "DOWNLET_DURATION=%(duration_string|Unknown duration)s",
-                        sourceUrl,
+                        "DOWNLET_DURATION_SECONDS=%(duration|)s",
+                        source.toString(),
                     ),
             )
         val metadata = parseMetadata(output)
-        return DownloadFixture(
-            id = metadata.getValue("ID"),
-            sourceUrl = sourceUrl,
+        return DownloadItem(
+            source = source,
             title = metadata.getValue("TITLE"),
             channel =
                 metadata["CHANNEL"]
                     .orEmpty()
                     .ifBlank { metadata["UPLOADER"].orEmpty() }
                     .ifBlank { "Unknown channel" },
-            duration = metadata["DURATION"].orEmpty().ifBlank { "Unknown duration" },
-            destination = defaultDownloadDirectory().toString(),
-            thumbnailAvailable = false,
+            duration = metadata["DURATION_SECONDS"]?.toDoubleOrNull()?.seconds,
+            destination = defaultDownloadDirectory(),
+            thumbnail = MediaThumbnail.Unavailable,
         )
     }
 
     override suspend fun download(
         request: DownloadRequest,
-        onProgress: suspend (Int) -> Unit,
+        onProgress: suspend (DownloadProgress) -> Unit,
     ) {
         ensureQuickJs()
-        Files.createDirectories(Path.of(request.destination))
-        var lastProgress = -1
+        Files.createDirectories(request.item.destination)
+        var lastProgress: DownloadProgress? = null
         execute(downloadArguments(request)) { line ->
             parseProgress(line)?.takeIf { it != lastProgress }?.let { progress ->
                 lastProgress = progress
@@ -218,9 +216,9 @@ internal class YtDlpDownloadRuntime(
         currentProcess.get()?.let(::terminateProcessTree)
     }
 
-    override fun chooseDestination(current: String): String? {
+    override fun chooseDestination(current: Path): Path? {
         val chooser =
-            JFileChooser(current).apply {
+            JFileChooser(current.toFile()).apply {
                 dialogTitle = "Choose download folder"
                 fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
                 isAcceptAllFileFilterUsed = false
@@ -228,16 +226,17 @@ internal class YtDlpDownloadRuntime(
         return chooser
             .takeIf { it.showOpenDialog(null) == JFileChooser.APPROVE_OPTION }
             ?.selectedFile
-            ?.absolutePath
+            ?.toPath()
+            ?.toAbsolutePath()
     }
 
-    override fun openDestination(destination: String): String? =
+    override fun openDestination(destination: Path): String? =
         runCatching {
-            Desktop.getDesktop().open(Path.of(destination).toFile())
+            Desktop.getDesktop().open(destination.toFile())
         }.fold(onSuccess = { null }, onFailure = { ProductCopy.OPEN_FOLDER_FAILURE_MESSAGE })
 
-    private suspend fun requestPreview(sourceUrl: String): OEmbedMetadata =
-        URLEncoder.encode(sourceUrl, StandardCharsets.UTF_8).let { encodedUrl ->
+    private suspend fun requestPreview(source: YouTubeUrl): OEmbedMetadata =
+        URLEncoder.encode(source.toString(), StandardCharsets.UTF_8).let { encodedUrl ->
             parseOEmbed(sendBounded(URI("$OEMBED_ENDPOINT?url=$encodedUrl&format=xml"), MAX_PREVIEW_BYTES))
         }
 
@@ -255,7 +254,7 @@ internal class YtDlpDownloadRuntime(
         val request =
             HttpRequest
                 .newBuilder(uri)
-                .timeout(Duration.ofSeconds(PREVIEW_TIMEOUT_SECONDS))
+                .timeout(PREVIEW_TIMEOUT.toJavaDuration())
                 .header("User-Agent", "Downlet/$DOWNLET_DOWNLOAD_AGENT_VERSION")
                 .GET()
                 .build()
@@ -305,12 +304,12 @@ internal class YtDlpDownloadRuntime(
                 "--progress-template",
                 "download:DOWNLET_PROGRESS=%(progress._percent_str)s",
                 "--paths",
-                request.destination,
+                request.item.destination.toString(),
                 "--output",
                 "%(title).180B [%(id)s].%(ext)s",
             ) +
             request.quality.ytDlpArguments +
-            request.fixture.sourceUrl
+            request.item.source.toString()
 
     private fun commonArguments(): List<String> =
         buildList {
@@ -421,7 +420,7 @@ internal class YtDlpDownloadRuntime(
                 val request =
                     HttpRequest
                         .newBuilder(asset.uri)
-                        .timeout(Duration.ofMinutes(10))
+                        .timeout(DOWNLOAD_TIMEOUT.toJavaDuration())
                         .header("User-Agent", "Downlet/$DOWNLET_DOWNLOAD_AGENT_VERSION")
                         .GET()
                         .build()
@@ -470,7 +469,7 @@ internal fun parseMetadata(output: List<String>): Map<String, String> {
                         ?.let { prefix.removeSurrounding("DOWNLET_", "=") to it }
                 }
             }.toMap()
-    require(metadata["ID"].orEmpty().isNotBlank() && metadata["TITLE"].orEmpty().isNotBlank())
+    require(metadata["TITLE"].orEmpty().isNotBlank())
     return metadata
 }
 
@@ -542,7 +541,7 @@ internal suspend fun <T> CompletableFuture<T>.awaitCancellable(): T =
         continuation.invokeOnCancellation { cancel(true) }
     }
 
-internal fun parseProgress(line: String): Int? =
+internal fun parseProgress(line: String): DownloadProgress? =
     PROGRESS_PATTERN
         .find(line)
         ?.groupValues
@@ -550,6 +549,7 @@ internal fun parseProgress(line: String): Int? =
         ?.toDoubleOrNull()
         ?.roundToInt()
         ?.coerceIn(0, MAX_PROGRESS_BEFORE_COMPLETE)
+        ?.let(::DownloadProgress)
 
 internal fun quickJsArguments(executable: String?): List<String> =
     executable?.let { listOf("--no-js-runtimes", "--js-runtimes", "quickjs:$it") }.orEmpty()
@@ -597,8 +597,9 @@ private const val MAX_CAPTURED_OUTPUT_LINES = 100
 private const val DOWNLOAD_BUFFER_SIZE = 64 * 1024
 private const val MAX_PREVIEW_BYTES = 64 * 1024
 private const val MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024
-private const val CONNECT_TIMEOUT_SECONDS = 30L
-private const val PREVIEW_TIMEOUT_SECONDS = 20L
+private val CONNECT_TIMEOUT: Duration = 30.seconds
+private val PREVIEW_TIMEOUT: Duration = 20.seconds
+private val DOWNLOAD_TIMEOUT: Duration = 10.minutes
 private const val HTTP_SUCCESS_MIN = 200
 private const val HTTP_SUCCESS_MAX = 299
 private const val DOWNLET_DOWNLOAD_AGENT_VERSION = "0.1"
@@ -623,10 +624,10 @@ private val FFMPEG_ASSET =
     )
 private val METADATA_PREFIXES =
     listOf(
-        "DOWNLET_ID=",
         "DOWNLET_TITLE=",
         "DOWNLET_CHANNEL=",
         "DOWNLET_UPLOADER=",
-        "DOWNLET_DURATION=",
+        "DOWNLET_DURATION_SECONDS=",
     )
 private val PROGRESS_PATTERN = Regex("DOWNLET_PROGRESS=\\s*([0-9]+(?:\\.[0-9]+)?)%")
+private val PREVIEW_FAILURE_PROGRESS = DownloadProgress(68)

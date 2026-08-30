@@ -64,12 +64,16 @@ import org.jetbrains.jewel.ui.Outline
 import org.jetbrains.jewel.ui.component.CircularProgressIndicator
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+
+private val CONTENT_ENTER_DURATION: Duration = 200.milliseconds
+private val CONTENT_EXIT_DURATION: Duration = 150.milliseconds
 
 @Composable
 internal fun ProductSurface(
     stateHolder: DownloadStateHolder,
-    motionDurationScale: Float = 1f,
+    animationsEnabled: Boolean = true,
 ) {
     val linkFieldFocusRequester = remember { FocusRequester() }
     var pasteIntent by remember { mutableStateOf(false) }
@@ -117,7 +121,7 @@ internal fun ProductSurface(
                 workPlaneShape = workPlaneShape,
                 workPlaneFill = workPlaneFill,
                 workPlaneBorder = workPlaneBorder,
-                motionDurationScale = motionDurationScale,
+                animationsEnabled = animationsEnabled,
             )
         }
     }
@@ -232,14 +236,14 @@ internal suspend fun collectLinkEdits(
         previousText = text
         if (!stateHolder.observeLinkEdit(text)) return@collectLatest
 
-        val delayMillis = linkResolutionDelayMillis(previousValue, text, consumePasteIntent()) ?: return@collectLatest
-        if (delayMillis > 0) delay(delayMillis.milliseconds)
+        val resolutionDelay = linkResolutionDelay(previousValue, text, consumePasteIntent()) ?: return@collectLatest
+        if (resolutionDelay > Duration.ZERO) delay(resolutionDelay)
         stateHolder.beginResolution(text)
     }
 }
 
 internal suspend fun expirePasteIntent(clearPasteIntent: () -> Unit) {
-    delay(PASTE_INTENT_LIFETIME_MILLIS.milliseconds)
+    delay(PASTE_INTENT_LIFETIME)
     clearPasteIntent()
 }
 
@@ -251,7 +255,7 @@ private fun ColumnScope.ProductBody(
     workPlaneShape: RoundedCornerShape,
     workPlaneFill: androidx.compose.ui.graphics.Color,
     workPlaneBorder: androidx.compose.ui.graphics.Color,
-    motionDurationScale: Float,
+    animationsEnabled: Boolean,
 ) {
     val easing = remember { CubicBezierEasing(0.22f, 1f, 0.36f, 1f) }
     val risePixels = with(LocalDensity.current) { 6.dp.roundToPx() }
@@ -264,17 +268,28 @@ private fun ColumnScope.ProductBody(
                 .fillMaxWidth()
                 .then(if (showsWorkPlane) Modifier.weight(1f) else Modifier),
         transitionSpec = {
-            if (motionDurationScale <= 0f) {
+            if (!animationsEnabled) {
                 (EnterTransition.None togetherWith ExitTransition.None).using(sizeTransform = null)
             } else if (!initialState.isWorkPlaneState && targetState.isWorkPlaneState) {
                 (
-                    fadeIn(animationSpec = tween(durationMillis = 200, easing = easing)) +
+                    fadeIn(
+                        animationSpec =
+                            tween(durationMillis = CONTENT_ENTER_DURATION.inWholeMilliseconds.toInt(), easing = easing),
+                    ) +
                         slideInVertically(
-                            animationSpec = tween(durationMillis = 200, easing = easing),
+                            animationSpec =
+                                tween(
+                                    durationMillis = CONTENT_ENTER_DURATION.inWholeMilliseconds.toInt(),
+                                    easing = easing,
+                                ),
                             initialOffsetY = { risePixels },
                         )
-                ).togetherWith(fadeOut(animationSpec = tween(durationMillis = 150, easing = easing)))
-                    .using(sizeTransform = null)
+                ).togetherWith(
+                    fadeOut(
+                        animationSpec =
+                            tween(durationMillis = CONTENT_EXIT_DURATION.inWholeMilliseconds.toInt(), easing = easing),
+                    ),
+                ).using(sizeTransform = null)
             } else {
                 (EnterTransition.None togetherWith ExitTransition.None).using(sizeTransform = null)
             }

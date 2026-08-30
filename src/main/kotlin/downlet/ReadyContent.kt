@@ -49,6 +49,7 @@ import org.jetbrains.jewel.ui.component.Link
 import org.jetbrains.jewel.ui.component.ListComboBox
 import org.jetbrains.jewel.ui.component.RadioButtonRow
 import org.jetbrains.jewel.ui.component.Text
+import kotlin.time.Duration
 
 @Composable
 @Suppress("LongMethod")
@@ -60,7 +61,7 @@ internal fun ToolSetupContent(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        MediaIdentity(state.fixture, thumbnailWidth = 128.dp, showDuration = false)
+        MediaIdentity(state.item, thumbnailWidth = 128.dp, showDuration = false)
         Text(
             text = "Prepare this download",
             style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.SemiBold),
@@ -76,11 +77,11 @@ internal fun ToolSetupContent(
             text = ProductCopy.TOOL_SETUP_CONSENT_TEXT,
             checked = stateHolder.toolSetupAccepted,
             onCheckedChange = stateHolder::updateToolSetupConsent,
-            enabled = !state.installing,
+            enabled = state.phase != ToolSetupPhase.Installing,
             modifier = Modifier.fillMaxWidth(),
             maxLines = 3,
         )
-        if (state.failed) {
+        if (state.phase == ToolSetupPhase.Failed) {
             InlineErrorBanner(
                 title = "Tool setup failed.",
                 icon = null,
@@ -100,7 +101,7 @@ internal fun ToolSetupContent(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (state.installing) {
+            if (state.phase == ToolSetupPhase.Installing) {
                 Row(
                     modifier =
                         Modifier.semantics(mergeDescendants = true) {
@@ -154,7 +155,7 @@ internal fun ResolvingContent(state: DownloadUiState.Resolving) {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        MediaIdentity(state.fixture, thumbnailWidth = 128.dp, showDuration = false)
+        MediaIdentity(state.item, thumbnailWidth = 128.dp, showDuration = false)
         Row(
             modifier =
                 Modifier.semantics(mergeDescendants = true) {
@@ -194,7 +195,7 @@ internal fun DownloadWorkPlaneContent(
         ErrorActionRegion(stateHolder, state.kind)
         return
     }
-    val fixture = state.fixtureOrNull ?: return
+    val item = state.itemOrNull ?: return
     val controlsEnabled = state is DownloadUiState.Ready
     val controlGap = if (compact) 8.dp else 10.dp
     val thumbnailWidth = if (compact) 96.dp else 128.dp
@@ -203,7 +204,7 @@ internal fun DownloadWorkPlaneContent(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(controlGap),
     ) {
-        MediaIdentity(fixture, thumbnailWidth)
+        MediaIdentity(item, thumbnailWidth)
         DownloadModeRow(stateHolder, controlsEnabled)
         QualityRow(stateHolder, compact, controlsEnabled)
         DestinationRow(stateHolder, controlsEnabled)
@@ -276,17 +277,18 @@ private fun DestinationRow(
     stateHolder: DownloadStateHolder,
     enabled: Boolean,
 ) {
+    val destination = stateHolder.destination?.toString().orEmpty()
     FormRow("Save to") {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = stateHolder.destination,
+                text = destination,
                 modifier =
                     Modifier
                         .weight(1f)
-                        .semantics { contentDescription = "Save to ${stateHolder.destination}" },
+                        .semantics { contentDescription = "Save to $destination" },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -336,13 +338,13 @@ private fun DownloadingActionRegion(
     stateHolder: DownloadStateHolder,
     state: DownloadUiState.Downloading,
 ) {
-    val status = downloadProgressStatus(state.progressPercent)
+    val status = downloadProgressStatus(state.progress)
     Column(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .semantics(mergeDescendants = true) {
-                    contentDescription = "Downloading: ${state.progressPercent}%. $status"
+                    contentDescription = "Downloading: ${state.progress.percent}%. $status"
                     liveRegion = LiveRegionMode.Polite
                 },
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -350,17 +352,17 @@ private fun DownloadingActionRegion(
         Row(modifier = Modifier.fillMaxWidth()) {
             Text("Downloading")
             Spacer(Modifier.weight(1f))
-            Text("${state.progressPercent}%", fontWeight = FontWeight.SemiBold)
+            Text("${state.progress.percent}%", fontWeight = FontWeight.SemiBold)
         }
         HorizontalProgressBar(
-            progress = state.progressPercent / 100f,
+            progress = state.progress.fraction,
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .semantics {
                         progressBarRangeInfo =
                             ProgressBarRangeInfo(
-                                current = state.progressPercent / 100f,
+                                current = state.progress.fraction,
                                 range = 0f..1f,
                             )
                     },
@@ -472,7 +474,7 @@ private fun FormRow(
 @Composable
 @Suppress("LongMethod")
 private fun MediaIdentity(
-    fixture: DownloadFixture,
+    item: DownloadItem,
     thumbnailWidth: Dp,
     showDuration: Boolean = true,
 ) {
@@ -487,20 +489,21 @@ private fun MediaIdentity(
             .aspectRatio(16f / 9f)
             .clip(previewShape)
             .border(1.dp, previewBorder, previewShape)
+    val remoteThumbnailData = (item.thumbnail as? MediaThumbnail.Remote)?.data
     val remoteThumbnail =
-        remember(fixture.thumbnailData) {
-            fixture.thumbnailData?.let { thumbnail ->
+        remember(remoteThumbnailData) {
+            remoteThumbnailData?.let { thumbnail ->
                 runCatching { thumbnail.bytes.decodeToImageBitmap() }.getOrNull()
             }
         }
-    val hasThumbnail = remoteThumbnail != null || fixture.thumbnailAvailable
+    val hasThumbnail = remoteThumbnail != null || item.thumbnail is MediaThumbnail.BundledPreview
 
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .semantics(mergeDescendants = true) {
-                    contentDescription = mediaContentDescription(fixture, hasThumbnail, showDuration)
+                    contentDescription = mediaContentDescription(item, hasThumbnail, showDuration)
                 },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -511,7 +514,7 @@ private fun MediaIdentity(
                 modifier = previewModifier,
                 contentScale = ContentScale.Crop,
             )
-        } else if (fixture.thumbnailAvailable) {
+        } else if (item.thumbnail is MediaThumbnail.BundledPreview) {
             Image(
                 painter = painterResource(Res.drawable.thumbnail_city_after_rain),
                 contentDescription = null,
@@ -546,7 +549,7 @@ private fun MediaIdentity(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = fixture.title,
+                text = item.title,
                 style = JewelTheme.defaultTextStyle.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -554,8 +557,8 @@ private fun MediaIdentity(
             Text(
                 text =
                     listOfNotNull(
-                        fixture.channel,
-                        fixture.duration.takeIf { showDuration && it.isNotBlank() },
+                        item.channel,
+                        formatMediaDuration(item.duration).takeIf { showDuration },
                         "YouTube",
                     ).joinToString(" · "),
                 maxLines = 1,
@@ -566,22 +569,22 @@ private fun MediaIdentity(
 }
 
 internal fun mediaContentDescription(
-    fixture: DownloadFixture,
+    item: DownloadItem,
     thumbnailAvailable: Boolean,
     showDuration: Boolean = true,
 ): String =
-    "Media: ${fixture.title}. " +
+    "Media: ${item.title}. " +
         listOfNotNull(
-            fixture.channel,
-            fixture.duration.takeIf { showDuration && it.isNotBlank() },
+            item.channel,
+            formatMediaDuration(item.duration).takeIf { showDuration },
             "YouTube",
         ).joinToString(" · ") +
         "." +
         if (thumbnailAvailable) "" else " Preview unavailable."
 
 @Suppress("MagicNumber")
-internal fun downloadProgressStatus(progressPercent: Int): String =
-    when (progressPercent) {
+internal fun downloadProgressStatus(progress: DownloadProgress): String =
+    when (progress.percent) {
         0 -> "Starting download…"
         18 -> "4.8 MB/s · About 18 seconds remaining"
         43 -> "5.1 MB/s · About 11 seconds remaining"
@@ -590,6 +593,20 @@ internal fun downloadProgressStatus(progressPercent: Int): String =
         in 1 until MAX_PROGRESS_BEFORE_FINISHING -> "Downloading…"
         else -> "Finishing…"
     }
+
+internal fun formatMediaDuration(duration: Duration?): String {
+    if (duration == null) return "Unknown duration"
+
+    val totalSeconds = duration.inWholeSeconds
+    val hours = totalSeconds / 3_600
+    val minutes = (totalSeconds % 3_600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) {
+        "$hours:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
+    } else {
+        "$minutes:${seconds.toString().padStart(2, '0')}"
+    }
+}
 
 private const val MAX_PROGRESS_BEFORE_FINISHING = 99
 

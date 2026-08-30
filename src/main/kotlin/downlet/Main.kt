@@ -1,9 +1,16 @@
 package downlet
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
@@ -35,13 +42,13 @@ fun main() =
         val stateHolder = remember(scope) { DownloadStateHolder(scope, runtime = YtDlpDownloadRuntime()) }
         val detectedDarkTheme = isSystemInDarkTheme()
         val startupTheme = remember { if (detectedDarkTheme) DownletTheme.Dark else DownletTheme.Light }
-        val startupMotionDurationScale = remember { windowsMotionDurationScale() }
+        val animationsEnabled = remember { windowsAnimationsEnabled() }
 
         ProductWindow(
             stateHolder = stateHolder,
             theme = startupTheme,
             onCloseRequest = ::exitApplication,
-            motionDurationScale = startupMotionDurationScale,
+            animationsEnabled = animationsEnabled,
         )
     }
 
@@ -51,14 +58,14 @@ internal fun ProductWindow(
     theme: DownletTheme,
     onCloseRequest: () -> Unit,
     initialPosition: WindowPosition = WindowPosition.PlatformDefault,
-    motionDurationScale: Float = 1f,
+    animationsEnabled: Boolean = true,
 ) {
     val initialTier = WindowPresentationTier.Compact
     val windowState =
         rememberWindowState(
             position = initialPosition,
-            width = initialTier.preferredWidth.dp,
-            height = initialTier.preferredHeight.dp,
+            width = initialTier.preferredSize.width,
+            height = initialTier.preferredSize.height,
         )
 
     IntUiTheme(
@@ -96,16 +103,20 @@ internal fun ProductWindow(
                 window = window,
                 windowState = windowState,
                 tier = stateHolder.state.windowPresentationTier,
-                motionDurationScale = motionDurationScale,
+                animationsEnabled = animationsEnabled,
             )
 
             TitleBar {
-                Text(PRODUCT_WINDOW_TITLE)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(appIcon, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(PRODUCT_WINDOW_TITLE)
+                }
             }
 
             ProductSurface(
                 stateHolder = stateHolder,
-                motionDurationScale = motionDurationScale,
+                animationsEnabled = animationsEnabled,
             )
         }
     }

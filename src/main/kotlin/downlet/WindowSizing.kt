@@ -12,6 +12,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import com.sun.jna.Native
@@ -26,13 +28,14 @@ import java.awt.Frame
 import java.awt.Rectangle
 import java.awt.Toolkit
 import kotlin.math.roundToInt
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 internal enum class WindowPresentationTier(
-    val preferredWidth: Int,
-    val preferredHeight: Int,
+    val preferredSize: DpSize,
 ) {
-    Compact(preferredWidth = 720, preferredHeight = 168),
-    Expanded(preferredWidth = 720, preferredHeight = 420),
+    Compact(DpSize(width = 720.dp, height = 168.dp)),
+    Expanded(DpSize(width = 720.dp, height = 420.dp)),
 }
 
 internal val DownloadUiState.windowPresentationTier: WindowPresentationTier
@@ -61,11 +64,10 @@ internal data class WindowBounds(
 internal fun fitWindowBounds(
     current: WindowBounds,
     workArea: WindowBounds,
-    targetWidth: Int,
-    targetHeight: Int,
+    targetSize: IntSize,
 ): WindowBounds {
-    val width = targetWidth.coerceIn(1, workArea.width)
-    val height = targetHeight.coerceIn(1, workArea.height)
+    val width = targetSize.width.coerceIn(1, workArea.width)
+    val height = targetSize.height.coerceIn(1, workArea.height)
     return WindowBounds(
         x = current.x.coerceIn(workArea.x, workArea.x + workArea.width - width),
         y = current.y.coerceIn(workArea.y, workArea.y + workArea.height - height),
@@ -74,13 +76,14 @@ internal fun fitWindowBounds(
     )
 }
 
-internal fun logicalPixelsToDevicePixels(
-    logicalPixels: Int,
-    density: Float,
-): Int = (logicalPixels * density).roundToInt()
+internal fun DpSize.toDevicePixels(density: Float): IntSize =
+    IntSize(
+        width = (width.value * density).roundToInt(),
+        height = (height.value * density).roundToInt(),
+    )
 
-private const val EXPAND_DURATION_MILLIS = 250
-private const val COLLAPSE_DURATION_MILLIS = 167
+private val EXPAND_DURATION: Duration = 250.milliseconds
+private val COLLAPSE_DURATION: Duration = 167.milliseconds
 private const val SPI_GETCLIENTAREAANIMATION = 0x1042
 
 private interface MotionUser32 : User32 {
@@ -97,9 +100,9 @@ private val motionUser32: MotionUser32 by lazy {
     Native.load("user32", MotionUser32::class.java, W32APIOptions.DEFAULT_OPTIONS)
 }
 
-internal fun windowsMotionDurationScale(
+internal fun windowsAnimationsEnabled(
     animationsEnabled: () -> Boolean = ::windowsClientAreaAnimationsEnabled,
-): Float = if (runCatching(animationsEnabled).getOrDefault(false)) 1f else 0f
+): Boolean = runCatching(animationsEnabled).getOrDefault(false)
 
 private fun windowsClientAreaAnimationsEnabled(): Boolean {
     val enabled = IntByReference()
@@ -116,20 +119,19 @@ internal fun ManageProductWindowSizing(
     window: Frame,
     windowState: WindowState,
     tier: WindowPresentationTier,
-    motionDurationScale: Float,
+    animationsEnabled: Boolean,
 ) {
     val density = LocalDensity.current
     val densityScale = density.density
     val animatedHeight = remember(window) { Animatable(window.height.toFloat()) }
 
-    LaunchedEffect(tier, motionDurationScale, densityScale) {
+    LaunchedEffect(tier, animationsEnabled, densityScale) {
         val current = window.bounds.toWindowBounds()
         val target =
             fitWindowBounds(
                 current = current,
                 workArea = activeWorkArea(window),
-                targetWidth = logicalPixelsToDevicePixels(tier.preferredWidth, densityScale),
-                targetHeight = logicalPixelsToDevicePixels(tier.preferredHeight, densityScale),
+                targetSize = tier.preferredSize.toDevicePixels(densityScale),
             )
         animatedHeight.snapTo(current.height.toFloat())
 
@@ -146,15 +148,14 @@ internal fun ManageProductWindowSizing(
                 )
         }
 
-        if (motionDurationScale <= 0f || current.height == target.height) {
+        if (!animationsEnabled || current.height == target.height) {
             applyHeight(target.height)
         } else {
-            val durationMillis =
-                if (target.height > current.height) EXPAND_DURATION_MILLIS else COLLAPSE_DURATION_MILLIS
+            val duration = if (target.height > current.height) EXPAND_DURATION else COLLAPSE_DURATION
             animateWindowHeight(
                 animatedHeight = animatedHeight,
                 targetHeight = target.height,
-                durationMillis = durationMillis,
+                duration = duration,
                 expanding = target.height > current.height,
                 applyHeight = ::applyHeight,
             )
@@ -169,7 +170,7 @@ internal fun ManageProductWindowSizing(
 internal suspend fun animateWindowHeight(
     animatedHeight: Animatable<Float, AnimationVector1D>,
     targetHeight: Int,
-    durationMillis: Int,
+    duration: Duration,
     expanding: Boolean,
     applyHeight: suspend (Int) -> Unit,
 ) = coroutineScope {
@@ -184,7 +185,7 @@ internal suspend fun animateWindowHeight(
             targetValue = targetHeight.toFloat(),
             animationSpec =
                 tween(
-                    durationMillis = durationMillis,
+                    durationMillis = duration.inWholeMilliseconds.toInt(),
                     easing = if (expanding) LinearOutSlowInEasing else FastOutLinearInEasing,
                 ),
         )

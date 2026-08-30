@@ -30,7 +30,7 @@ import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
 
 private const val CONTROLLER_WINDOW_TITLE = "Design Review Controller"
-private const val DESIGN_REVIEW_PROGRESS_PERCENT = 43
+private val DESIGN_REVIEW_PROGRESS = DownloadProgress(43)
 
 internal object DesignReviewApp {
     @JvmStatic
@@ -39,14 +39,14 @@ internal object DesignReviewApp {
             val scope = rememberCoroutineScope()
             val stateHolder = remember(scope) { DownloadStateHolder(scope, PreviewDownloadRuntime()) }
             var productTheme by remember { mutableStateOf(DownletTheme.Light) }
-            var motionDurationScale by remember { mutableStateOf(1f) }
+            var animationsEnabled by remember { mutableStateOf(true) }
 
             ProductWindow(
                 stateHolder = stateHolder,
                 theme = productTheme,
                 onCloseRequest = ::exitApplication,
                 initialPosition = WindowPosition(8.dp, 48.dp),
-                motionDurationScale = motionDurationScale,
+                animationsEnabled = animationsEnabled,
             )
             ControllerWindow(
                 state = stateHolder.state,
@@ -55,11 +55,11 @@ internal object DesignReviewApp {
                 onReset = {
                     stateHolder.showDesignState(DownloadUiState.Empty)
                     productTheme = DownletTheme.Light
-                    motionDurationScale = 1f
+                    animationsEnabled = true
                 },
                 onThemeChange = { productTheme = it },
-                motionDurationScale = motionDurationScale,
-                onMotionDurationScaleChange = { motionDurationScale = it },
+                animationsEnabled = animationsEnabled,
+                onAnimationsEnabledChange = { animationsEnabled = it },
                 onCloseRequest = ::exitApplication,
             )
         }
@@ -73,13 +73,17 @@ private fun ControllerWindow(
     onShowState: (DownloadUiState, String, String?) -> Unit,
     onReset: () -> Unit,
     onThemeChange: (DownletTheme) -> Unit,
-    motionDurationScale: Float,
-    onMotionDurationScaleChange: (Float) -> Unit,
+    animationsEnabled: Boolean,
+    onAnimationsEnabledChange: (Boolean) -> Unit,
     onCloseRequest: () -> Unit,
 ) {
     fun showState(
         state: DownloadUiState,
-        linkText: String = state.fixtureOrNull?.sourceUrl.orEmpty(),
+        linkText: String =
+            state.itemOrNull
+                ?.source
+                ?.toString()
+                .orEmpty(),
         validationMessage: String? = null,
     ) {
         onShowState(state, linkText, validationMessage)
@@ -89,7 +93,7 @@ private fun ControllerWindow(
         rememberWindowState(
             position = WindowPosition(800.dp, 48.dp),
             width = 560.dp,
-            height = 520.dp,
+            height = 600.dp,
         )
 
     IntUiTheme(
@@ -121,10 +125,7 @@ private fun ControllerWindow(
                         OutlinedButton(
                             onClick = {
                                 showState(
-                                    DownloadUiState.Previewing(
-                                        DownloadFixtures.normal,
-                                        completesAutomatically = false,
-                                    ),
+                                    DownloadUiState.Previewing(DownloadFixtures.normal),
                                 )
                             },
                         ) {
@@ -145,10 +146,7 @@ private fun ControllerWindow(
                         OutlinedButton(
                             onClick = {
                                 showState(
-                                    DownloadUiState.Resolving(
-                                        DownloadFixtures.normal,
-                                        completesAutomatically = false,
-                                    ),
+                                    DownloadUiState.Resolving(DownloadFixtures.normal),
                                 )
                             },
                         ) {
@@ -164,7 +162,7 @@ private fun ControllerWindow(
                                 showState(
                                     DownloadUiState.Downloading(
                                         DownloadFixtures.normal,
-                                        DESIGN_REVIEW_PROGRESS_PERCENT,
+                                        DESIGN_REVIEW_PROGRESS,
                                     ),
                                 )
                             },
@@ -194,17 +192,17 @@ private fun ControllerWindow(
                         ) {
                             Text("No preview")
                         }
+                        OutlinedButton(
+                            onClick = { showState(DownloadUiState.Ready(DownloadFixtures.remoteThumbnail)) },
+                        ) {
+                            Text("Remote preview")
+                        }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = { showState(DownloadUiState.Ready(DownloadFixtures.longDestination)) },
                         ) {
                             Text("Long path")
-                        }
-                        OutlinedButton(
-                            onClick = { showState(DownloadUiState.Ready(DownloadFixtures.disabledAction)) },
-                        ) {
-                            Text("Disabled")
                         }
                         OutlinedButton(
                             onClick = { showState(DownloadUiState.Ready(DownloadFixtures.failure)) },
@@ -223,7 +221,28 @@ private fun ControllerWindow(
                             Text("Invalid input")
                         }
                     }
-                    Text("Current state: ${state.label} ${state.fixtureId}")
+                    Text("Setup phase")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ToolSetupPhase.entries.forEach { phase ->
+                            OutlinedButton(
+                                onClick = {
+                                    showState(
+                                        DownloadUiState.Setup(
+                                            DownloadFixtures.normal,
+                                            listOf(DownloadTool.YtDlp, DownloadTool.Ffmpeg),
+                                            phase,
+                                        ),
+                                    )
+                                },
+                            ) {
+                                Text(phase.name)
+                            }
+                        }
+                    }
+                    Text(
+                        "Current state: ${state.label}" +
+                            (state as? DownloadUiState.Setup)?.let { " (${it.phase.name})" }.orEmpty(),
+                    )
 
                     Text("Product theme")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -237,29 +256,16 @@ private fun ControllerWindow(
                     Text("Current theme: ${theme.name}")
                     Text("Window sizing")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onMotionDurationScaleChange(1f) }) {
+                        OutlinedButton(onClick = { onAnimationsEnabledChange(true) }) {
                             Text("Normal motion")
                         }
-                        OutlinedButton(onClick = { onMotionDurationScaleChange(0f) }) {
+                        OutlinedButton(onClick = { onAnimationsEnabledChange(false) }) {
                             Text("Zero duration")
                         }
                     }
-                    Text("Current motion: ${if (motionDurationScale == 0f) "Zero duration" else "Normal"}")
+                    Text("Current motion: ${if (animationsEnabled) "Normal" else "Zero duration"}")
                 }
             }
         }
     }
 }
-
-private val DownloadUiState.fixtureId: String
-    get() =
-        when (this) {
-            is DownloadUiState.Previewing -> fixture.id
-            is DownloadUiState.Setup -> fixture.id
-            is DownloadUiState.Resolving -> fixture.id
-            is DownloadUiState.Ready -> fixture.id
-            is DownloadUiState.Downloading -> fixture.id
-            is DownloadUiState.Completed -> fixture.id
-            is DownloadUiState.Error -> fixture.id
-            DownloadUiState.Empty -> ""
-        }

@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.nio.file.Path
 
 @Stable
 @Suppress("TooManyFunctions")
@@ -35,16 +36,10 @@ internal class DownloadStateHolder(
     var selectedQualityIndex by mutableStateOf(0)
         private set
 
-    var destination by mutableStateOf("")
-        private set
-
     var readyFeedback by mutableStateOf<String?>(null)
         private set
 
     var completedFeedback by mutableStateOf<String?>(null)
-        private set
-
-    var toolSetupAccepted by mutableStateOf(false)
         private set
 
     var downloadAuthorizationAccepted by mutableStateOf(false)
@@ -62,24 +57,36 @@ internal class DownloadStateHolder(
     val selectedQualityLabel: String
         get() = selectedQuality.label
 
+    val destination: Path?
+        get() {
+            val current = state
+            return current.itemOrNull?.destination?.takeUnless {
+                current is DownloadUiState.Error && current.kind == DownloadErrorKind.Resolution
+            }
+        }
+
+    val toolSetupAccepted: Boolean
+        get() {
+            val phase = (state as? DownloadUiState.Setup)?.phase ?: return false
+            return phase != ToolSetupPhase.AwaitingConsent
+        }
+
     val downloadEnabled: Boolean
-        get() =
-            (state as? DownloadUiState.Ready)?.fixture?.let { fixture ->
-                fixture.canDownload && downloadAuthorizationAccepted && isValidYouTubeUrl(fixture.sourceUrl)
-            } == true
+        get() = state is DownloadUiState.Ready && downloadAuthorizationAccepted
 
     val toolSetupEnabled: Boolean
-        get() = (state as? DownloadUiState.Setup)?.let { !it.installing && toolSetupAccepted } == true
+        get() =
+            (state as? DownloadUiState.Setup)?.let {
+                it.phase == ToolSetupPhase.ReadyToInstall || it.phase == ToolSetupPhase.Failed
+            } == true
 
     val readyStatus: String?
-        get() =
-            (state as? DownloadUiState.Ready)?.fixture?.let { fixture ->
-                if (fixture.canDownload) readyFeedback else ProductCopy.DOWNLOAD_UNAVAILABLE_MESSAGE
-            }
+        get() = (state as? DownloadUiState.Ready)?.let { readyFeedback }
 
     private val stateContext = scope.coroutineContext.minusKey(Job)
     private val holderJob = SupervisorJob(scope.coroutineContext[Job])
     private val holderScope = CoroutineScope(stateContext + holderJob)
+    private var metadataGeneration = 0L
     private var downloadGeneration = 0L
     private var metadataJob: Job? = null
     private var downloadJob: Job? = null
@@ -106,22 +113,25 @@ internal class DownloadStateHolder(
     }
 
     fun beginResolution(text: String) {
-        val value = text.trim()
-        if (!isValidYouTubeUrl(value)) return
+        val source = YouTubeUrl.parse(text) ?: return
+        val value = source.toString()
 
         replaceLink(value)
         validationMessage = null
         clearReadySelection()
         cancelActiveWork()
         transitionTo(DownloadUiState.Empty)
-        startPreview(DownloadFixtures.normal.copy(sourceUrl = value))
+        startPreview(DownloadFixtures.normal.copy(source = source))
     }
 
     fun updateToolSetupConsent(accepted: Boolean) {
         val setup = state as? DownloadUiState.Setup ?: return
-        if (setup.installing) return
+        if (setup.phase == ToolSetupPhase.Installing) return
 
-        toolSetupAccepted = accepted
+        state =
+            setup.copy(
+                phase = if (accepted) ToolSetupPhase.ReadyToInstall else ToolSetupPhase.AwaitingConsent,
+            )
     }
 
     @Suppress("ThrowsCount")
@@ -130,7 +140,8 @@ internal class DownloadStateHolder(
         if (!toolSetupEnabled) return
 
         cancelActiveWork()
-        transitionTo(setup.copy(installing = true, failed = false))
+        val generation = metadataGeneration
+        transitionTo(setup.copy(phase = ToolSetupPhase.Installing))
         metadataJob =
             holderScope.launch {
                 try {
@@ -139,12 +150,12 @@ internal class DownloadStateHolder(
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
-                    if (isCurrentInstallingSetup(setup)) {
-                        transitionTo(setup.copy(failed = true))
+                    if (isCurrentInstallingSetup(setup, generation)) {
+                        transitionTo(setup.copy(phase = ToolSetupPhase.Failed))
                     }
                     return@launch
                 }
-                if (isCurrentInstallingSetup(setup)) resolve(setup.fixture)
+                if (isCurrentInstallingSetup(setup, generation)) resolve(setup.item, generation)
             }
     }
 
@@ -161,12 +172,6 @@ internal class DownloadStateHolder(
 
     fun hideLegalDetails() {
         showingLegalDetails = false
-    }
-
-    internal fun completeResolution(fixture: DownloadFixture) {
-        if (!isCurrentResolution(fixture)) return
-        prepareReady(fixture)
-        transitionTo(DownloadUiState.Ready(fixture))
     }
 
     fun selectMode(mode: DownloadMode) {
@@ -187,38 +192,38 @@ internal class DownloadStateHolder(
     }
 
     fun changeDestination() {
-        if (state !is DownloadUiState.Ready) return
+        val ready = state as? DownloadUiState.Ready ?: return
 
-        destination = runtime.chooseDestination(destination) ?: return
+        val destination = runtime.chooseDestination(ready.item.destination) ?: return
+        state = ready.copy(item = ready.item.copy(destination = destination))
         readyFeedback = "Save location changed to $destination."
     }
 
     fun download() {
-        val fixture = (state as? DownloadUiState.Ready)?.fixture ?: return
+        val item = (state as? DownloadUiState.Ready)?.item ?: return
         if (!downloadEnabled) return
 
-        startDownload(fixture)
+        startDownload(item)
     }
 
     fun cancelDownload() {
-        val fixture = (state as? DownloadUiState.Downloading)?.fixture ?: return
+        val item = (state as? DownloadUiState.Downloading)?.item ?: return
         cancelActiveWork()
-        transitionTo(DownloadUiState.Ready(fixture))
+        transitionTo(DownloadUiState.Ready(item))
     }
 
     fun retryDownload() {
         val error = state as? DownloadUiState.Error ?: return
         if (error.kind == DownloadErrorKind.Resolution) {
-            beginResolution(error.fixture.sourceUrl)
+            beginResolution(error.item.source.toString())
         } else {
-            startDownload(error.fixture)
+            startDownload(error.item)
         }
     }
 
     fun openFolder() {
-        if (state is DownloadUiState.Completed) {
-            completedFeedback = runtime.openDestination(destination)
-        }
+        val completed = state as? DownloadUiState.Completed ?: return
+        completedFeedback = runtime.openDestination(completed.item.destination)
     }
 
     fun downloadAnother() {
@@ -235,7 +240,11 @@ internal class DownloadStateHolder(
 
     internal fun showDesignState(
         state: DownloadUiState,
-        linkText: String = state.fixtureOrNull?.sourceUrl.orEmpty(),
+        linkText: String =
+            state.itemOrNull
+                ?.source
+                ?.toString()
+                .orEmpty(),
         validationMessage: String? = null,
     ) {
         cancelActiveWork()
@@ -248,10 +257,10 @@ internal class DownloadStateHolder(
         this.validationMessage = validationMessage
         clearReadySelection()
         when (state) {
-            is DownloadUiState.Ready -> prepareReady(state.fixture)
-            is DownloadUiState.Downloading -> prepareReady(state.fixture)
-            is DownloadUiState.Completed -> prepareReady(state.fixture)
-            is DownloadUiState.Error -> prepareReady(state.fixture)
+            is DownloadUiState.Ready -> prepareReady()
+            is DownloadUiState.Downloading -> prepareReady()
+            is DownloadUiState.Completed -> prepareReady()
+            is DownloadUiState.Error -> prepareReady()
             else -> Unit
         }
         if (state == DownloadUiState.Empty && linkText.isEmpty()) requestLinkFocus()
@@ -263,159 +272,176 @@ internal class DownloadStateHolder(
         holderJob.cancel()
     }
 
-    private fun startPreview(requestFixture: DownloadFixture) {
-        if (state !is DownloadUiState.Empty || observedLinkText != requestFixture.sourceUrl) return
+    private fun startPreview(requestItem: DownloadItem) {
+        if (state !is DownloadUiState.Empty || observedLinkText != requestItem.source.toString()) return
 
-        transitionTo(DownloadUiState.Previewing(requestFixture))
+        val generation = metadataGeneration
+        transitionTo(DownloadUiState.Previewing(requestItem))
         metadataJob =
             holderScope.launch {
-                val previewFixture =
+                val previewItem =
                     try {
-                        runtime.preview(requestFixture.sourceUrl)
+                        runtime.preview(requestItem.source)
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: Exception) {
-                        if (isCurrentPreview(requestFixture)) {
+                        if (isCurrentPreview(requestItem, generation)) {
                             clearReadySelection()
-                            transitionTo(DownloadUiState.Error(requestFixture, DownloadErrorKind.Resolution))
+                            transitionTo(DownloadUiState.Error(requestItem, DownloadErrorKind.Resolution))
                         }
                         return@launch
                     }
-                if (!isCurrentPreview(requestFixture)) return@launch
+                if (!isCurrentPreview(requestItem, generation)) return@launch
 
                 val missingTools = runtime.missingTools()
                 if (missingTools.isNotEmpty()) {
                     clearReadySelection()
-                    transitionTo(DownloadUiState.Setup(previewFixture, missingTools))
+                    transitionTo(DownloadUiState.Setup(previewItem, missingTools))
                     return@launch
                 }
-                resolve(previewFixture)
+                resolve(previewItem, generation)
             }
     }
 
-    private suspend fun resolve(requestFixture: DownloadFixture) {
-        if (!canResolve(requestFixture)) return
+    private suspend fun resolve(
+        requestItem: DownloadItem,
+        generation: Long,
+    ) {
+        if (!canResolve(requestItem, generation)) return
 
-        transitionTo(DownloadUiState.Resolving(requestFixture))
+        transitionTo(DownloadUiState.Resolving(requestItem))
         try {
-            val resolvedFixture = runtime.resolve(requestFixture.sourceUrl).withPreviewFrom(requestFixture)
-            if (isCurrentResolution(requestFixture)) {
-                prepareReady(resolvedFixture)
-                transitionTo(DownloadUiState.Ready(resolvedFixture))
+            val resolvedItem = runtime.resolve(requestItem.source).withPreviewFrom(requestItem)
+            if (isCurrentResolution(requestItem, generation)) {
+                prepareReady()
+                transitionTo(DownloadUiState.Ready(resolvedItem))
             }
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            if (isCurrentResolution(requestFixture)) {
+            if (isCurrentResolution(requestItem, generation)) {
                 clearReadySelection()
-                transitionTo(DownloadUiState.Error(requestFixture, DownloadErrorKind.Resolution))
+                transitionTo(DownloadUiState.Error(requestItem, DownloadErrorKind.Resolution))
             }
         }
     }
 
-    private fun startDownload(fixture: DownloadFixture) {
+    private fun startDownload(item: DownloadItem) {
         val canStart =
-            state == DownloadUiState.Ready(fixture) ||
+            state == DownloadUiState.Ready(item) ||
                 (state as? DownloadUiState.Error)?.let {
-                    it.fixture == fixture && it.kind == DownloadErrorKind.Download
+                    it.item == item && it.kind == DownloadErrorKind.Download
                 } == true
         if (!canStart) return
 
         downloadJob?.cancel()
         downloadGeneration += 1
         val generation = downloadGeneration
-        val request = DownloadRequest(fixture, selectedQuality, destination)
+        val request = DownloadRequest(item, selectedQuality)
         readyFeedback = null
         completedFeedback = null
-        transitionTo(DownloadUiState.Downloading(fixture, progressPercent = 0))
+        transitionTo(DownloadUiState.Downloading(item, DownloadProgress.Zero))
         downloadJob =
             holderScope.launch {
                 try {
                     runtime.download(request) { progress ->
                         withContext(stateContext) {
-                            if (isCurrentDownload(fixture, generation)) {
-                                transitionTo(DownloadUiState.Downloading(fixture, progress))
+                            if (isCurrentDownload(item, generation)) {
+                                transitionTo(DownloadUiState.Downloading(item, progress))
                             }
                         }
                     }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
-                    if (isCurrentDownload(fixture, generation)) {
+                    if (isCurrentDownload(item, generation)) {
                         downloadJob = null
-                        transitionTo(DownloadUiState.Error(fixture))
+                        transitionTo(DownloadUiState.Error(item))
                     }
                     return@launch
                 }
-                if (isCurrentDownload(fixture, generation)) {
+                if (isCurrentDownload(item, generation)) {
                     downloadJob = null
                     completedFeedback = null
-                    transitionTo(DownloadUiState.Completed(fixture))
+                    transitionTo(DownloadUiState.Completed(item))
                 }
             }
     }
 
-    private fun isCurrentPreview(fixture: DownloadFixture): Boolean =
+    private fun isCurrentPreview(
+        item: DownloadItem,
+        generation: Long,
+    ): Boolean =
         (state as? DownloadUiState.Previewing)?.let {
-            it.completesAutomatically && it.fixture == fixture && observedLinkText == fixture.sourceUrl
+            generation == metadataGeneration && it.item == item && observedLinkText == item.source.toString()
         } == true
 
-    private fun isCurrentInstallingSetup(setup: DownloadUiState.Setup): Boolean =
+    private fun isCurrentInstallingSetup(
+        setup: DownloadUiState.Setup,
+        generation: Long,
+    ): Boolean =
         (state as? DownloadUiState.Setup)?.let {
-            it.fixture == setup.fixture && it.tools == setup.tools && it.installing
+            generation == metadataGeneration &&
+                it.item == setup.item &&
+                it.tools == setup.tools &&
+                it.phase == ToolSetupPhase.Installing
         } == true
 
-    private fun canResolve(fixture: DownloadFixture): Boolean =
-        when (val current = state) {
-            is DownloadUiState.Previewing -> {
-                current.completesAutomatically && current.fixture.sourceUrl == fixture.sourceUrl
+    private fun canResolve(
+        item: DownloadItem,
+        generation: Long,
+    ): Boolean =
+        generation == metadataGeneration &&
+            when (val current = state) {
+                is DownloadUiState.Previewing -> {
+                    current.item.source == item.source
+                }
+
+                is DownloadUiState.Setup -> {
+                    current.phase == ToolSetupPhase.Installing && current.item == item
+                }
+
+                else -> {
+                    false
+                }
             }
 
-            is DownloadUiState.Setup -> {
-                current.installing && current.fixture == fixture
-            }
-
-            else -> {
-                false
-            }
-        }
-
-    private fun isCurrentResolution(fixture: DownloadFixture): Boolean =
+    private fun isCurrentResolution(
+        item: DownloadItem,
+        generation: Long,
+    ): Boolean =
         (state as? DownloadUiState.Resolving)?.let {
-            it.completesAutomatically && it.fixture == fixture
+            generation == metadataGeneration && it.item == item
         } == true
 
     private fun isCurrentDownload(
-        fixture: DownloadFixture,
+        item: DownloadItem,
         generation: Long,
-    ): Boolean = generation == downloadGeneration && (state as? DownloadUiState.Downloading)?.fixture == fixture
+    ): Boolean = generation == downloadGeneration && (state as? DownloadUiState.Downloading)?.item == item
 
     private fun transitionTo(nextState: DownloadUiState) {
         showingLegalDetails = false
         state = nextState
     }
 
-    private fun prepareReady(fixture: DownloadFixture) {
+    private fun prepareReady() {
         selectedMode = DownloadMode.Video
         selectedQualityIndex = 0
-        destination = fixture.destination
         readyFeedback = null
         completedFeedback = null
-        toolSetupAccepted = false
         downloadAuthorizationAccepted = false
     }
 
     private fun clearReadySelection() {
         selectedMode = DownloadMode.Video
         selectedQualityIndex = 0
-        destination = ""
         readyFeedback = null
         completedFeedback = null
-        toolSetupAccepted = false
         downloadAuthorizationAccepted = false
     }
 
     private fun cancelActiveWork() {
+        metadataGeneration += 1
         downloadGeneration += 1
         runtime.cancel()
         metadataJob?.cancel()
@@ -436,8 +462,7 @@ internal class DownloadStateHolder(
     }
 }
 
-private fun DownloadFixture.withPreviewFrom(preview: DownloadFixture): DownloadFixture =
+private fun DownloadItem.withPreviewFrom(preview: DownloadItem): DownloadItem =
     copy(
-        thumbnailAvailable = thumbnailAvailable || preview.thumbnailAvailable,
-        thumbnailData = thumbnailData ?: preview.thumbnailData,
+        thumbnail = if (thumbnail is MediaThumbnail.Unavailable) preview.thumbnail else thumbnail,
     )

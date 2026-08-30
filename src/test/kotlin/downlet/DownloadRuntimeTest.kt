@@ -17,34 +17,45 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
+import kotlin.time.toJavaDuration
 
 class DownloadRuntimeTest {
     @Test
-    fun `yt-dlp metadata output becomes a media fixture`() {
+    fun `yt-dlp metadata output contains typed media fields`() {
         val metadata =
             parseMetadata(
                 listOf(
-                    "DOWNLET_ID=abc123",
                     "DOWNLET_TITLE=City after rain",
                     "DOWNLET_CHANNEL=North Window",
                     "DOWNLET_UPLOADER=Fallback uploader",
-                    "DOWNLET_DURATION=12:34",
+                    "DOWNLET_DURATION_SECONDS=754.0",
                 ),
             )
 
-        assertEquals("abc123", metadata["ID"])
         assertEquals("City after rain", metadata["TITLE"])
         assertEquals("North Window", metadata["CHANNEL"])
-        assertEquals("12:34", metadata["DURATION"])
+        assertEquals("754.0", metadata["DURATION_SECONDS"])
     }
 
     @Test
     fun `yt-dlp progress output is bounded for the downloading state`() {
-        assertEquals(43, parseProgress("DOWNLET_PROGRESS= 43.2%"))
-        assertEquals(99, parseProgress("DOWNLET_PROGRESS=100.0%"))
+        assertEquals(DownloadProgress(43), parseProgress("DOWNLET_PROGRESS= 43.2%"))
+        assertEquals(DownloadProgress(99), parseProgress("DOWNLET_PROGRESS=100.0%"))
         assertNull(parseProgress("[download] waiting"))
-        assertEquals("Downloading…", downloadProgressStatus(1))
-        assertEquals("Finishing…", downloadProgressStatus(99))
+        assertEquals("Downloading…", downloadProgressStatus(DownloadProgress(1)))
+        assertEquals("Finishing…", downloadProgressStatus(DownloadProgress(99)))
+    }
+
+    @Test
+    fun `media durations retain current display format`() {
+        assertEquals("Unknown duration", formatMediaDuration(null))
+        assertEquals("12:34", formatMediaDuration(12.minutes + 34.seconds))
+        assertEquals("1:02:03", formatMediaDuration(1.hours + 2.minutes + 3.seconds))
     }
 
     @Test
@@ -235,19 +246,24 @@ class DownloadRuntimeTest {
 
         val process = ProcessBuilder("cmd.exe", "/c", "ping", "-t", "127.0.0.1").start()
         try {
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            val waitTimeout = 5.seconds
+            val pollInterval = 25.milliseconds
+            val started = TimeSource.Monotonic.markNow()
             var descendants = emptyList<ProcessHandle>()
-            while (descendants.isEmpty() && System.nanoTime() < deadline) {
+            while (descendants.isEmpty() && started.elapsedNow() < waitTimeout) {
                 descendants = process.descendants().toList()
-                if (descendants.isEmpty()) Thread.sleep(25)
+                if (descendants.isEmpty()) Thread.sleep(pollInterval.toJavaDuration())
             }
             assertTrue(descendants.isNotEmpty(), "Expected cmd.exe to start ping.exe")
 
             terminateProcessTree(process)
 
-            assertTrue(process.waitFor(5, TimeUnit.SECONDS), "Parent process did not exit")
+            assertTrue(
+                process.waitFor(waitTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS),
+                "Parent process did not exit",
+            )
             descendants.forEach { descendant ->
-                descendant.onExit().get(5, TimeUnit.SECONDS)
+                descendant.onExit().get(waitTimeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
                 assertFalse(descendant.isAlive, "Descendant process did not exit")
             }
         } finally {

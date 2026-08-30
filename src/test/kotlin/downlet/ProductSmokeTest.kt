@@ -25,9 +25,11 @@ import org.jetbrains.jewel.intui.standalone.theme.default
 import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
 import org.jetbrains.jewel.intui.window.decoratedWindow
 import org.jetbrains.jewel.ui.ComponentStyling
+import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.nanoseconds
 
 class ProductSmokeTest {
@@ -43,7 +45,7 @@ class ProductSmokeTest {
             )
         try {
             stateHolder.showDesignState(
-                DownloadUiState.Previewing(DownloadFixtures.normal, completesAutomatically = false),
+                DownloadUiState.Previewing(DownloadFixtures.normal),
             )
             stateScheduler.runCurrent()
 
@@ -127,12 +129,12 @@ class ProductSmokeTest {
 
                 mainClock.autoAdvance = false
                 linkField.performTextInput("https://youtu.be/smoke")
-                mainClock.advanceTimeBy(MANUAL_LINK_DEBOUNCE_MILLIS)
+                mainClock.advanceTimeBy(MANUAL_LINK_DEBOUNCE.inWholeMilliseconds)
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 onNodeWithContentDescription("Status: Checking available formats…").assertExists()
 
-                stateScheduler.advanceTimeBy(FAKE_RESOLUTION_MILLIS)
+                stateScheduler.advanceTimeBy(FAKE_RESOLUTION_DELAY.inWholeMilliseconds)
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
@@ -153,7 +155,9 @@ class ProductSmokeTest {
                 onNodeWithText("Cancel").assertExists()
                 linkField.assertIsNotEnabled()
 
-                stateScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS * fakeProgressSteps.size)
+                stateScheduler.advanceTimeBy(
+                    (FAKE_PROGRESS_INTERVAL * (fakeProgressSteps.size + 1)).inWholeMilliseconds,
+                )
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
@@ -208,7 +212,7 @@ class ProductSmokeTest {
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Cancel").assertExists()
 
-                stateScheduler.advanceTimeBy(FAKE_PROGRESS_INTERVAL_MILLIS * 3)
+                stateScheduler.advanceTimeBy((FAKE_PROGRESS_INTERVAL * 3).inWholeMilliseconds)
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
@@ -287,7 +291,7 @@ class ProductSmokeTest {
                         theme = JewelTheme.lightThemeDefinition(),
                         styling = ComponentStyling.default().decoratedWindow(),
                     ) {
-                        ProductSurface(stateHolder, motionDurationScale = 0f)
+                        ProductSurface(stateHolder, animationsEnabled = false)
                     }
                 }
 
@@ -320,8 +324,14 @@ class ProductSmokeTest {
     @OptIn(ExperimentalTestApi::class)
     @Test
     fun `rapid height retarget cancels stale target`() {
-        val targetHeight = mutableIntStateOf(WindowPresentationTier.Compact.preferredHeight)
-        val renderedHeight = mutableIntStateOf(WindowPresentationTier.Compact.preferredHeight)
+        val compactHeight =
+            WindowPresentationTier.Compact.preferredSize.height.value
+                .roundToInt()
+        val expandedHeight =
+            WindowPresentationTier.Expanded.preferredSize.height.value
+                .roundToInt()
+        val targetHeight = mutableIntStateOf(compactHeight)
+        val renderedHeight = mutableIntStateOf(compactHeight)
 
         runComposeUiTest {
             setContent {
@@ -332,7 +342,7 @@ class ProductSmokeTest {
                     animateWindowHeight(
                         animatedHeight = animatedHeight,
                         targetHeight = target,
-                        durationMillis = if (target > renderedHeight.intValue) 250 else 167,
+                        duration = if (target > renderedHeight.intValue) 250.milliseconds else 167.milliseconds,
                         expanding = target > renderedHeight.intValue,
                         applyHeight = { renderedHeight.intValue = it },
                     )
@@ -340,19 +350,18 @@ class ProductSmokeTest {
             }
 
             mainClock.autoAdvance = false
-            runOnIdle { targetHeight.intValue = WindowPresentationTier.Expanded.preferredHeight }
-            mainClock.advanceTimeBy(80)
+            runOnIdle { targetHeight.intValue = expandedHeight }
+            mainClock.advanceTimeBy(80.milliseconds.inWholeMilliseconds)
             runOnIdle {
                 assertTrue(
                     renderedHeight.intValue in
-                        (WindowPresentationTier.Compact.preferredHeight + 1) until
-                        WindowPresentationTier.Expanded.preferredHeight,
+                        (compactHeight + 1) until expandedHeight,
                 )
-                targetHeight.intValue = WindowPresentationTier.Compact.preferredHeight
+                targetHeight.intValue = compactHeight
             }
-            mainClock.advanceTimeBy(200)
+            mainClock.advanceTimeBy(200.milliseconds.inWholeMilliseconds)
             runOnIdle {
-                assertEquals(WindowPresentationTier.Compact.preferredHeight, renderedHeight.intValue)
+                assertEquals(compactHeight, renderedHeight.intValue)
             }
         }
     }

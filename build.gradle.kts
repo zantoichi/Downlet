@@ -40,6 +40,9 @@ abstract class PackageWindowsSingleExeTask
         @get:InputFile
         abstract val launcherSource: RegularFileProperty
 
+        @get:InputFile
+        abstract val iconFile: RegularFileProperty
+
         @get:Input
         abstract val productVersion: org.gradle.api.provider.Property<String>
 
@@ -154,6 +157,7 @@ abstract class PackageWindowsSingleExeTask
                     version = productVersion.get(),
                     cabinet = cabinet,
                     manifest = manifest,
+                    icon = iconFile.get().asFile,
                 ),
                 StandardCharsets.UTF_8,
             )
@@ -251,12 +255,14 @@ abstract class PackageWindowsSingleExeTask
             version: String,
             cabinet: File,
             manifest: File,
+            icon: File,
         ): String {
             val numericVersion = version.split('.').joinToString(",") + ",0"
 
             fun rcPath(file: File) = file.absolutePath.replace('\\', '/')
             return """
                 #include <windows.h>
+                1 ICON "${rcPath(icon)}"
                 101 RCDATA "${rcPath(cabinet)}"
                 102 RCDATA "${rcPath(manifest)}"
                 1 VERSIONINFO
@@ -383,6 +389,9 @@ compose.desktop {
             packageName = "Downlet"
             packageVersion = downletVersion
             modules("java.instrument", "java.net.http", "jdk.unsupported")
+            windows {
+                iconFile.set(project.file("src/launcher/windows/downlet.ico"))
+            }
         }
     }
 }
@@ -445,6 +454,7 @@ tasks.register<PackageWindowsSingleExeTask>("packageWindowsSingleExe") {
     dependsOn("createDistributable")
     appImageDirectory.set(layout.buildDirectory.dir("compose/binaries/main/app/Downlet"))
     launcherSource.set(layout.projectDirectory.file("src/launcher/windows/launcher.cpp"))
+    iconFile.set(layout.projectDirectory.file("src/launcher/windows/downlet.ico"))
     productVersion.set(downletVersion)
     strongTargetMiB.set(strongDownloadTargetMiB)
     maximumSizeMiB.set(maxDownloadSizeMiB)

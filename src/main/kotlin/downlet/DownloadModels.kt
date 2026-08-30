@@ -2,16 +2,22 @@ package downlet
 
 import java.net.URI
 import java.net.URISyntaxException
+import java.nio.file.Path
+import java.util.Base64
 import java.util.Locale
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
-internal const val MANUAL_LINK_DEBOUNCE_MILLIS = 350L
-internal const val FAKE_RESOLUTION_MILLIS = 550L
-internal const val PASTE_INTENT_LIFETIME_MILLIS = 1_000L
-internal const val FAKE_PROGRESS_INTERVAL_MILLIS = 350L
-internal const val COMPLETE_PROGRESS_PERCENT = 100
+internal val MANUAL_LINK_DEBOUNCE: Duration = 350.milliseconds
+internal val FAKE_RESOLUTION_DELAY: Duration = 550.milliseconds
+internal val PASTE_INTENT_LIFETIME: Duration = 1.seconds
+internal val FAKE_PROGRESS_INTERVAL: Duration = 350.milliseconds
 private const val YT_DLP_ESTIMATED_DOWNLOAD_MEGABYTES = 17
 private const val FFMPEG_ESTIMATED_DOWNLOAD_MEGABYTES = 106
-internal val fakeProgressSteps = listOf(18, 43, 68, 87, COMPLETE_PROGRESS_PERCENT)
+private const val REMOTE_THUMBNAIL_FIXTURE_BASE64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGN0q7jEgA0wYRUdtBIAO+sBoPuKweIAAAAASUVORK5CYII="
 
 internal enum class DownloadMode {
     Video,
@@ -22,6 +28,25 @@ internal enum class DownloadErrorKind {
     Resolution,
     Download,
 }
+
+@JvmInline
+internal value class DownloadProgress(
+    val percent: Int,
+) {
+    init {
+        require(percent in 0..MAX_PERCENT)
+    }
+
+    val fraction: Float
+        get() = percent / 100f
+
+    companion object {
+        private const val MAX_PERCENT = 99
+        val Zero = DownloadProgress(0)
+    }
+}
+
+internal val fakeProgressSteps = listOf(18, 43, 68, 87).map(::DownloadProgress)
 
 internal data class DownloadQuality(
     val label: String,
@@ -38,49 +63,89 @@ internal enum class DownloadTool(
 
 internal val videoQualityOptions =
     listOf(
-        DownloadQuality("Best available — 2160p", listOf("--format", "bv*[height<=2160]+ba/b[height<=2160]")),
-        DownloadQuality("1440p", listOf("--format", "bv*[height<=1440]+ba/b[height<=1440]")),
-        DownloadQuality("1080p", listOf("--format", "bv*[height<=1080]+ba/b[height<=1080]")),
-        DownloadQuality("720p", listOf("--format", "bv*[height<=720]+ba/b[height<=720]")),
-        DownloadQuality("480p", listOf("--format", "bv*[height<=480]+ba/b[height<=480]")),
+        videoQuality(maxHeightPixels = 2160, bestAvailable = true),
+        videoQuality(maxHeightPixels = 1440),
+        videoQuality(maxHeightPixels = 1080),
+        videoQuality(maxHeightPixels = 720),
+        videoQuality(maxHeightPixels = 480),
     )
+
 internal val audioQualityOptions =
     listOf(
-        DownloadQuality(
-            "Best available — 251 kbps audio",
-            listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "0"),
-        ),
-        DownloadQuality(
-            "160 kbps audio",
-            listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "160K"),
-        ),
-        DownloadQuality(
-            "128 kbps audio",
-            listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "128K"),
-        ),
+        audioQuality(bitRateKilobitsPerSecond = 251, bestAvailable = true),
+        audioQuality(bitRateKilobitsPerSecond = 160),
+        audioQuality(bitRateKilobitsPerSecond = 128),
+    )
+
+private fun videoQuality(
+    maxHeightPixels: Int,
+    bestAvailable: Boolean = false,
+): DownloadQuality =
+    DownloadQuality(
+        label = if (bestAvailable) "Best available — ${maxHeightPixels}p" else "${maxHeightPixels}p",
+        ytDlpArguments = listOf("--format", "bv*[height<=$maxHeightPixels]+ba/b[height<=$maxHeightPixels]"),
+    )
+
+private fun audioQuality(
+    bitRateKilobitsPerSecond: Int,
+    bestAvailable: Boolean = false,
+): DownloadQuality =
+    DownloadQuality(
+        label =
+            if (bestAvailable) {
+                "Best available — $bitRateKilobitsPerSecond kbps audio"
+            } else {
+                "$bitRateKilobitsPerSecond kbps audio"
+            },
+        ytDlpArguments =
+            listOf(
+                "--format",
+                "ba/b",
+                "--extract-audio",
+                "--audio-format",
+                "mp3",
+                "--audio-quality",
+                if (bestAvailable) "0" else "${bitRateKilobitsPerSecond}K",
+            ),
     )
 
 private val YOUTUBE_HOSTS = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be")
-private const val MAX_INCOMPLETE_PROGRESS = 99
 
-internal fun isValidYouTubeUrl(value: String): Boolean =
-    try {
-        val uri = URI(value.trim())
-        uri.scheme?.lowercase(Locale.ROOT) in setOf("http", "https") &&
-            uri.host?.lowercase(Locale.ROOT) in YOUTUBE_HOSTS
-    } catch (_: URISyntaxException) {
-        false
+@JvmInline
+internal value class YouTubeUrl private constructor(
+    val uri: URI,
+) {
+    override fun toString(): String = uri.toString()
+
+    companion object {
+        fun parse(value: String): YouTubeUrl? =
+            try {
+                val uri = URI(value.trim())
+                if (
+                    uri.scheme?.lowercase(Locale.ROOT) in setOf("http", "https") &&
+                    uri.host?.lowercase(Locale.ROOT) in YOUTUBE_HOSTS
+                ) {
+                    YouTubeUrl(uri)
+                } else {
+                    null
+                }
+            } catch (_: URISyntaxException) {
+                null
+            }
     }
+}
 
-internal fun linkResolutionDelayMillis(
+internal fun isValidYouTubeUrl(value: String): Boolean = YouTubeUrl.parse(value) != null
+
+internal fun linkResolutionDelay(
     previousValue: String,
     value: String,
     explicitPaste: Boolean,
-): Long? =
+): Duration? =
     when {
         !isValidYouTubeUrl(value) -> null
-        explicitPaste || insertedCharacterCount(previousValue, value) > 1 -> 0L
-        else -> MANUAL_LINK_DEBOUNCE_MILLIS
+        explicitPaste || insertedCharacterCount(previousValue, value) > 1 -> Duration.ZERO
+        else -> MANUAL_LINK_DEBOUNCE
     }
 
 private fun insertedCharacterCount(
@@ -105,133 +170,136 @@ internal enum class DownletTheme {
     Dark,
 }
 
-internal sealed interface FakeDownloadOutcome {
-    data object Success : FakeDownloadOutcome
-
-    data class Failure(
-        val atPercent: Int,
-    ) : FakeDownloadOutcome {
-        init {
-            require(atPercent in 1..MAX_INCOMPLETE_PROGRESS)
-        }
-    }
-}
-
 internal class ThumbnailData(
     val bytes: ByteArray,
 ) {
+    init {
+        require(bytes.isNotEmpty())
+    }
+
     override fun equals(other: Any?): Boolean = other is ThumbnailData && bytes.contentEquals(other.bytes)
 
     override fun hashCode(): Int = bytes.contentHashCode()
 }
 
-internal data class DownloadFixture(
-    val id: String,
-    val sourceUrl: String,
+internal sealed interface MediaThumbnail {
+    data object BundledPreview : MediaThumbnail
+
+    data class Remote(
+        val data: ThumbnailData,
+    ) : MediaThumbnail
+
+    data object Unavailable : MediaThumbnail
+}
+
+internal val MediaThumbnail.isAvailable: Boolean
+    get() = this !is MediaThumbnail.Unavailable
+
+internal data class DownloadItem(
+    val source: YouTubeUrl,
     val title: String,
     val channel: String,
-    val duration: String,
-    val destination: String,
-    val thumbnailAvailable: Boolean = true,
-    val thumbnailData: ThumbnailData? = null,
-    val outcome: FakeDownloadOutcome = FakeDownloadOutcome.Success,
-    val canDownload: Boolean = true,
-)
+    val duration: Duration?,
+    val destination: Path,
+    val thumbnail: MediaThumbnail = MediaThumbnail.BundledPreview,
+) {
+    init {
+        require(title.isNotBlank())
+        require(channel.isNotBlank())
+        require(duration == null || (duration >= Duration.ZERO && duration.isFinite()))
+    }
+}
 
 internal object DownloadFixtures {
     val normal =
-        DownloadFixture(
-            id = "normal",
-            sourceUrl = "https://www.youtube.com/watch?v=quiet-transfer",
+        DownloadItem(
+            source = requireNotNull(YouTubeUrl.parse("https://www.youtube.com/watch?v=quiet-transfer")),
             title = "A calm walk through the city after rain",
             channel = "North Window",
-            duration = "12:34",
-            destination = "Downloads",
+            duration = 12.minutes + 34.seconds,
+            destination = Path.of("Downloads"),
         )
 
     val longTitle =
         normal.copy(
-            id = "long-title",
             title =
                 "A deliberately long media title that remains deterministic while exercising " +
                     "the future two-line layout",
         )
 
-    val missingThumbnail =
+    val missingThumbnail = normal.copy(thumbnail = MediaThumbnail.Unavailable)
+
+    val remoteThumbnail =
         normal.copy(
-            id = "missing-thumbnail",
-            thumbnailAvailable = false,
+            thumbnail =
+                MediaThumbnail.Remote(
+                    ThumbnailData(Base64.getDecoder().decode(REMOTE_THUMBNAIL_FIXTURE_BASE64)),
+                ),
         )
 
     val longDestination =
         normal.copy(
-            id = "long-destination",
-            destination = "C:\\Users\\Demo\\Videos\\Reference Material\\Long Destination Folder\\Downloads",
+            destination = Path.of("C:\\Users\\Demo\\Videos\\Reference Material\\Long Destination Folder\\Downloads"),
         )
 
     val failure =
         normal.copy(
-            id = "failure",
-            outcome = FakeDownloadOutcome.Failure(atPercent = 68),
-        )
-
-    val disabledAction =
-        normal.copy(
-            id = "disabled-action",
-            canDownload = false,
+            source = requireNotNull(YouTubeUrl.parse("https://youtu.be/downlet-preview-failure")),
         )
 }
 
-internal val readyDestinations =
+internal val readyDestinations by lazy {
     listOf(
         DownloadFixtures.longDestination.destination,
-        "D:\\Media\\Downloads",
+        Path.of("D:\\Media\\Downloads"),
         DownloadFixtures.normal.destination,
     )
+}
+
+internal enum class ToolSetupPhase {
+    AwaitingConsent,
+    ReadyToInstall,
+    Installing,
+    Failed,
+}
 
 internal sealed interface DownloadUiState {
     data object Empty : DownloadUiState
 
     data class Previewing(
-        val fixture: DownloadFixture,
-        val completesAutomatically: Boolean = true,
+        val item: DownloadItem,
     ) : DownloadUiState
 
     data class Setup(
-        val fixture: DownloadFixture,
+        val item: DownloadItem,
         val tools: List<DownloadTool>,
-        val installing: Boolean = false,
-        val failed: Boolean = false,
+        val phase: ToolSetupPhase = ToolSetupPhase.AwaitingConsent,
     ) : DownloadUiState {
         init {
             require(tools.isNotEmpty())
+            require(tools.distinct().size == tools.size)
         }
     }
 
     data class Resolving(
-        val fixture: DownloadFixture,
-        val completesAutomatically: Boolean = true,
+        val item: DownloadItem,
     ) : DownloadUiState
 
     data class Ready(
-        val fixture: DownloadFixture,
+        val item: DownloadItem,
     ) : DownloadUiState
 
     data class Downloading(
-        val fixture: DownloadFixture,
-        val progressPercent: Int,
-    ) : DownloadUiState {
-        init {
-            require(progressPercent in 0..COMPLETE_PROGRESS_PERCENT)
-        }
-    }
+        val item: DownloadItem,
+        val progress: DownloadProgress,
+    ) : DownloadUiState
 
     data class Completed(
-        val fixture: DownloadFixture,
+        val item: DownloadItem,
     ) : DownloadUiState
 
     data class Error(
-        val fixture: DownloadFixture,
+        val item: DownloadItem,
         val kind: DownloadErrorKind = DownloadErrorKind.Download,
     ) : DownloadUiState
 }
@@ -249,15 +317,15 @@ internal val DownloadUiState.label: String
             is DownloadUiState.Error -> "Error"
         }
 
-internal val DownloadUiState.fixtureOrNull: DownloadFixture?
+internal val DownloadUiState.itemOrNull: DownloadItem?
     get() =
         when (this) {
-            is DownloadUiState.Previewing -> fixture
-            is DownloadUiState.Setup -> fixture
-            is DownloadUiState.Resolving -> fixture
-            is DownloadUiState.Ready -> fixture
-            is DownloadUiState.Downloading -> fixture
-            is DownloadUiState.Completed -> fixture
-            is DownloadUiState.Error -> fixture
+            is DownloadUiState.Previewing -> item
+            is DownloadUiState.Setup -> item
+            is DownloadUiState.Resolving -> item
+            is DownloadUiState.Ready -> item
+            is DownloadUiState.Downloading -> item
+            is DownloadUiState.Completed -> item
+            is DownloadUiState.Error -> item
             DownloadUiState.Empty -> null
         }

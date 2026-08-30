@@ -1,14 +1,17 @@
 package downlet
 
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class WindowSizingTest {
     @Test
-    fun `Windows animation preference controls motion duration`() {
-        assertEquals(1f, windowsMotionDurationScale { true })
-        assertEquals(0f, windowsMotionDurationScale { false })
-        assertEquals(0f, windowsMotionDurationScale { error("User32 unavailable") })
+    fun `Windows animation preference controls animations`() {
+        assertEquals(true, windowsAnimationsEnabled { true })
+        assertEquals(false, windowsAnimationsEnabled { false })
+        assertEquals(false, windowsAnimationsEnabled { error("User32 unavailable") })
     }
 
     @Test
@@ -23,7 +26,7 @@ class WindowSizingTest {
                 DownloadUiState.Setup(DownloadFixtures.normal, listOf(DownloadTool.YtDlp)),
                 DownloadUiState.Resolving(DownloadFixtures.normal),
                 DownloadUiState.Ready(DownloadFixtures.normal),
-                DownloadUiState.Downloading(DownloadFixtures.normal, progressPercent = 43),
+                DownloadUiState.Downloading(DownloadFixtures.normal, DownloadProgress(43)),
                 DownloadUiState.Completed(DownloadFixtures.normal),
                 DownloadUiState.Error(DownloadFixtures.failure),
             )
@@ -41,8 +44,7 @@ class WindowSizingTest {
             fitWindowBounds(
                 current = WindowBounds(x = 100, y = 100, width = 400, height = 168),
                 workArea = workArea,
-                targetWidth = 720,
-                targetHeight = 420,
+                targetSize = IntSize(720, 420),
             ),
         )
         assertEquals(
@@ -50,8 +52,7 @@ class WindowSizingTest {
             fitWindowBounds(
                 current = WindowBounds(x = 500, y = 700, width = 400, height = 168),
                 workArea = workArea,
-                targetWidth = 720,
-                targetHeight = 420,
+                targetSize = IntSize(720, 420),
             ),
         )
         assertEquals(
@@ -59,16 +60,17 @@ class WindowSizingTest {
             fitWindowBounds(
                 current = WindowBounds(x = 0, y = 0, width = 400, height = 168),
                 workArea = workArea,
-                targetWidth = 1200,
-                targetHeight = 900,
+                targetSize = IntSize(1200, 900),
             ),
         )
     }
 
     @Test
     fun `logical tier dimensions scale to native device pixels`() {
-        assertEquals(720, logicalPixelsToDevicePixels(720, density = 1f))
-        assertEquals(900, logicalPixelsToDevicePixels(720, density = 1.25f))
-        assertEquals(1080, logicalPixelsToDevicePixels(720, density = 1.5f))
+        val size = DpSize(720.dp, 420.dp)
+
+        assertEquals(IntSize(720, 420), size.toDevicePixels(density = 1f))
+        assertEquals(IntSize(900, 525), size.toDevicePixels(density = 1.25f))
+        assertEquals(IntSize(1080, 630), size.toDevicePixels(density = 1.5f))
     }
 }

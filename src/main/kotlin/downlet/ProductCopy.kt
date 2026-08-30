@@ -7,7 +7,6 @@ internal data class LegalSectionCopy(
 
 internal object ProductCopy {
     const val INVALID_LINK_MESSAGE = "Enter a valid YouTube link."
-    const val DOWNLOAD_UNAVAILABLE_MESSAGE = "Download is unavailable for this item."
     const val TOOL_SETUP_FAILURE_MESSAGE =
         "Couldn't install the required tools. Check your connection and try again."
     const val TOOL_SETUP_CONSENT_TEXT =
