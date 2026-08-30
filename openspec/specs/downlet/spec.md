@@ -46,7 +46,7 @@ Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A 
 
 ### Requirement: Ready exposes only useful choices
 
-Ready SHALL identify the resolved media with a thumbnail or stable missing-preview fallback, title, channel, duration, and provider. It SHALL expose Video or Audio, an understandable format and quality choice, the current destination with a Change action, a concise per-download authorization confirmation, a Read full terms action, and one Download action. Download SHALL remain disabled until the user selects that confirmation. It SHALL NOT expose format IDs, codecs, extractor details, raw logs, or advanced command-line options.
+Ready SHALL identify the resolved media with a thumbnail or stable missing-preview fallback, title, channel, duration, and provider. It SHALL expose visibly labelled sections for Video or Audio, an understandable format and quality choice, the current destination with a Change action, a concise per-download authorization confirmation, a Read full terms action, and one Download action. Media identity, Save to, and Permission SHALL remain full-width, while Download as and Format & quality SHALL share one row. Download SHALL remain disabled until the user selects that confirmation. It SHALL NOT expose format IDs, codecs, extractor details, raw logs, or advanced command-line options.
 
 #### Scenario: Media resolves
 
@@ -83,7 +83,7 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 
 ### Requirement: Download outcomes remain actionable
 
-Downloading SHALL preserve media context, lock choices that must not change, show determinate progress, and expose Cancel as a secondary action. Completed SHALL show the destination with Open Folder and Download Another. Error SHALL explain the failure without backend jargon and expose Retry.
+Downloading SHALL preserve media context, lock choices that must not change, show determinate progress, and expose Cancel as a secondary action. Completed SHALL show the destination with Open folder and Download another. Error SHALL explain the failure without backend jargon and expose Retry.
 
 #### Scenario: User cancels a download
 
@@ -93,7 +93,7 @@ Downloading SHALL preserve media context, lock choices that must not change, sho
 #### Scenario: Download completes
 
 - **WHEN** progress completes successfully
-- **THEN** Downlet enters Completed and offers Open Folder and Download Another
+- **THEN** Downlet enters Completed and offers Open folder and Download another
 
 #### Scenario: Download fails
 
@@ -169,7 +169,7 @@ Downlet SHALL be distributed for Windows 10 and 11 x64 as one downloadable `Down
 
 ### Requirement: Window size follows task stage
 
-The primary window SHALL use a fixed width and two automatic height tiers: Compact for Empty and Previewing, and Expanded for Setup, Resolving, Ready, Downloading, Completed, and Error. Manual resize and maximize SHALL be unavailable while ordinary minimize and close remain available. Height changes SHALL keep the URL anchor stable, remain within the active work area, and use brief interruptible motion with an equivalent instant result when motion duration is disabled.
+The primary window SHALL use a fixed `760` logical-pixel width and two automatic height tiers: Compact at `188` logical pixels for Empty and Previewing, and Expanded at `480` logical pixels for Setup, Resolving, Ready, Downloading, Completed, and Error. Manual resize and maximize SHALL be unavailable while ordinary minimize and close remain available. Height changes SHALL keep the URL anchor stable, remain within the active work area, and use brief interruptible motion with an equivalent instant result when motion duration is disabled.
 
 #### Scenario: Resolution reveals useful content
 
@@ -188,7 +188,7 @@ The primary window SHALL use a fixed width and two automatic height tiers: Compa
 
 ### Requirement: Interaction remains accessible and resilient
 
-Downlet SHALL provide logical keyboard order, visible focus, meaningful control and status semantics, understandable progress, and status communication that does not rely on color or motion alone. Essential actions SHALL remain visible in light and dark themes, with long content, missing previews, and common Windows scaling through 150 percent.
+Downlet SHALL provide logical keyboard order, visible focus, meaningful control and status semantics, understandable progress, and status communication that does not rely on color or motion alone. The visible interface SHALL use Mona Sans Variable at no less than `13sp`, keep controls Regular, and reserve SemiBold for the brand, headings, form labels, media identity, numeric progress, and important result labels. Label and action icons SHALL accompany text and remain decorative to accessibility services. Essential actions SHALL remain visible in light and dark themes, with long content, missing previews, and common Windows scaling through 150 percent.
 
 #### Scenario: User operates Downlet by keyboard
 

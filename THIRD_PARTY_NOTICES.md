@@ -9,9 +9,12 @@ After a user enters a valid URL, Downlet requests lightweight title, channel, an
 | QuickJS-NG | Bundled Windows x86-64 executable 0.16.2 | MIT | https://github.com/quickjs-ng/quickjs |
 | yt-dlp | `yt-dlp.exe` 2026.08.19 | GPLv3+ for the official Windows executable | https://github.com/yt-dlp/yt-dlp |
 | FFmpeg | Gyan Windows essentials build 9.0.1 | GPLv3 | https://www.gyan.dev/ffmpeg/builds/ |
-| Mona Sans | Bundled static Regular and SemiBold fonts 2.0.27 | SIL Open Font License 1.1 | https://github.com/github/mona-sans |
+| Mona Sans | `MonaSansVF[wdth,wght,opsz,ital].ttf` 2.0.27 | SIL Open Font License 1.1 | https://github.com/github/mona-sans |
+| IntelliJ Platform icons | Bundled SVG resources 262.9437.136 | Apache License 2.0 | https://github.com/JetBrains/intellij-community |
 
 Those licenses govern the bundled or downloaded components. Downlet's 0BSD license does not relicense them.
+
+The IntelliJ Platform icon resource artifact retains its Apache License 2.0 notice inside the bundled artifact.
 
 ## QuickJS-NG license
 

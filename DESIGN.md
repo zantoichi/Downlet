@@ -8,20 +8,24 @@ Normal launch follows the current Windows light or dark preference, with light a
 
 ## Layout
 
-- Keep one primary content column with a `720` logical-pixel preferred width and `620` minimum width.
-- Empty and Resolving use Compact `720 × 168` preferred / `620 × 156` minimum.
-- Ready, Downloading, Completed, and Error use Expanded `720 × 420` preferred / `620 × 400` minimum.
+- Keep one fixed `760` logical-pixel width.
+- Empty and Previewing use Compact `760 × 188`.
+- Setup, Resolving, Ready, Downloading, Completed, and Error use Expanded `760 × 480`.
 - Keep the URL row anchored while automatic sizing changes height only.
 - Use one inset tonal work plane for resolved media and later states. No nested cards or shadows.
+- Stack the YouTube label above its field. In Ready, keep media identity full-width, place Download as beside Format & quality, then show Save to and Permission full-width with feedback and actions at the bottom.
 
 ## Visual System
 
 - Use Jewel `IntUiTheme`, native controls, focus behavior, metrics, and semantic colors as the source of truth.
-- Use Mona Sans `14sp` Regular with `18sp` line height throughout. Reserve SemiBold for the Downlet title, media titles, headings, form labels, and important result labels.
+- Use the official Mona Sans variable font. Body and controls are `14/18sp` Regular; legal prose is `14/20sp`; form labels and metadata are `13/16sp`; media titles are `15/19sp` SemiBold; section headings are `16/20sp` SemiBold.
+- Use width `108` for the title-bar brand, `102` for headings and media titles, `100` for controls, and `94` for metadata. Match the optical-size axis to each role's point size.
+- Enable `ss03`, `ss05`, and `ss06` globally. Use tabular figures and `ss08` for durations and progress data, and disable ligatures only for URLs and filesystem paths.
 - Use accent and semantic colors only for actions, focus, selection, progress, success, warning, and error.
 - Keep the window background flat; shadows belong only to platform-managed windows, menus, popups, and dialogs.
 - Use one type family and only Regular or SemiBold. Media titles use SemiBold and at most two lines; labels stay sentence case.
 - Keep essential actions visible, text-labelled, keyboard reachable, and understandable without color.
+- Pair labelled sections and key actions with Jewel icons. Icons beside text are decorative in accessibility semantics; essential controls remain text-labelled.
 
 ## Components
 
@@ -32,7 +36,7 @@ Normal launch follows the current Windows light or dark preference, with light a
 
 ## Motion
 
-State-body replacement uses one `180–220 ms` fade with at most `6.dp` of vertical rise and `CubicBezierEasing(0.22f, 1f, 0.36f, 1f)`. Compact-to-Expanded height motion uses `250 ms`; Expanded-to-Compact uses `167 ms`.
+State-body replacement uses one `180–220 ms` fade with at most `6.dp` of vertical rise and `CubicBezierEasing(0.22f, 1f, 0.36f, 1f)`. Compact-to-Expanded height motion uses `250 ms`; Expanded-to-Compact uses `167 ms`. The success icon may fade and scale from `0.92` to `1.0` over `160 ms`.
 
 Width stays fixed, the URL anchor stays stable, and zero duration applies final content and bounds immediately. No bounce, overshoot, staggered choreography, decorative loops, or motion that carries status meaning by itself.
 
