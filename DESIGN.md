@@ -16,16 +16,17 @@ Normal launch follows the current Windows light or dark preference, with light a
 
 ## Visual System
 
-- Use Jewel `IntUiTheme`, typography, native controls, focus behavior, metrics, and semantic colors as the source of truth.
+- Use Jewel `IntUiTheme`, native controls, focus behavior, metrics, and semantic colors as the source of truth.
+- Use Mona Sans `14sp` Regular with `18sp` line height throughout. Reserve SemiBold for the Downlet title, media titles, headings, form labels, and important result labels.
 - Use accent and semantic colors only for actions, focus, selection, progress, success, warning, and error.
 - Keep the window background flat; shadows belong only to platform-managed windows, menus, popups, and dialogs.
-- Use one native UI family. Media titles may use medium emphasis and at most two lines; labels stay sentence case.
+- Use one type family and only Regular or SemiBold. Media titles use SemiBold and at most two lines; labels stay sentence case.
 - Keep essential actions visible, text-labelled, keyboard reachable, and understandable without color.
 
 ## Components
 
 - The YouTube-link field fills its row and uses native text editing; there is no visible Paste or Analyze button.
-- Ready reveals media identity, Video or Audio, quality, destination, and one primary Download action.
+- Ready reveals media identity, Video or Audio, format and quality, destination, and one primary Download action.
 - Preserve media identity while Downloading, Completed, or showing a recoverable error.
 - Missing previews keep the same 16:9 geometry and clearly communicate `Preview unavailable`.
 
