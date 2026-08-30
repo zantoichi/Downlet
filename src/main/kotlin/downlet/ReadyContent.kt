@@ -258,7 +258,8 @@ private fun QualityRow(
     compact: Boolean,
     enabled: Boolean,
 ) {
-    FormRow("Quality") {
+    val label = if (stateHolder.selectedMode == DownloadMode.Audio) "Format & quality" else "Quality"
+    FormRow(label) {
         ListComboBox(
             items = stateHolder.qualityOptions,
             selectedIndex = stateHolder.selectedQualityIndex,
@@ -266,7 +267,7 @@ private fun QualityRow(
             modifier =
                 Modifier
                     .width(if (compact) 300.dp else 336.dp)
-                    .semantics { contentDescription = "Quality: ${stateHolder.selectedQualityLabel}" },
+                    .semantics { contentDescription = "$label: ${stateHolder.selectedQualityLabel}" },
             enabled = enabled,
         )
     }

@@ -65,7 +65,12 @@ class DownloadRuntimeTest {
             videoQualityOptions.map(DownloadQuality::label),
         )
         assertEquals(
-            listOf("Best available — 251 kbps audio", "160 kbps audio", "128 kbps audio"),
+            listOf(
+                "Original audio (no conversion)",
+                "MP3 — Best quality",
+                "MP3 — 160 kbps",
+                "MP3 — 128 kbps",
+            ),
             audioQualityOptions.map(DownloadQuality::label),
         )
         assertEquals(
@@ -73,8 +78,12 @@ class DownloadRuntimeTest {
             videoQualityOptions[2].ytDlpArguments,
         )
         assertEquals(
+            listOf("--format", "ba"),
+            audioQualityOptions[0].ytDlpArguments,
+        )
+        assertEquals(
             listOf("--format", "ba/b", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "160K"),
-            audioQualityOptions[1].ytDlpArguments,
+            audioQualityOptions[2].ytDlpArguments,
         )
     }
 

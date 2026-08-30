@@ -145,6 +145,13 @@ class ProductSmokeTest {
                     mediaContentDescription(DownloadFixtures.normal, thumbnailAvailable = true),
                 ).assertExists()
 
+                onNodeWithText("Audio").performClick()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Format & quality").assertExists()
+                onNodeWithContentDescription(
+                    "Format & quality: Original audio (no conversion)",
+                ).assertExists()
+
                 onNodeWithText(ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT).performClick()
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Download").assertIsEnabled()

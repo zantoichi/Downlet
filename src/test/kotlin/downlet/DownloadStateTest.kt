@@ -462,10 +462,10 @@ class DownloadStateTest {
         holder.selectMode(DownloadMode.Audio)
         assertEquals(DownloadMode.Audio, holder.selectedMode)
         assertEquals(audioQualityOptions.map(DownloadQuality::label), holder.qualityOptions)
-        assertEquals("Best available — 251 kbps audio", holder.selectedQualityLabel)
+        assertEquals("Original audio (no conversion)", holder.selectedQualityLabel)
 
         holder.selectQuality(1)
-        assertEquals("160 kbps audio", holder.selectedQualityLabel)
+        assertEquals("MP3 — Best quality", holder.selectedQualityLabel)
 
         holder.selectMode(DownloadMode.Video)
         assertEquals("Best available — 2160p", holder.selectedQualityLabel)

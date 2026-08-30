@@ -72,9 +72,13 @@ internal val videoQualityOptions =
 
 internal val audioQualityOptions =
     listOf(
-        audioQuality(bitRateKilobitsPerSecond = 251, bestAvailable = true),
-        audioQuality(bitRateKilobitsPerSecond = 160),
-        audioQuality(bitRateKilobitsPerSecond = 128),
+        DownloadQuality(
+            label = "Original audio (no conversion)",
+            ytDlpArguments = listOf("--format", "ba"),
+        ),
+        mp3Quality(),
+        mp3Quality(bitRateKilobitsPerSecond = 160),
+        mp3Quality(bitRateKilobitsPerSecond = 128),
     )
 
 private fun videoQuality(
@@ -86,17 +90,12 @@ private fun videoQuality(
         ytDlpArguments = listOf("--format", "bv*[height<=$maxHeightPixels]+ba/b[height<=$maxHeightPixels]"),
     )
 
-private fun audioQuality(
-    bitRateKilobitsPerSecond: Int,
-    bestAvailable: Boolean = false,
-): DownloadQuality =
+private fun mp3Quality(bitRateKilobitsPerSecond: Int? = null): DownloadQuality =
     DownloadQuality(
         label =
-            if (bestAvailable) {
-                "Best available — $bitRateKilobitsPerSecond kbps audio"
-            } else {
-                "$bitRateKilobitsPerSecond kbps audio"
-            },
+            bitRateKilobitsPerSecond
+                ?.let { "MP3 — $it kbps" }
+                ?: "MP3 — Best quality",
         ytDlpArguments =
             listOf(
                 "--format",
@@ -105,7 +104,7 @@ private fun audioQuality(
                 "--audio-format",
                 "mp3",
                 "--audio-quality",
-                if (bestAvailable) "0" else "${bitRateKilobitsPerSecond}K",
+                bitRateKilobitsPerSecond?.let { "${it}K" } ?: "0",
             ),
     )
 
