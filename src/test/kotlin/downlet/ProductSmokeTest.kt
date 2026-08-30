@@ -7,6 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -148,7 +149,7 @@ class ProductSmokeTest {
                 onNodeWithContentDescription("Permission label").assertExists()
                 onNodeWithText("Video").assertExists()
                 onNodeWithContentDescription("Quality: Best available — 2160p").assertExists()
-                onNodeWithText("Download").assertIsNotEnabled()
+                onNodeWithText("Download").assertIsDisplayed().assertIsNotEnabled()
                 onNodeWithContentDescription(
                     mediaContentDescription(DownloadFixtures.normal, thumbnailAvailable = true),
                 ).assertExists()

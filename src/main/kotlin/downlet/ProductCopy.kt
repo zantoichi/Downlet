@@ -11,8 +11,7 @@ internal object ProductCopy {
         "Couldn't install the required tools. Check your connection and try again."
     const val TOOL_SETUP_CONSENT_TEXT =
         "I choose to download these tools and accept the tool terms."
-    const val DOWNLOAD_AUTHORIZATION_TEXT =
-        "I am authorized to download this media and accept responsibility for this download."
+    const val DOWNLOAD_AUTHORIZATION_TEXT = "I own this media or have permission to download it."
     const val OPEN_FOLDER_ACKNOWLEDGEMENT = "Folder opening is unavailable in this design preview."
     const val OPEN_FOLDER_FAILURE_MESSAGE = "Couldn't open the download folder."
 

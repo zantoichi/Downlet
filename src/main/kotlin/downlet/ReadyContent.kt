@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -93,9 +92,10 @@ internal fun ToolSetupContent(
             maxLines = 3,
         )
         if (state.phase == ToolSetupPhase.Failed) {
+            val errorColor = JewelTheme.globalColors.text.error
             InlineErrorBanner(
                 icon = {
-                    Icon(AllIconsKeys.General.NotificationError, contentDescription = null)
+                    Icon(AllIconsKeys.General.NotificationError, contentDescription = null, tint = errorColor)
                 },
                 modifier =
                     Modifier
@@ -106,8 +106,12 @@ internal fun ToolSetupContent(
                         },
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("Tool setup failed.", style = LocalDownletTypography.current.mediaTitle)
-                    Text(ProductCopy.TOOL_SETUP_FAILURE_MESSAGE)
+                    Text(
+                        "Tool setup failed.",
+                        color = errorColor,
+                        style = LocalDownletTypography.current.mediaTitle,
+                    )
+                    Text(ProductCopy.TOOL_SETUP_FAILURE_MESSAGE, color = errorColor)
                 }
             }
         }
@@ -134,9 +138,7 @@ internal fun ToolSetupContent(
                     onClick = stateHolder::installTools,
                     enabled = stateHolder.toolSetupEnabled,
                 ) {
-                    Icon(AllIconsKeys.Actions.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Download and continue")
+                    ButtonLabel(AllIconsKeys.Actions.Download, "Download and continue")
                 }
             }
         }
@@ -207,7 +209,6 @@ private fun LegalSection(
 internal fun DownloadWorkPlaneContent(
     stateHolder: DownloadStateHolder,
     state: DownloadUiState,
-    compact: Boolean,
     animationsEnabled: Boolean,
 ) {
     if (state is DownloadUiState.Error && state.kind == DownloadErrorKind.Resolution) {
@@ -216,11 +217,11 @@ internal fun DownloadWorkPlaneContent(
     }
     val item = state.itemOrNull ?: return
     val controlsEnabled = state is DownloadUiState.Ready
-    val controlGap = if (compact) 10.dp else 16.dp
-    val thumbnailWidth = if (compact) 96.dp else 128.dp
+    val controlGap = 8.dp
+    val thumbnailWidth = 96.dp
 
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(controlGap),
     ) {
         MediaIdentity(item, thumbnailWidth)
@@ -233,28 +234,36 @@ internal fun DownloadWorkPlaneContent(
         }
         DestinationRow(stateHolder, controlsEnabled)
         if (state is DownloadUiState.Ready) DownloadAuthorizationRow(stateHolder)
-        Spacer(Modifier.weight(1f))
         StateActionRegion(stateHolder, state, animationsEnabled)
     }
 }
 
 @Composable
 private fun DownloadAuthorizationRow(stateHolder: DownloadStateHolder) {
-    LabeledSection(
-        icon = AllIconsKeys.Nodes.Padlock,
-        label = "Permission",
+    Row(
         modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            CheckboxRow(
-                text = ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT,
-                checked = stateHolder.downloadAuthorizationAccepted,
-                onCheckedChange = stateHolder::updateDownloadAuthorization,
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 2,
-            )
-            Link("Read full terms", onClick = stateHolder::showLegalDetails)
+        Row(
+            modifier =
+                Modifier.semantics(mergeDescendants = true) {
+                    contentDescription = "Permission label"
+                },
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(AllIconsKeys.Nodes.Padlock, contentDescription = null, modifier = Modifier.size(14.dp))
+            Text("Permission", style = LocalDownletTypography.current.formLabel)
         }
+        CheckboxRow(
+            text = ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT,
+            checked = stateHolder.downloadAuthorizationAccepted,
+            onCheckedChange = stateHolder::updateDownloadAuthorization,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+        )
+        Link("Read full terms", onClick = stateHolder::showLegalDetails)
     }
 }
 
@@ -372,10 +381,9 @@ private fun ReadyActionRow(stateHolder: DownloadStateHolder) {
         DefaultButton(
             onClick = stateHolder::download,
             enabled = stateHolder.downloadEnabled,
+            modifier = Modifier.widthIn(min = 112.dp),
         ) {
-            Icon(AllIconsKeys.Actions.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Download")
+            ButtonLabel(AllIconsKeys.Actions.Download, "Download")
         }
     }
 }
@@ -469,9 +477,7 @@ private fun CompletedActionRegion(
             )
             Spacer(Modifier.width(12.dp))
             DefaultButton(onClick = stateHolder::openFolder) {
-                Icon(AllIconsKeys.Nodes.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Open folder")
+                ButtonLabel(AllIconsKeys.Nodes.Folder, "Open folder")
             }
         }
     }
@@ -494,9 +500,10 @@ private fun ErrorActionRegion(
         } else {
             "Check that the YouTube link is available and try again."
         }
+    val errorColor = JewelTheme.globalColors.text.error
     InlineErrorBanner(
         icon = {
-            Icon(AllIconsKeys.General.NotificationError, contentDescription = null)
+            Icon(AllIconsKeys.General.NotificationError, contentDescription = null, tint = errorColor)
         },
         linkActions = { action("Retry", stateHolder::retryDownload) },
         modifier =
@@ -508,8 +515,8 @@ private fun ErrorActionRegion(
                 },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, style = LocalDownletTypography.current.mediaTitle)
-            Text(body)
+            Text(title, color = errorColor, style = LocalDownletTypography.current.mediaTitle)
+            Text(body, color = errorColor)
         }
     }
 }
@@ -543,6 +550,25 @@ private fun IconLink(
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
         Link(text, onClick = onClick)
+    }
+}
+
+@Composable
+private fun ButtonLabel(
+    icon: org.jetbrains.jewel.ui.icon.IconKey,
+    text: String,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = JewelTheme.contentColor,
+        )
+        Text(text)
     }
 }
 

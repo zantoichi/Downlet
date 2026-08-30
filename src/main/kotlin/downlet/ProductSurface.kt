@@ -117,7 +117,6 @@ internal fun ProductSurface(
             )
             ProductBody(
                 stateHolder = stateHolder,
-                compact = compact,
                 workPlaneShape = workPlaneShape,
                 workPlaneFill = workPlaneFill,
                 workPlaneBorder = workPlaneBorder,
@@ -248,7 +247,6 @@ internal suspend fun expirePasteIntent(clearPasteIntent: () -> Unit) {
 @Suppress("LongMethod")
 private fun ColumnScope.ProductBody(
     stateHolder: DownloadStateHolder,
-    compact: Boolean,
     workPlaneShape: RoundedCornerShape,
     workPlaneFill: androidx.compose.ui.graphics.Color,
     workPlaneBorder: androidx.compose.ui.graphics.Color,
@@ -300,7 +298,6 @@ private fun ColumnScope.ProductBody(
                 shape = workPlaneShape,
                 fill = workPlaneFill,
                 border = workPlaneBorder,
-                compact = compact,
             ) {
                 LegalDetailsContent(stateHolder, state)
             }
@@ -337,7 +334,6 @@ private fun ColumnScope.ProductBody(
                         shape = workPlaneShape,
                         fill = workPlaneFill,
                         border = workPlaneBorder,
-                        compact = compact,
                     ) {
                         ResolvingContent(state)
                     }
@@ -348,7 +344,6 @@ private fun ColumnScope.ProductBody(
                         shape = workPlaneShape,
                         fill = workPlaneFill,
                         border = workPlaneBorder,
-                        compact = compact,
                     ) {
                         ToolSetupContent(stateHolder, state)
                     }
@@ -363,9 +358,8 @@ private fun ColumnScope.ProductBody(
                         shape = workPlaneShape,
                         fill = workPlaneFill,
                         border = workPlaneBorder,
-                        compact = compact,
                     ) {
-                        DownloadWorkPlaneContent(stateHolder, state, compact, animationsEnabled)
+                        DownloadWorkPlaneContent(stateHolder, state, animationsEnabled)
                     }
                 }
             }
@@ -378,7 +372,6 @@ private fun WorkPlane(
     shape: RoundedCornerShape,
     fill: androidx.compose.ui.graphics.Color,
     border: androidx.compose.ui.graphics.Color,
-    compact: Boolean,
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -389,7 +382,7 @@ private fun WorkPlane(
                 .background(fill)
                 .border(1.dp, border, shape)
                 .verticalScroll(rememberScrollState())
-                .padding(if (compact) 12.dp else 16.dp),
+                .padding(12.dp),
     ) {
         content()
     }
