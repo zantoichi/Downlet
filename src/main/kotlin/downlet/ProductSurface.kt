@@ -101,7 +101,7 @@ internal fun ProductSurface(
     ) {
         val compact = maxHeight < 400.dp
         val outerPadding = if (compact) 18.dp else 22.dp
-        val majorGap = 16.dp
+        val majorGap = if (compact) 8.dp else 16.dp
         val workPlaneShape = RoundedCornerShape(10.dp)
         val accent = JewelTheme.globalColors.outlines.focused
         val workPlaneFill = accent.copy(alpha = if (JewelTheme.isDark) 0.10f else 0.055f)

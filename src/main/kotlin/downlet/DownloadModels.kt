@@ -150,11 +150,8 @@ internal val videoQualityOptions =
 internal fun audioQualityOptions(originalAudio: OriginalAudio?) =
     listOf(
         DownloadQuality(
-            label =
-                "Original audio · ${originalAudio?.description ?: "format and bitrate unavailable"} · " +
-                    "no conversion",
-            supportingText =
-                "Fastest option. Keeps the available source audio without re-encoding or adding quality loss.",
+            label = "Original · ${originalAudio?.description ?: "details unavailable"}",
+            supportingText = "No conversion. Fastest option; keeps the source audio unchanged.",
             ytDlpArguments = listOf("--format", "ba"),
         ),
         mp3Quality(),
@@ -186,10 +183,9 @@ private fun mp3Quality(bitRateKilobitsPerSecond: Int? = null): DownloadQuality =
     DownloadQuality(
         label =
             bitRateKilobitsPerSecond
-                ?.let { "MP3 · $it kbps · conversion" }
-                ?: "MP3 · High-quality VBR · conversion",
-        supportingText =
-            "MP3 re-encodes for compatibility and may reduce quality. Higher bitrates cannot restore source detail.",
+                ?.let { "MP3 · $it kbps" }
+                ?: "MP3 · High-quality VBR · ~190 kbps",
+        supportingText = "Converts to MP3. Quality cannot exceed the source and may be reduced.",
         ytDlpArguments =
             listOf(
                 "--format",

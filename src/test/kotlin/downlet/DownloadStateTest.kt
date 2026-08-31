@@ -475,10 +475,10 @@ class DownloadStateTest {
             audioQualityOptions(DownloadFixtures.normal.originalAudio).map(DownloadQuality::label),
             holder.qualityOptions,
         )
-        assertEquals("Original audio · Opus/WebM · ~130 kbps · no conversion", holder.selectedQualityLabel)
+        assertEquals("Original · Opus/WebM · ~130 kbps", holder.selectedQualityLabel)
 
         holder.selectQuality(1)
-        assertEquals("MP3 · High-quality VBR · conversion", holder.selectedQualityLabel)
+        assertEquals("MP3 · High-quality VBR · ~190 kbps", holder.selectedQualityLabel)
 
         holder.selectMode(DownloadMode.Video)
         assertEquals("Best · 2160p60 · ~18.4 Mbps", holder.selectedQualityLabel)

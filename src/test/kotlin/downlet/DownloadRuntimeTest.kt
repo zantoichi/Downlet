@@ -67,10 +67,10 @@ class DownloadRuntimeTest {
         )
         assertEquals(
             listOf(
-                "Original audio · Opus/WebM · ~130 kbps · no conversion",
-                "MP3 · High-quality VBR · conversion",
-                "MP3 · 160 kbps · conversion",
-                "MP3 · 128 kbps · conversion",
+                "Original · Opus/WebM · ~130 kbps",
+                "MP3 · High-quality VBR · ~190 kbps",
+                "MP3 · 160 kbps",
+                "MP3 · 128 kbps",
             ),
             audioQualityOptions(DownloadFixtures.normal.originalAudio).map(DownloadQuality::label),
         )

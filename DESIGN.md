@@ -19,7 +19,7 @@ Normal launch follows the host system's light or dark preference, with light as 
 ## Visual System
 
 - Use Jewel `IntUiTheme`, native controls, focus behavior, metrics, and semantic colors as the source of truth.
-- Use the official Mona Sans variable font. Body and controls are `14/18sp` Regular; legal prose is `14/20sp`; form labels and metadata are `13/16sp`; media titles are `16/20sp` SemiBold; section headings are `17/21sp` SemiBold.
+- Use official Mona Sans fonts. Body and controls use the hinted static Regular font at `15/21sp`; legal prose uses static Regular at `14/20sp`; form labels and metadata are `13/16sp`; media titles are `16/20sp` SemiBold; section headings are `17/21sp` SemiBold. Variable roles remain for headings and compact metadata.
 - Use width `108` for the title-bar brand, `102` for headings and media titles, `100` for controls, and `94` for metadata. Match the optical-size axis to each role's point size.
 - Enable `ss03`, `ss05`, and `ss06` globally. Use tabular figures and `ss08` for durations and progress data, and disable ligatures only for URLs and filesystem paths.
 - Use accent and semantic colors only for actions, focus, selection, progress, success, warning, and error.

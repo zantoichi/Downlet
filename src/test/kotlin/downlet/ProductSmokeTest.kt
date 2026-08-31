@@ -162,11 +162,10 @@ class ProductSmokeTest {
                 onNodeWithText("Format & quality").assertExists()
                 onNodeWithContentDescription("Format & quality label").assertExists()
                 onNodeWithContentDescription(
-                    "Format & quality: Original audio · Opus/WebM · ~130 kbps · no conversion",
+                    "Format & quality: Original · Opus/WebM · ~130 kbps",
                 ).assertExists()
                 onNodeWithContentDescription(
-                    "Quality details: Fastest option. Keeps the available source audio without re-encoding or adding " +
-                        "quality loss.",
+                    "Quality details: No conversion. Fastest option; keeps the source audio unchanged.",
                 ).assertExists()
 
                 onNodeWithText(ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT).performClick()

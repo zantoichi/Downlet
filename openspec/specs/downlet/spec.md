@@ -56,7 +56,7 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 #### Scenario: User chooses audio output
 
 - **WHEN** the user selects Audio
-- **THEN** Original audio without conversion is selected by default and shows its source codec, container, and average bitrate, while MP3 remains available at high-quality VBR, 160 kbps, and 128 kbps quality
+- **THEN** Original audio without conversion is selected by default and shows its source codec, container, and average bitrate, while MP3 remains available at high-quality VBR around 190 kbps, 160 kbps, and 128 kbps quality
 - **AND** Downlet explains that MP3 re-encodes the source for compatibility, cannot restore missing detail, and may add quality loss
 
 #### Scenario: User changes the destination

@@ -15,7 +15,7 @@ Precise, calm, and trustworthy. Downlet should feel competent without feeling te
 1. **Paste is intent.** A valid paste starts resolution without a redundant Analyze or Enter action.
 2. **Reveal only what is useful now.** Empty and Resolving stay compact; media, choices, and destination appear after resolution.
 3. **Keep context stable.** One fixed-width window, one primary column, and one URL anchor persist across all states; height follows the task stage.
-4. **Let Jewel be the system.** Prefer Jewel controls, focus behavior, metrics, semantic colors, and icons. Use Downlet's Mona Sans variable roles for hierarchy without adding visual noise.
+4. **Let Jewel be the system.** Prefer Jewel controls, focus behavior, metrics, semantic colors, and icons. Use Downlet's Mona Sans roles for hierarchy without adding visual noise.
 5. **Keep the product small.** Add settings, history, accounts, cloud features, advanced format controls, or raw backend details only when a real user need exists.
 
 ## Visual Boundaries
