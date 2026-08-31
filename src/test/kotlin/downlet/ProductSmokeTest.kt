@@ -38,6 +38,7 @@ import kotlin.time.Duration.Companion.nanoseconds
 
 class ProductSmokeTest {
     @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
+    @Suppress("LongMethod")
     @Test
     fun `tool setup requires explicit consent`() {
         val stateScheduler = TestCoroutineScheduler()
@@ -96,6 +97,20 @@ class ProductSmokeTest {
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 onNodeWithContentDescription("Status: Checking available formats…").assertExists()
+
+                stateHolder.showDesignState(
+                    DownloadUiState.Setup(
+                        DownloadFixtures.normal,
+                        listOf(DownloadTool.YtDlp),
+                        ToolSetupPhase.Failed,
+                        ToolSetupIntent.Repair,
+                    ),
+                )
+                stateScheduler.runCurrent()
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Repair download tools").assertExists()
+                onNodeWithText(ProductCopy.TOOL_SETUP_CONSENT_TEXT).assertDoesNotExist()
+                onNodeWithText("Try repair again").assertIsEnabled()
             }
         } finally {
             stateHolder.close()
@@ -194,8 +209,8 @@ class ProductSmokeTest {
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
                 assertEquals(WindowPresentationTier.Expanded, stateHolder.state.windowPresentationTier)
-                onNodeWithText("Saved to Downloads").assertExists()
-                onNodeWithText("Open folder").assertIsEnabled()
+                onNodeWithText("Saved to ${DownloadFixtures.completedFile()}").assertExists()
+                onNodeWithText("Show in folder").assertIsEnabled()
                 onNodeWithText("Download another").performClick()
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()

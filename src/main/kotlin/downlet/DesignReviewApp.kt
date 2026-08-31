@@ -197,7 +197,16 @@ private fun ControllerWindow(
                         ) {
                             Text("Unknown transfer")
                         }
-                        OutlinedButton(onClick = { showState(DownloadUiState.Completed(DownloadFixtures.normal)) }) {
+                        OutlinedButton(
+                            onClick = {
+                                showState(
+                                    DownloadUiState.Completed(
+                                        DownloadFixtures.normal,
+                                        DownloadFixtures.completedFile(),
+                                    ),
+                                )
+                            },
+                        ) {
                             Text("Completed")
                         }
                         OutlinedButton(onClick = onReset) {
@@ -321,9 +330,29 @@ private fun ControllerWindow(
                             }
                         }
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(ToolSetupPhase.Installing, ToolSetupPhase.Failed).forEach { phase ->
+                            OutlinedButton(
+                                onClick = {
+                                    showState(
+                                        DownloadUiState.Setup(
+                                            DownloadFixtures.normal,
+                                            listOf(DownloadTool.YtDlp, DownloadTool.Ffmpeg),
+                                            phase,
+                                            ToolSetupIntent.Repair,
+                                        ),
+                                    )
+                                },
+                            ) {
+                                Text("Repair ${phase.name}")
+                            }
+                        }
+                    }
                     Text(
                         "Current state: ${state.label}" +
-                            (state as? DownloadUiState.Setup)?.let { " (${it.phase.name})" }.orEmpty(),
+                            (state as? DownloadUiState.Setup)
+                                ?.let { " (${it.intent.name} ${it.phase.name})" }
+                                .orEmpty(),
                     )
 
                     Text("Product theme")

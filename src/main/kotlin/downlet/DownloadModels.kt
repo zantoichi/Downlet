@@ -198,7 +198,13 @@ private fun mp3Quality(bitRateKilobitsPerSecond: Int? = null): DownloadQuality =
             ),
     )
 
-private val YOUTUBE_HOSTS = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be")
+private val YOUTUBE_HOSTS = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com")
+private val YOUTUBE_NO_COOKIE_HOSTS = setOf("youtube-nocookie.com", "www.youtube-nocookie.com")
+private val YOUTUBE_VIDEO_PATHS = setOf("shorts", "embed", "live")
+private val YOUTUBE_VIDEO_ID = Regex("[A-Za-z0-9_-]+")
+private const val YOUTUBE_SHORT_HOST = "youtu.be"
+private const val YOUTUBE_CANONICAL_PREFIX = "https://www.youtube.com/watch?v="
+private const val PREFIXED_VIDEO_PATH_SEGMENTS = 3
 
 @JvmInline
 internal value class YouTubeUrl private constructor(
@@ -209,20 +215,50 @@ internal value class YouTubeUrl private constructor(
     companion object {
         fun parse(value: String): YouTubeUrl? =
             try {
-                val uri = URI(value.trim())
-                if (
-                    uri.scheme?.lowercase(Locale.ROOT) in setOf("http", "https") &&
-                    uri.host?.lowercase(Locale.ROOT) in YOUTUBE_HOSTS
-                ) {
-                    YouTubeUrl(uri)
-                } else {
-                    null
-                }
+                URI(value.trim())
+                    .takeIf {
+                        it.scheme?.lowercase(Locale.ROOT) in setOf("http", "https") && it.userInfo == null
+                    }?.videoId()
+                    ?.takeIf(YOUTUBE_VIDEO_ID::matches)
+                    ?.let { YouTubeUrl(URI.create(YOUTUBE_CANONICAL_PREFIX + it)) }
             } catch (_: URISyntaxException) {
                 null
             }
     }
 }
+
+private fun URI.videoId(): String? {
+    val normalizedHost = host?.lowercase(Locale.ROOT) ?: return null
+    return when {
+        normalizedHost == YOUTUBE_SHORT_HOST -> singlePathVideoId()
+        normalizedHost in YOUTUBE_HOSTS && rawPath.orEmpty().removeSuffix("/") == "/watch" -> queryParameter("v")
+        normalizedHost in YOUTUBE_HOSTS -> prefixedPathVideoId(YOUTUBE_VIDEO_PATHS)
+        normalizedHost in YOUTUBE_NO_COOKIE_HOSTS -> prefixedPathVideoId(setOf("embed"))
+        else -> null
+    }
+}
+
+private fun URI.singlePathVideoId(): String? =
+    rawPath
+        .orEmpty()
+        .removeSuffix("/")
+        .split('/')
+        .takeIf { it.size == 2 && it.first().isEmpty() }
+        ?.last()
+
+private fun URI.prefixedPathVideoId(prefixes: Set<String>): String? =
+    rawPath
+        .orEmpty()
+        .removeSuffix("/")
+        .split('/')
+        .takeIf { it.size == PREFIXED_VIDEO_PATH_SEGMENTS && it.first().isEmpty() && it[1] in prefixes }
+        ?.last()
+
+private fun URI.queryParameter(name: String): String? =
+    rawQuery
+        ?.split('&')
+        ?.firstOrNull { it.substringBefore('=') == name }
+        ?.substringAfter('=', "")
 
 internal fun isValidYouTubeUrl(value: String): Boolean = YouTubeUrl.parse(value) != null
 
@@ -338,6 +374,8 @@ internal object DownloadFixtures {
         normal.copy(
             source = requireNotNull(YouTubeUrl.parse("https://youtu.be/downlet-preview-failure")),
         )
+
+    fun completedFile(item: DownloadItem = normal): Path = item.destination.resolve("downlet-preview.mp4")
 }
 
 internal val readyDestinations by lazy {
@@ -355,6 +393,11 @@ internal enum class ToolSetupPhase {
     Failed,
 }
 
+internal enum class ToolSetupIntent {
+    Install,
+    Repair,
+}
+
 internal sealed interface DownloadUiState {
     data object Empty : DownloadUiState
 
@@ -366,10 +409,15 @@ internal sealed interface DownloadUiState {
         val item: DownloadItem,
         val tools: List<DownloadTool>,
         val phase: ToolSetupPhase = ToolSetupPhase.AwaitingConsent,
+        val intent: ToolSetupIntent = ToolSetupIntent.Install,
     ) : DownloadUiState {
         init {
             require(tools.isNotEmpty())
             require(tools.distinct().size == tools.size)
+            require(
+                intent == ToolSetupIntent.Install ||
+                    phase in setOf(ToolSetupPhase.Installing, ToolSetupPhase.Failed),
+            )
         }
     }
 
@@ -388,6 +436,7 @@ internal sealed interface DownloadUiState {
 
     data class Completed(
         val item: DownloadItem,
+        val file: Path,
     ) : DownloadUiState
 
     data class Error(

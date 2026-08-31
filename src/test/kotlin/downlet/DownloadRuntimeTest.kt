@@ -231,21 +231,82 @@ class DownloadRuntimeTest {
     @Test
     fun `runtime skips setup for a complete PATH tool set`() =
         withTempDirectory { root ->
-            val pathDirectory = root.resolve("path")
-            executable(pathDirectory, "yt-dlp.exe")
-            val ffmpeg = ffmpegPair(pathDirectory)
-            val runtime =
-                YtDlpDownloadRuntime(
-                    toolsDirectory = root.resolve("managed"),
-                    environment = mapOf("Path" to "\"$pathDirectory\""),
-                )
+            runTest {
+                val pathDirectory = root.resolve("path")
+                executable(pathDirectory, "yt-dlp.exe")
+                val ffmpeg = ffmpegPair(pathDirectory)
+                val runtime =
+                    YtDlpDownloadRuntime(
+                        toolsDirectory = root.resolve("managed"),
+                        environment = mapOf("Path" to "\"$pathDirectory\""),
+                    )
 
-            assertEquals(emptyList(), runtime.missingTools())
-            assertEquals(
-                listOf("--ffmpeg-location", ffmpeg.directory.toString()),
-                ffmpegLocationArguments(ffmpeg),
-            )
-            assertEquals(emptyList(), ffmpegLocationArguments(null))
+                assertEquals(ToolStatus(), runtime.toolStatus())
+                assertEquals(
+                    listOf("--ffmpeg-location", ffmpeg.directory.toString()),
+                    ffmpegLocationArguments(ffmpeg),
+                )
+                assertEquals(emptyList(), ffmpegLocationArguments(null))
+            }
+        }
+
+    @Test
+    fun `managed integrity caches valid files and rehashes changed fingerprints`() =
+        withTempDirectory { root ->
+            val file = root.resolve("tool.exe")
+            Files.writeString(file, "valid")
+            val expected = sha256(file)
+            var digestCount = 0
+            val integrity =
+                ManagedToolIntegrity { path ->
+                    digestCount += 1
+                    sha256(path)
+                }
+
+            assertTrue(integrity.isValid(file, expected))
+            assertTrue(integrity.isValid(file, expected))
+            assertEquals(1, digestCount)
+
+            Files.writeString(file, "damaged file")
+            assertFalse(integrity.isValid(file, expected))
+            assertEquals(2, digestCount)
+        }
+
+    @Test
+    fun `absent managed tools are missing while incomplete installations are repairable`() =
+        withTempDirectory { root ->
+            runTest {
+                val absent = YtDlpDownloadRuntime(toolsDirectory = root.resolve("absent"), environment = emptyMap())
+                assertEquals(ToolStatus(missing = DownloadTool.entries), absent.toolStatus())
+
+                val managed = root.resolve("managed")
+                executable(managed.resolve("yt-dlp/2026.08.19"), "yt-dlp.exe")
+                executable(managed.resolve("ffmpeg/9.0.1/bin"), "ffmpeg.exe")
+                val incomplete = YtDlpDownloadRuntime(toolsDirectory = managed, environment = emptyMap())
+
+                assertEquals(ToolStatus(repairable = DownloadTool.entries), incomplete.toolStatus())
+            }
+        }
+
+    @Test
+    fun `valid PATH tools bypass damaged managed copies`() =
+        withTempDirectory { root ->
+            runTest {
+                val managed = root.resolve("managed")
+                executable(managed.resolve("yt-dlp/2026.08.19"), "yt-dlp.exe")
+                executable(managed.resolve("ffmpeg/9.0.1/bin"), "ffmpeg.exe")
+                val pathDirectory = root.resolve("path")
+                executable(pathDirectory, "yt-dlp.exe")
+                ffmpegPair(pathDirectory)
+
+                val runtime =
+                    YtDlpDownloadRuntime(
+                        toolsDirectory = managed,
+                        environment = mapOf("PATH" to pathDirectory.toString()),
+                    )
+
+                assertEquals(ToolStatus(), runtime.toolStatus())
+            }
         }
 
     @Test
@@ -273,26 +334,57 @@ class DownloadRuntimeTest {
     }
 
     @Test
-    fun `staged download publishes one file without replacing an existing target`() =
+    fun `staged download publishes collision-safe names without replacing existing targets`() =
         withTempDirectory { root ->
             val destination = Files.createDirectory(root.resolve("destination"))
             val firstOutput = Files.createDirectories(root.resolve("first-output"))
             val firstStagedFile = firstOutput.resolve("media.mp3")
             Files.writeString(firstStagedFile, "first")
 
-            val published = assertNotNull(publishStagedDownload(firstOutput, destination))
+            val firstPublished = publishStagedDownload(firstOutput, destination)
 
-            assertEquals(destination.resolve("media.mp3"), published)
-            assertEquals("first", Files.readString(published))
+            assertEquals(destination.resolve("media.mp3"), firstPublished)
+            assertEquals("first", Files.readString(firstPublished))
             assertFalse(Files.exists(firstStagedFile))
 
             val duplicateOutput = Files.createDirectories(root.resolve("duplicate-output"))
             val duplicateStagedFile = duplicateOutput.resolve("media.mp3")
-            Files.writeString(duplicateStagedFile, "replacement")
+            Files.writeString(duplicateStagedFile, "second")
 
-            assertNull(publishStagedDownload(duplicateOutput, destination))
-            assertEquals("first", Files.readString(published))
-            assertEquals("replacement", Files.readString(duplicateStagedFile))
+            val secondPublished = publishStagedDownload(duplicateOutput, destination)
+
+            assertEquals(destination.resolve("media (2).mp3"), secondPublished)
+            assertEquals("first", Files.readString(firstPublished))
+            assertEquals("second", Files.readString(secondPublished))
+
+            val thirdOutput = Files.createDirectories(root.resolve("third-output"))
+            Files.writeString(thirdOutput.resolve("media.mp3"), "third")
+
+            val thirdPublished = publishStagedDownload(thirdOutput, destination)
+
+            assertEquals(destination.resolve("media (3).mp3"), thirdPublished)
+            assertEquals("third", Files.readString(thirdPublished))
+        }
+
+    @Test
+    fun `collision suffix handles extensionless and leading-dot filenames`() =
+        withTempDirectory { root ->
+            val destination = Files.createDirectory(root.resolve("destination"))
+            Files.writeString(destination.resolve("README"), "existing")
+            Files.writeString(destination.resolve(".metadata"), "existing")
+
+            val extensionlessOutput = Files.createDirectories(root.resolve("extensionless-output"))
+            Files.writeString(extensionlessOutput.resolve("README"), "new")
+            val hiddenOutput = Files.createDirectories(root.resolve("hidden-output"))
+            Files.writeString(hiddenOutput.resolve(".metadata"), "new")
+
+            val extensionless = publishStagedDownload(extensionlessOutput, destination)
+            val hidden = publishStagedDownload(hiddenOutput, destination)
+
+            assertEquals(destination.resolve("README (2)"), extensionless)
+            assertEquals(destination.resolve(".metadata (2)"), hidden)
+            assertEquals("existing", Files.readString(destination.resolve("README")))
+            assertEquals("existing", Files.readString(destination.resolve(".metadata")))
         }
 
     @Test

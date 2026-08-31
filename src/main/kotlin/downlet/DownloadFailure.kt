@@ -1,5 +1,6 @@
 package downlet
 
+@Suppress("LongMethod")
 internal fun classifyDownloadFailure(lines: List<String>): DownloadFailureReason {
     val output = lines.joinToString("\n").lowercase()
 
@@ -12,15 +13,12 @@ internal fun classifyDownloadFailure(lines: List<String>): DownloadFailureReason
             "permission denied",
             "access is denied",
             "read-only file system",
+            "filename or extension is too long",
+            "path too long",
+            "winerror 206",
         ) -> DownloadFailureReason.Storage
 
-        hasAny(
-            "ffmpeg not found",
-            "ffprobe not found",
-            "unable to locate ffmpeg",
-            "unable to locate ffprobe",
-            "yt-dlp is not",
-        ) -> DownloadFailureReason.Tool
+        isFfmpegToolFailure(lines) || hasAny("yt-dlp is not") -> DownloadFailureReason.Tool
 
         hasAny(
             "postprocessing error",
@@ -41,6 +39,9 @@ internal fun classifyDownloadFailure(lines: List<String>): DownloadFailureReason
             "age-restricted",
             "not available in your country",
             "http error 403",
+            "http error 404",
+            "drm protected",
+            "no longer available",
         ) -> DownloadFailureReason.Availability
 
         hasAny(
@@ -51,12 +52,31 @@ internal fun classifyDownloadFailure(lines: List<String>): DownloadFailureReason
             "unable to download webpage",
             "tls",
             "certificate",
+            "http error 408",
             "http error 429",
             "too many requests",
+            "temporary failure in name resolution",
+            "name or service not known",
+            "getaddrinfo failed",
+            "could not resolve host",
+            "network is unreachable",
+            "connection aborted",
+            "remote end closed connection",
+            "broken pipe",
         ) || HTTP_SERVER_ERROR_PATTERN.containsMatchIn(output) -> DownloadFailureReason.Network
 
         else -> DownloadFailureReason.Unknown
     }
+}
+
+internal fun isFfmpegToolFailure(lines: List<String>): Boolean {
+    val output = lines.joinToString("\n").lowercase()
+    return listOf(
+        "ffmpeg not found",
+        "ffprobe not found",
+        "unable to locate ffmpeg",
+        "unable to locate ffprobe",
+    ).any(output::contains)
 }
 
 internal fun failureReasonForHttpStatus(status: Int): DownloadFailureReason =

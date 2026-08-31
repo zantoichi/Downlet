@@ -18,7 +18,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.xml.sax.SAXException
-import java.awt.Desktop
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.net.URI
@@ -31,6 +30,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 import java.util.HexFormat
 import java.util.LinkedHashMap
@@ -53,25 +53,38 @@ internal data class DownloadRequest(
     val quality: DownloadQuality,
 )
 
+internal data class ToolStatus(
+    val missing: List<DownloadTool> = emptyList(),
+    val repairable: List<DownloadTool> = emptyList(),
+) {
+    init {
+        require(missing.distinct().size == missing.size)
+        require(repairable.distinct().size == repairable.size)
+        require(missing.none(repairable::contains))
+    }
+}
+
 internal interface DownloadRuntime {
     suspend fun preview(source: YouTubeUrl): DownloadItem
 
-    fun missingTools(): List<DownloadTool> = emptyList()
+    suspend fun toolStatus(): ToolStatus = ToolStatus()
 
     suspend fun installMissingTools() = Unit
+
+    suspend fun repairManagedTools(tools: List<DownloadTool>) = Unit
 
     suspend fun resolve(source: YouTubeUrl): DownloadItem
 
     suspend fun download(
         request: DownloadRequest,
         onProgress: suspend (DownloadProgress) -> Unit,
-    )
+    ): Path
 
     fun cancel()
 
     fun chooseDestination(current: Path): Path?
 
-    fun openDestination(destination: Path): String?
+    fun showInFolder(file: Path): String?
 }
 
 internal class SessionMediaCache(
@@ -132,7 +145,7 @@ internal class PreviewDownloadRuntime : DownloadRuntime {
     override suspend fun download(
         request: DownloadRequest,
         onProgress: suspend (DownloadProgress) -> Unit,
-    ) {
+    ): Path {
         for (progress in fakeProgressSteps) {
             delay(FAKE_PROGRESS_INTERVAL)
             if (request.item.source == DownloadFixtures.failure.source && progress == PREVIEW_FAILURE_PROGRESS) {
@@ -143,6 +156,7 @@ internal class PreviewDownloadRuntime : DownloadRuntime {
         delay(FAKE_PROGRESS_INTERVAL)
         onProgress(DownloadProgress.Processing(DownloadProcessingStage.Merging))
         delay(FAKE_PROGRESS_INTERVAL)
+        return DownloadFixtures.completedFile(request.item)
     }
 
     override fun cancel() = Unit
@@ -152,7 +166,7 @@ internal class PreviewDownloadRuntime : DownloadRuntime {
         return readyDestinations[(currentIndex + 1).mod(readyDestinations.size)]
     }
 
-    override fun openDestination(destination: Path) = ProductCopy.OPEN_FOLDER_ACKNOWLEDGEMENT
+    override fun showInFolder(file: Path) = ProductCopy.SHOW_IN_FOLDER_ACKNOWLEDGEMENT
 }
 
 @Suppress("TooManyFunctions")
@@ -168,6 +182,7 @@ internal class YtDlpDownloadRuntime(
 ) : DownloadRuntime {
     private val currentProcess = AtomicReference<ProcessExecution?>()
     private val cache = SessionMediaCache()
+    private val integrity = ManagedToolIntegrity()
     private val provisionedYtDlp = toolsDirectory.resolve("yt-dlp").resolve(YT_DLP_VERSION).resolve("yt-dlp.exe")
     private val provisionedQuickJs =
         toolsDirectory.resolve("quickjs-ng").resolve(QUICKJS_VERSION).resolve("qjs.exe")
@@ -190,24 +205,30 @@ internal class YtDlpDownloadRuntime(
         }
     }
 
-    override fun missingTools(): List<DownloadTool> =
-        buildList {
-            if (ytDlpExecutable() == null) add(DownloadTool.YtDlp)
-            if (ffmpegTools() == null) add(DownloadTool.Ffmpeg)
+    override suspend fun toolStatus(): ToolStatus =
+        withContext(Dispatchers.IO) {
+            val missing = mutableListOf<DownloadTool>()
+            val repairable = mutableListOf<DownloadTool>()
+
+            if (ytDlpExecutable() == null) {
+                (if (Files.exists(provisionedYtDlp.parent)) repairable else missing) += DownloadTool.YtDlp
+            }
+            if (ffmpegTools() == null) {
+                (if (Files.exists(provisionedFfmpegDirectory)) repairable else missing) += DownloadTool.Ffmpeg
+            }
+            ToolStatus(missing, repairable)
         }
 
     override suspend fun installMissingTools() {
-        if (ytDlpExecutable() == null) installExecutable(YT_DLP_ASSET, provisionedYtDlp)
-        if (ffmpegTools() == null) {
-            installZipEntries(
-                FFMPEG_ASSET,
-                mapOf(
-                    "bin/ffmpeg.exe" to provisionedFfmpeg,
-                    "bin/ffprobe.exe" to provisionedFfprobe,
-                ),
-            )
-        }
-        if (missingTools().isNotEmpty()) throw DownloadRuntimeException()
+        installManagedTools(toolStatus().missing)
+        if (toolStatus().missing.isNotEmpty()) throw DownloadRuntimeException()
+    }
+
+    override suspend fun repairManagedTools(tools: List<DownloadTool>) {
+        require(tools.isNotEmpty() && tools.distinct().size == tools.size)
+        installManagedTools(tools)
+        val status = toolStatus()
+        if (tools.any { it in status.missing || it in status.repairable }) throw DownloadRuntimeException()
     }
 
     override suspend fun preview(source: YouTubeUrl): DownloadItem {
@@ -271,7 +292,7 @@ internal class YtDlpDownloadRuntime(
     override suspend fun download(
         request: DownloadRequest,
         onProgress: suspend (DownloadProgress) -> Unit,
-    ) {
+    ): Path {
         ensureQuickJs()
         val attempt = withContext(Dispatchers.IO) { createDownloadAttempt(request.item.destination) }
         var publishedFile: Path? = null
@@ -288,11 +309,13 @@ internal class YtDlpDownloadRuntime(
                     }
             }
             currentCoroutineContext().ensureActive()
-            publishedFile =
+            val published =
                 withContext(NonCancellable + Dispatchers.IO) {
                     publishStagedDownload(attempt.output, request.item.destination)
                 }
+            publishedFile = published
             currentCoroutineContext().ensureActive()
+            return published
         } catch (error: CancellationException) {
             withContext(NonCancellable + Dispatchers.IO) {
                 publishedFile?.let(Files::deleteIfExists)
@@ -311,10 +334,10 @@ internal class YtDlpDownloadRuntime(
 
     override fun chooseDestination(current: Path): Path? = WindowsFolderPicker.choose(current)
 
-    override fun openDestination(destination: Path): String? =
+    override fun showInFolder(file: Path): String? =
         runCatching {
-            Desktop.getDesktop().open(destination.toFile())
-        }.fold(onSuccess = { null }, onFailure = { ProductCopy.OPEN_FOLDER_FAILURE_MESSAGE })
+            ProcessBuilder("explorer.exe", "/select,${file.toAbsolutePath().normalize()}").start()
+        }.fold(onSuccess = { null }, onFailure = { ProductCopy.SHOW_IN_FOLDER_FAILURE_MESSAGE })
 
     private suspend fun requestPreview(source: YouTubeUrl): OEmbedMetadata =
         URLEncoder.encode(source.toString(), StandardCharsets.UTF_8).let { encodedUrl ->
@@ -358,9 +381,9 @@ internal class YtDlpDownloadRuntime(
         }
     }
 
-    private suspend fun ensureQuickJs() {
-        if (quickJsExecutable() != null) return
+    private suspend fun ensureQuickJs() =
         withContext(Dispatchers.IO) {
+            if (quickJsExecutable() != null) return@withContext
             val staged = stagedFile(provisionedQuickJs)
             try {
                 YtDlpDownloadRuntime::class.java.getResourceAsStream(QUICKJS_RESOURCE_PATH)?.use { input ->
@@ -369,6 +392,7 @@ internal class YtDlpDownloadRuntime(
                 requireSha256(staged, QUICKJS_SHA256)
                 moveReplacing(staged, provisionedQuickJs)
                 provisionedQuickJs.toFile().setExecutable(true)
+                integrity.invalidate(provisionedQuickJs)
             } catch (error: IOException) {
                 failRuntime(error)
             } catch (error: SecurityException) {
@@ -376,10 +400,10 @@ internal class YtDlpDownloadRuntime(
             } finally {
                 Files.deleteIfExists(staged)
             }
+            if (quickJsExecutable() == null) throw DownloadRuntimeException(reason = DownloadFailureReason.Tool)
         }
-    }
 
-    private fun downloadArguments(
+    private suspend fun downloadArguments(
         request: DownloadRequest,
         attempt: DownloadAttempt,
     ): List<String> =
@@ -411,11 +435,13 @@ internal class YtDlpDownloadRuntime(
             request.quality.ytDlpArguments +
             request.item.source.toString()
 
-    private fun commonArguments(): List<String> =
-        buildList {
-            addAll(listOf("--ignore-config", "--encoding", "UTF-8", "--no-colors", "--no-playlist"))
-            addAll(quickJsArguments(quickJsExecutable()))
-            addAll(ffmpegLocationArguments(ffmpegTools()))
+    private suspend fun commonArguments(): List<String> =
+        withContext(Dispatchers.IO) {
+            buildList {
+                addAll(listOf("--ignore-config", "--encoding", "UTF-8", "--no-colors", "--no-playlist"))
+                addAll(quickJsArguments(quickJsExecutable()))
+                addAll(ffmpegLocationArguments(ffmpegTools()))
+            }
         }
 
     private suspend fun execute(
@@ -426,13 +452,23 @@ internal class YtDlpDownloadRuntime(
             val executable =
                 ytDlpExecutable()
                     ?: throw DownloadRuntimeException(reason = DownloadFailureReason.Tool)
+            val managedYtDlpInUse =
+                runCatching {
+                    Path.of(executable).toAbsolutePath().normalize() ==
+                        provisionedYtDlp.toAbsolutePath().normalize()
+                }.getOrDefault(false)
+            val managedFfmpegInUse = arguments.contains(provisionedFfmpegDirectory.toString())
             val process =
                 try {
                     ProcessBuilder(listOf(executable) + arguments)
                         .redirectErrorStream(true)
                         .start()
                 } catch (error: IOException) {
-                    throw DownloadRuntimeException(error, DownloadFailureReason.Tool)
+                    throw DownloadRuntimeException(
+                        error,
+                        DownloadFailureReason.Tool,
+                        repairableTools = if (managedYtDlpInUse) listOf(DownloadTool.YtDlp) else emptyList(),
+                    )
                 }
             val execution = ProcessExecution(process)
             currentProcess.set(execution)
@@ -448,9 +484,20 @@ internal class YtDlpDownloadRuntime(
                 }
                 if (process.waitFor() != 0) {
                     val diagnostics = output.toList()
+                    val reason = classifyDownloadFailure(diagnostics)
                     throw DownloadRuntimeException(
-                        reason = classifyDownloadFailure(diagnostics),
+                        reason = reason,
                         diagnostics = diagnostics,
+                        repairableTools =
+                            if (
+                                reason == DownloadFailureReason.Tool &&
+                                managedFfmpegInUse &&
+                                isFfmpegToolFailure(diagnostics)
+                            ) {
+                                listOf(DownloadTool.Ffmpeg)
+                            } else {
+                                emptyList()
+                            },
                     )
                 }
                 output.toList()
@@ -461,12 +508,53 @@ internal class YtDlpDownloadRuntime(
         }
 
     private fun ytDlpExecutable(): String? =
-        resolveExecutable("DOWNLET_YT_DLP", provisionedYtDlp, "yt-dlp", environment)?.toString()
+        resolveExecutable(
+            "DOWNLET_YT_DLP",
+            provisionedYtDlp.takeIf { integrity.isValid(it, YT_DLP_ASSET.sha256) },
+            "yt-dlp",
+            environment,
+        )?.toString()
 
     private fun quickJsExecutable(): String? =
-        resolveExecutable("DOWNLET_QUICKJS", provisionedQuickJs, "qjs", environment)?.toString()
+        resolveExecutable(
+            "DOWNLET_QUICKJS",
+            provisionedQuickJs.takeIf { integrity.isValid(it, QUICKJS_SHA256) },
+            "qjs",
+            environment,
+        )?.toString()
 
-    private fun ffmpegTools(): FfmpegTools? = resolveFfmpegTools(environment, provisionedFfmpegDirectory)
+    private fun ffmpegTools(): FfmpegTools? =
+        resolveFfmpegTools(
+            environment,
+            provisionedFfmpegDirectory.takeIf {
+                integrity.isValid(provisionedFfmpeg, FFMPEG_EXECUTABLE_SHA256) &&
+                    integrity.isValid(provisionedFfprobe, FFPROBE_EXECUTABLE_SHA256)
+            },
+        )
+
+    private suspend fun installManagedTools(tools: List<DownloadTool>) {
+        tools.forEach { tool ->
+            when (tool) {
+                DownloadTool.YtDlp -> {
+                    installExecutable(YT_DLP_ASSET, provisionedYtDlp)
+                }
+
+                DownloadTool.Ffmpeg -> {
+                    installZipEntries(
+                        FFMPEG_ASSET,
+                        mapOf(
+                            "bin/ffmpeg.exe" to provisionedFfmpeg,
+                            "bin/ffprobe.exe" to provisionedFfprobe,
+                        ),
+                        mapOf(
+                            "bin/ffmpeg.exe" to FFMPEG_EXECUTABLE_SHA256,
+                            "bin/ffprobe.exe" to FFPROBE_EXECUTABLE_SHA256,
+                        ),
+                    )
+                }
+            }
+        }
+    }
 
     private suspend fun installExecutable(
         asset: ToolAsset,
@@ -477,6 +565,7 @@ internal class YtDlpDownloadRuntime(
             Files.createDirectories(target.parent)
             moveReplacing(downloaded, target)
             target.toFile().setExecutable(true)
+            integrity.invalidate(target)
         } finally {
             Files.deleteIfExists(downloaded)
         }
@@ -486,7 +575,9 @@ internal class YtDlpDownloadRuntime(
     private suspend fun installZipEntries(
         asset: ToolAsset,
         entries: Map<String, Path>,
+        expectedHashes: Map<String, String>,
     ) {
+        require(entries.keys == expectedHashes.keys)
         val downloaded = downloadVerified(asset)
         val staged = entries.mapValues { (_, target) -> stagedFile(target) }
         try {
@@ -504,10 +595,12 @@ internal class YtDlpDownloadRuntime(
                 }
             }
             if (!found.containsAll(entries.keys)) throw DownloadRuntimeException()
+            expectedHashes.forEach { (entry, expected) -> requireSha256(staged.getValue(entry), expected) }
             entries.forEach { (entry, target) ->
                 Files.createDirectories(target.parent)
                 moveReplacing(staged.getValue(entry), target)
                 target.toFile().setExecutable(true)
+                integrity.invalidate(target)
             }
         } catch (error: DownloadRuntimeException) {
             throw error
@@ -565,8 +658,50 @@ internal class DownloadRuntimeException(
     cause: Throwable? = null,
     val reason: DownloadFailureReason = DownloadFailureReason.Unknown,
     diagnostics: List<String> = emptyList(),
+    val repairableTools: List<DownloadTool> = emptyList(),
 ) : RuntimeException(cause) {
     val diagnostics: List<String> = diagnostics.takeLast(MAX_DIAGNOSTIC_LINES)
+}
+
+internal class ManagedToolIntegrity(
+    private val digest: (Path) -> String = ::sha256,
+) {
+    private data class Verification(
+        val expected: String,
+        val size: Long,
+        val modifiedMillis: Long,
+    )
+
+    private val verified = mutableMapOf<Path, Verification>()
+
+    @Synchronized
+    fun isValid(
+        path: Path,
+        expected: String,
+    ): Boolean =
+        runCatching {
+            val normalized = path.toAbsolutePath().normalize()
+            val attributes = Files.readAttributes(normalized, BasicFileAttributes::class.java)
+            if (!attributes.isRegularFile) return false
+            val verification =
+                Verification(
+                    expected.lowercase(Locale.ROOT),
+                    attributes.size(),
+                    attributes.lastModifiedTime().toMillis(),
+                )
+            if (verified[normalized] == verification) return true
+            if (!digest(normalized).equals(expected, ignoreCase = true)) {
+                verified.remove(normalized)
+                return false
+            }
+            verified[normalized] = verification
+            true
+        }.getOrDefault(false)
+
+    @Synchronized
+    fun invalidate(path: Path) {
+        verified.remove(path.toAbsolutePath().normalize())
+    }
 }
 
 private fun failRuntime(
@@ -830,6 +965,10 @@ internal fun requireSha256(
     path: Path,
     expected: String,
 ) {
+    if (!sha256(path).equals(expected, ignoreCase = true)) throw DownloadRuntimeException()
+}
+
+internal fun sha256(path: Path): String {
     val digest = MessageDigest.getInstance("SHA-256")
     Files.newInputStream(path).use { input ->
         val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
@@ -839,8 +978,7 @@ internal fun requireSha256(
             digest.update(buffer, 0, read)
         }
     }
-    val actual = HexFormat.of().formatHex(digest.digest())
-    if (!actual.equals(expected, ignoreCase = true)) throw DownloadRuntimeException()
+    return HexFormat.of().formatHex(digest.digest())
 }
 
 private fun moveReplacing(
@@ -891,6 +1029,8 @@ private const val OEMBED_ENDPOINT = "https://www.youtube.com/oembed"
 private const val YOUTUBE_THUMBNAIL_HOST = "i.ytimg.com"
 private const val QUICKJS_RESOURCE_PATH = "/tools/quickjs-ng/$QUICKJS_VERSION/qjs.exe"
 private const val QUICKJS_SHA256 = "7b27412de844403545bd151fbe49191b4d5b91a9e15b5db7c863fea54639a82b"
+private const val FFMPEG_EXECUTABLE_SHA256 = "72a489eccd008c2ec2c0a5856c5c75bc3d8bbfa90166c4566865c246445e6aa3"
+private const val FFPROBE_EXECUTABLE_SHA256 = "19202b23c0043f15ad1b7bce2344f406fd52bd6efd8f995ce02e7392a1cec52f"
 private val YT_DLP_ASSET =
     ToolAsset(
         DownloadTool.YtDlp,

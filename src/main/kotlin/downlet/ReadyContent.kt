@@ -70,26 +70,40 @@ internal fun ToolSetupContent(
     ) {
         MediaIdentity(state.item, thumbnailWidth = 128.dp, showDuration = false)
         Text(
-            text = "Prepare this download",
+            text = if (state.intent == ToolSetupIntent.Repair) "Repair download tools" else "Prepare this download",
             style = LocalDownletTypography.current.sectionHeading,
         )
         Text(
-            ProductCopy.toolSetupDescription(
-                toolNames = state.tools.map(DownloadTool::label).toReadableList(),
-                estimatedDownloadMegabytes = state.tools.sumOf(DownloadTool::estimatedDownloadMegabytes),
-            ),
+            if (state.intent == ToolSetupIntent.Repair) {
+                ProductCopy.toolRepairDescription(state.tools.map(DownloadTool::label).toReadableList())
+            } else {
+                ProductCopy.toolSetupDescription(
+                    toolNames = state.tools.map(DownloadTool::label).toReadableList(),
+                    estimatedDownloadMegabytes = state.tools.sumOf(DownloadTool::estimatedDownloadMegabytes),
+                )
+            },
         )
         Link("Read full terms", onClick = stateHolder::showLegalDetails)
-        CheckboxRow(
-            text = ProductCopy.TOOL_SETUP_CONSENT_TEXT,
-            checked = stateHolder.toolSetupAccepted,
-            onCheckedChange = stateHolder::updateToolSetupConsent,
-            enabled = state.phase != ToolSetupPhase.Installing,
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 3,
-        )
+        if (state.intent == ToolSetupIntent.Install) {
+            CheckboxRow(
+                text = ProductCopy.TOOL_SETUP_CONSENT_TEXT,
+                checked = stateHolder.toolSetupAccepted,
+                onCheckedChange = stateHolder::updateToolSetupConsent,
+                enabled = state.phase != ToolSetupPhase.Installing,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 3,
+            )
+        }
         if (state.phase == ToolSetupPhase.Failed) {
             val errorColor = JewelTheme.globalColors.text.error
+            val failureMessage =
+                if (state.intent == ToolSetupIntent.Repair) {
+                    ProductCopy.TOOL_REPAIR_FAILURE_MESSAGE
+                } else {
+                    ProductCopy.TOOL_SETUP_FAILURE_MESSAGE
+                }
+            val failureTitle =
+                if (state.intent == ToolSetupIntent.Repair) "Tool repair failed." else "Tool setup failed."
             InlineErrorBanner(
                 icon = {
                     Icon(AllIconsKeys.General.NotificationError, contentDescription = null, tint = errorColor)
@@ -98,17 +112,17 @@ internal fun ToolSetupContent(
                     Modifier
                         .fillMaxWidth()
                         .semantics {
-                            contentDescription = "Error: Tool setup failed. ${ProductCopy.TOOL_SETUP_FAILURE_MESSAGE}"
+                            contentDescription = "Error: $failureTitle $failureMessage"
                             liveRegion = LiveRegionMode.Polite
                         },
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        "Tool setup failed.",
+                        failureTitle,
                         color = errorColor,
                         style = LocalDownletTypography.current.mediaTitle,
                     )
-                    Text(ProductCopy.TOOL_SETUP_FAILURE_MESSAGE, color = errorColor)
+                    Text(failureMessage, color = errorColor)
                 }
             }
         }
@@ -121,21 +135,35 @@ internal fun ToolSetupContent(
                 Row(
                     modifier =
                         Modifier.semantics(mergeDescendants = true) {
-                            contentDescription = "Status: Downloading and verifying required tools."
+                            contentDescription =
+                                if (state.intent == ToolSetupIntent.Repair) {
+                                    "Status: Repairing and verifying managed tools."
+                                } else {
+                                    "Status: Downloading and verifying required tools."
+                                }
                             liveRegion = LiveRegionMode.Polite
                         },
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     CircularProgressIndicator()
-                    Text("Downloading and verifying tools…")
+                    Text(
+                        if (state.intent == ToolSetupIntent.Repair) {
+                            "Repairing and verifying tools…"
+                        } else {
+                            "Downloading and verifying tools…"
+                        },
+                    )
                 }
             } else {
                 DefaultButton(
                     onClick = stateHolder::installTools,
                     enabled = stateHolder.toolSetupEnabled,
                 ) {
-                    ButtonLabel(AllIconsKeys.Actions.Download, "Download and continue")
+                    ButtonLabel(
+                        AllIconsKeys.Actions.Download,
+                        if (state.intent == ToolSetupIntent.Repair) "Try repair again" else "Download and continue",
+                    )
                 }
             }
         }
@@ -368,7 +396,7 @@ private fun StateActionRegion(
     when (state) {
         is DownloadUiState.Ready -> ReadyActionRow(stateHolder)
         is DownloadUiState.Downloading -> DownloadingActionRegion(stateHolder, state, animationsEnabled)
-        is DownloadUiState.Completed -> CompletedActionRegion(stateHolder, animationsEnabled)
+        is DownloadUiState.Completed -> CompletedActionRegion(stateHolder, state, animationsEnabled)
         is DownloadUiState.Error -> ErrorActionRegion(stateHolder, state)
         else -> Unit
     }
@@ -449,6 +477,7 @@ private fun DownloadingActionRegion(
 @Composable
 private fun CompletedActionRegion(
     stateHolder: DownloadStateHolder,
+    completed: DownloadUiState.Completed,
     animationsEnabled: Boolean,
 ) {
     var successVisible by remember { mutableStateOf(!animationsEnabled) }
@@ -460,7 +489,7 @@ private fun CompletedActionRegion(
         Row(
             modifier =
                 Modifier.semantics(mergeDescendants = true) {
-                    contentDescription = "Completed. Saved to ${stateHolder.destination}"
+                    contentDescription = "Completed. Saved to ${completed.file}"
                     liveRegion = LiveRegionMode.Polite
                 },
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -478,7 +507,7 @@ private fun CompletedActionRegion(
             ) {
                 Icon(AllIconsKeys.Status.Success, contentDescription = null, modifier = Modifier.size(16.dp))
             }
-            Text("Saved to ${stateHolder.destination}", style = LocalDownletTypography.current.mediaTitle)
+            Text("Saved to ${completed.file}", style = LocalDownletTypography.current.mediaTitle)
         }
         stateHolder.completedFeedback?.let { StatusText(it) }
         Row(
@@ -492,8 +521,8 @@ private fun CompletedActionRegion(
                 onClick = stateHolder::downloadAnother,
             )
             Spacer(Modifier.width(12.dp))
-            DefaultButton(onClick = stateHolder::openFolder) {
-                ButtonLabel(AllIconsKeys.Nodes.Folder, "Open folder")
+            DefaultButton(onClick = stateHolder::showInFolder) {
+                ButtonLabel(AllIconsKeys.Nodes.Folder, "Show in folder")
             }
         }
     }

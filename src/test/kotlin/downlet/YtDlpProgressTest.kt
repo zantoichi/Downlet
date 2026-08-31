@@ -152,6 +152,24 @@ class YtDlpProgressTest {
         assertEquals(DownloadFailureReason.Processing, classifyDownloadFailure(listOf("Postprocessing error")))
         assertEquals(DownloadFailureReason.Availability, classifyDownloadFailure(listOf("Private video")))
         assertEquals(DownloadFailureReason.Network, classifyDownloadFailure(listOf("HTTP Error 503")))
+        listOf(
+            DownloadFailureReason.Storage to "OSError: [WinError 206] The filename or extension is too long",
+            DownloadFailureReason.Availability to "HTTP Error 404: Not Found",
+            DownloadFailureReason.Availability to "This video is DRM protected",
+            DownloadFailureReason.Availability to "This video is no longer available",
+            DownloadFailureReason.Network to "Temporary failure in name resolution",
+            DownloadFailureReason.Network to "socket.gaierror: getaddrinfo failed",
+            DownloadFailureReason.Network to "Network is unreachable",
+            DownloadFailureReason.Network to "Remote end closed connection without response",
+            DownloadFailureReason.Network to "Broken pipe",
+            DownloadFailureReason.Network to "HTTP Error 408: Request Timeout",
+        ).forEach { (reason, diagnostic) ->
+            assertEquals(reason, classifyDownloadFailure(listOf(diagnostic)), diagnostic)
+        }
+        assertEquals(
+            DownloadFailureReason.Unknown,
+            classifyDownloadFailure(listOf("Requested format is not available")),
+        )
         assertEquals(DownloadFailureReason.Unknown, classifyDownloadFailure(listOf("unclassified failure")))
     }
 

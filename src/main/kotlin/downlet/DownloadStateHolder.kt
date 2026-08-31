@@ -70,8 +70,8 @@ internal class DownloadStateHolder(
 
     val toolSetupAccepted: Boolean
         get() {
-            val phase = (state as? DownloadUiState.Setup)?.phase ?: return false
-            return phase != ToolSetupPhase.AwaitingConsent
+            val setup = state as? DownloadUiState.Setup ?: return false
+            return setup.intent == ToolSetupIntent.Install && setup.phase != ToolSetupPhase.AwaitingConsent
         }
 
     val downloadEnabled: Boolean
@@ -80,7 +80,11 @@ internal class DownloadStateHolder(
     val toolSetupEnabled: Boolean
         get() =
             (state as? DownloadUiState.Setup)?.let {
-                it.phase == ToolSetupPhase.ReadyToInstall || it.phase == ToolSetupPhase.Failed
+                it.phase == ToolSetupPhase.ReadyToInstall ||
+                    (
+                        it.phase == ToolSetupPhase.Failed &&
+                            (it.intent == ToolSetupIntent.Repair || toolSetupAccepted)
+                    )
             } == true
 
     val readyStatus: String?
@@ -94,6 +98,7 @@ internal class DownloadStateHolder(
     private var metadataJob: Job? = null
     private var downloadJob: Job? = null
     private var observedLinkText = ""
+    private val automaticRepairAttempts = mutableSetOf<DownloadTool>()
 
     private val availableQualities: List<DownloadQuality>
         get() =
@@ -115,6 +120,7 @@ internal class DownloadStateHolder(
                 .takeIf { it.isNotBlank() && !isValidYouTubeUrl(it) }
                 ?.let { ProductCopy.INVALID_LINK_MESSAGE }
         clearReadySelection()
+        automaticRepairAttempts.clear()
         cancelActiveWork()
         transitionTo(DownloadUiState.Empty)
         return true
@@ -127,6 +133,7 @@ internal class DownloadStateHolder(
         replaceLink(value)
         validationMessage = null
         clearReadySelection()
+        automaticRepairAttempts.clear()
         cancelActiveWork()
         transitionTo(DownloadUiState.Empty)
         startPreview(DownloadFixtures.normal.copy(source = source))
@@ -134,7 +141,7 @@ internal class DownloadStateHolder(
 
     fun updateToolSetupConsent(accepted: Boolean) {
         val setup = state as? DownloadUiState.Setup ?: return
-        if (setup.phase == ToolSetupPhase.Installing) return
+        if (setup.intent != ToolSetupIntent.Install || setup.phase == ToolSetupPhase.Installing) return
 
         state =
             setup.copy(
@@ -153,8 +160,14 @@ internal class DownloadStateHolder(
         metadataJob =
             holderScope.launch {
                 try {
-                    runtime.installMissingTools()
-                    if (runtime.missingTools().isNotEmpty()) throw DownloadRuntimeException()
+                    when (setup.intent) {
+                        ToolSetupIntent.Install -> runtime.installMissingTools()
+                        ToolSetupIntent.Repair -> runtime.repairManagedTools(setup.tools)
+                    }
+                    val status = runtime.toolStatus()
+                    if (setup.tools.any { it in status.missing || it in status.repairable }) {
+                        throw DownloadRuntimeException()
+                    }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
@@ -242,9 +255,9 @@ internal class DownloadStateHolder(
         }
     }
 
-    fun openFolder() {
+    fun showInFolder() {
         val completed = state as? DownloadUiState.Completed ?: return
-        completedFeedback = runtime.openDestination(completed.item.destination)
+        completedFeedback = runtime.showInFolder(completed.file)
     }
 
     fun downloadAnother() {
@@ -255,6 +268,7 @@ internal class DownloadStateHolder(
         linkFieldState.clearText()
         validationMessage = null
         clearReadySelection()
+        automaticRepairAttempts.clear()
         requestLinkFocus()
         transitionTo(DownloadUiState.Empty)
     }
@@ -277,6 +291,7 @@ internal class DownloadStateHolder(
         }
         this.validationMessage = validationMessage
         clearReadySelection()
+        automaticRepairAttempts.clear()
         when (state) {
             is DownloadUiState.Ready -> prepareReady()
             is DownloadUiState.Downloading -> prepareReady()
@@ -293,6 +308,7 @@ internal class DownloadStateHolder(
         holderJob.cancel()
     }
 
+    @Suppress("TooGenericExceptionCaught")
     private fun startPreview(requestItem: DownloadItem) {
         if (state !is DownloadUiState.Empty || observedLinkText != requestItem.source.toString()) return
 
@@ -314,10 +330,31 @@ internal class DownloadStateHolder(
                     }
                 if (!isCurrentPreview(requestItem, generation)) return@launch
 
-                val missingTools = runtime.missingTools()
-                if (missingTools.isNotEmpty()) {
+                val status =
+                    try {
+                        runtime.toolStatus()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        if (isCurrentPreview(requestItem, generation)) {
+                            clearReadySelection()
+                            transitionTo(
+                                DownloadUiState.Error(
+                                    previewItem,
+                                    DownloadErrorKind.Resolution,
+                                    (error as? DownloadRuntimeException)?.reason ?: DownloadFailureReason.Tool,
+                                ),
+                            )
+                        }
+                        return@launch
+                    }
+                if (status.repairable.isNotEmpty()) {
+                    startAutomaticRepair(previewItem, status.repairable, generation, DownloadErrorKind.Resolution)
+                    return@launch
+                }
+                if (status.missing.isNotEmpty()) {
                     clearReadySelection()
-                    transitionTo(DownloadUiState.Setup(previewItem, missingTools))
+                    transitionTo(DownloadUiState.Setup(previewItem, status.missing))
                     return@launch
                 }
                 resolve(previewItem, generation)
@@ -342,19 +379,30 @@ internal class DownloadStateHolder(
             throw error
         } catch (error: Exception) {
             if (isCurrentResolution(requestItem, generation)) {
+                val runtimeError = error as? DownloadRuntimeException
+                if (
+                    runtimeError != null &&
+                    startAutomaticRepair(
+                        requestItem,
+                        runtimeError.repairableTools,
+                        generation,
+                        DownloadErrorKind.Resolution,
+                    )
+                ) {
+                    return
+                }
                 clearReadySelection()
                 transitionTo(
                     DownloadUiState.Error(
                         requestItem,
                         DownloadErrorKind.Resolution,
-                        (error as? DownloadRuntimeException)?.reason ?: DownloadFailureReason.Unknown,
+                        runtimeError?.reason ?: DownloadFailureReason.Unknown,
                     ),
                 )
             }
         }
     }
 
-    @Suppress("TooGenericExceptionCaught")
     private fun startDownload(item: DownloadItem) {
         val canStart =
             state == DownloadUiState.Ready(item) ||
@@ -366,42 +414,160 @@ internal class DownloadStateHolder(
         downloadJob?.cancel()
         downloadGeneration += 1
         val generation = downloadGeneration
+        automaticRepairAttempts.clear()
         val request = DownloadRequest(item, selectedQuality)
         readyFeedback = null
         completedFeedback = null
         transitionTo(DownloadUiState.Downloading(item, DownloadProgress.Preparing))
         downloadJob =
             holderScope.launch {
-                try {
-                    runtime.download(request) { progress ->
-                        withContext(stateContext) {
-                            if (isCurrentDownload(item, generation)) {
-                                transitionTo(DownloadUiState.Downloading(item, progress))
-                            }
-                        }
-                    }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    if (isCurrentDownload(item, generation)) {
-                        downloadJob = null
-                        transitionTo(
-                            DownloadUiState.Error(
-                                item,
-                                reason =
-                                    (error as? DownloadRuntimeException)?.reason
-                                        ?: DownloadFailureReason.Unknown,
-                            ),
-                        )
-                    }
-                    return@launch
-                }
+                if (!prepareDownloadTools(item, generation)) return@launch
+                val file = runDownload(request, item, generation) ?: return@launch
                 if (isCurrentDownload(item, generation)) {
                     downloadJob = null
                     completedFeedback = null
-                    transitionTo(DownloadUiState.Completed(item))
+                    transitionTo(DownloadUiState.Completed(item, file))
                 }
             }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun prepareDownloadTools(
+        item: DownloadItem,
+        generation: Long,
+    ): Boolean {
+        val status =
+            try {
+                runtime.toolStatus()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (isCurrentDownload(item, generation)) {
+                    downloadJob = null
+                    transitionTo(
+                        DownloadUiState.Error(
+                            item,
+                            reason =
+                                (error as? DownloadRuntimeException)?.reason
+                                    ?: DownloadFailureReason.Tool,
+                        ),
+                    )
+                }
+                return false
+            }
+        return when {
+            status.repairable.isNotEmpty() -> {
+                downloadJob = null
+                startAutomaticRepair(item, status.repairable, metadataGeneration, DownloadErrorKind.Download)
+                false
+            }
+
+            status.missing.isNotEmpty() -> {
+                downloadJob = null
+                transitionTo(DownloadUiState.Setup(item, status.missing))
+                false
+            }
+
+            else -> {
+                true
+            }
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun runDownload(
+        request: DownloadRequest,
+        item: DownloadItem,
+        generation: Long,
+    ): Path? =
+        try {
+            runtime.download(request) { progress ->
+                withContext(stateContext) {
+                    if (isCurrentDownload(item, generation)) {
+                        transitionTo(DownloadUiState.Downloading(item, progress))
+                    }
+                }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (isCurrentDownload(item, generation)) {
+                downloadJob = null
+                val runtimeError = error as? DownloadRuntimeException
+                val repairStarted =
+                    runtimeError != null &&
+                        startAutomaticRepair(
+                            item,
+                            runtimeError.repairableTools,
+                            metadataGeneration,
+                            DownloadErrorKind.Download,
+                        )
+                if (!repairStarted) {
+                    transitionTo(
+                        DownloadUiState.Error(
+                            item,
+                            reason = runtimeError?.reason ?: DownloadFailureReason.Unknown,
+                        ),
+                    )
+                }
+            }
+            null
+        }
+
+    private fun startAutomaticRepair(
+        item: DownloadItem,
+        tools: List<DownloadTool>,
+        generation: Long,
+        errorKind: DownloadErrorKind,
+    ): Boolean {
+        if (tools.isEmpty()) return false
+        val orderedTools = DownloadTool.entries.filter(tools::contains)
+        if (orderedTools.any(automaticRepairAttempts::contains)) {
+            clearReadySelection()
+            transitionTo(DownloadUiState.Error(item, errorKind, DownloadFailureReason.Tool))
+        } else {
+            automaticRepairAttempts += orderedTools
+            val setup =
+                DownloadUiState.Setup(
+                    item = item,
+                    tools = orderedTools,
+                    phase = ToolSetupPhase.Installing,
+                    intent = ToolSetupIntent.Repair,
+                )
+            transitionTo(setup)
+            metadataJob =
+                holderScope.launch {
+                    try {
+                        runtime.repairManagedTools(orderedTools)
+                        val status = runtime.toolStatus()
+                        if (orderedTools.any { it in status.missing || it in status.repairable }) {
+                            throw DownloadRuntimeException()
+                        }
+                        if (status.repairable.isNotEmpty()) {
+                            if (isCurrentInstallingSetup(setup, generation)) {
+                                startAutomaticRepair(item, status.repairable, generation, errorKind)
+                            }
+                            return@launch
+                        }
+                        if (status.missing.isNotEmpty()) {
+                            if (isCurrentInstallingSetup(setup, generation)) {
+                                clearReadySelection()
+                                transitionTo(DownloadUiState.Setup(item, status.missing))
+                            }
+                            return@launch
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        if (isCurrentInstallingSetup(setup, generation)) {
+                            transitionTo(setup.copy(phase = ToolSetupPhase.Failed))
+                        }
+                        return@launch
+                    }
+                    if (isCurrentInstallingSetup(setup, generation)) resolve(item, generation)
+                }
+        }
+        return true
     }
 
     private fun isCurrentPreview(
@@ -420,6 +586,7 @@ internal class DownloadStateHolder(
             generation == metadataGeneration &&
                 it.item == setup.item &&
                 it.tools == setup.tools &&
+                it.intent == setup.intent &&
                 it.phase == ToolSetupPhase.Installing
         } == true
 
@@ -501,4 +668,5 @@ internal class DownloadStateHolder(
 private fun DownloadItem.withPreviewFrom(preview: DownloadItem): DownloadItem =
     copy(
         thumbnail = if (thumbnail is MediaThumbnail.Unavailable) preview.thumbnail else thumbnail,
+        destination = preview.destination,
     )

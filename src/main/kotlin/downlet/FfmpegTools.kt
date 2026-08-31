@@ -12,17 +12,17 @@ internal fun ffmpegLocationArguments(tools: FfmpegTools?): List<String> =
 
 internal fun resolveExecutable(
     environmentName: String,
-    provisioned: Path,
+    provisioned: Path?,
     command: String,
     environment: Map<String, String>,
 ): Path? =
     existingEnvironmentPath(environment[environmentName])
-        ?: provisioned.takeIf(Files::isRegularFile)
+        ?: provisioned?.takeIf(Files::isRegularFile)
         ?: findExecutableOnPath(command, environment)
 
 internal fun resolveFfmpegTools(
     environment: Map<String, String>,
-    provisionedDirectory: Path,
+    provisionedDirectory: Path?,
 ): FfmpegTools? {
     val overrideValues =
         listOf("DOWNLET_FFMPEG", "DOWNLET_FFPROBE")

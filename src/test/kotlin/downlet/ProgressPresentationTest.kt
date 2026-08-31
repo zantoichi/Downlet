@@ -85,7 +85,7 @@ class ProgressPresentationTest {
         )
         assertEquals(
             TaskbarProgress(TaskbarProgressState.Off),
-            taskbarProgress(DownloadUiState.Completed(DownloadFixtures.normal)),
+            taskbarProgress(DownloadUiState.Completed(DownloadFixtures.normal, DownloadFixtures.completedFile())),
         )
     }
 

@@ -22,12 +22,17 @@ Downlet SHALL present one primary Windows desktop window and keep the user's URL
 
 ### Requirement: URL input starts preview directly
 
-Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A valid pasted link SHALL begin Previewing immediately, and a valid manually typed link SHALL begin it after a short idle delay. Previewing SHALL request only lightweight YouTube identity metadata and a bounded thumbnail, SHALL download no media, and SHALL not require yt-dlp. Invalid text SHALL remain editable with concise inline validation that is visually and semantically distinct without relying on color alone. No separate Paste or Analyze action SHALL be required.
+Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A valid pasted link SHALL begin Previewing immediately, and a valid manually typed link SHALL begin it after a short idle delay. Watch, short, embed, live, `youtu.be`, and privacy-enhanced embed links for one video SHALL normalize to `https://www.youtube.com/watch?v=<id>` before preview; playlist-only, channel, profile, search, homepage, malformed, and unsupported links SHALL remain invalid. Previewing SHALL request only lightweight YouTube identity metadata and a bounded thumbnail, SHALL download no media, and SHALL not require yt-dlp. Invalid text SHALL remain editable with concise inline validation that is visually and semantically distinct without relying on color alone. No separate Paste or Analyze action SHALL be required.
 
 #### Scenario: User enters a valid link
 
 - **WHEN** the user pastes a valid YouTube URL or pauses after typing one
 - **THEN** Downlet enters Previewing without requiring Enter or another command
+
+#### Scenario: Alternate video link canonicalizes
+
+- **WHEN** the user enters a supported single-video URL with playlist, timestamp, tracking, or fragment context
+- **THEN** Downlet replaces it with the canonical HTTPS watch URL and uses that value throughout preview, caching, resolution, and download
 
 #### Scenario: Preview succeeds
 
@@ -84,7 +89,7 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 
 ### Requirement: Download outcomes remain actionable
 
-Downloading SHALL preserve media context, lock choices that must not change, and expose Cancel as a secondary action. Each attempt SHALL begin in Preparing. Transfer progress SHALL aggregate downloaded bytes across selected video and audio streams in completion order, use exact totals before estimates, remain indeterminate when no trustworthy total exists, and never move the visible fraction backward when totals change or an unexpected stream appears. It SHALL show downloaded bytes, available total, speed, and approximate ETA without fabricated placeholders. After transfer it SHALL identify Merging, Converting, or other Finalizing work with indeterminate progress. A displayed 100 percent SHALL represent transferred bytes only and SHALL NOT cause completion; only successful process exit and transactional publication SHALL enter Completed. The Windows taskbar SHALL mirror active progress when supported and otherwise remain a no-op. Completed SHALL show the destination with Open folder and Download another. Error SHALL categorize availability, network, storage, processing, tool, and unknown failures without backend jargon and SHALL expose Retry; storage failures SHALL additionally expose Change folder.
+Downloading SHALL preserve media context, lock choices that must not change, and expose Cancel as a secondary action. Each attempt SHALL begin in Preparing. Transfer progress SHALL aggregate downloaded bytes across selected video and audio streams in completion order, use exact totals before estimates, remain indeterminate when no trustworthy total exists, and never move the visible fraction backward when totals change or an unexpected stream appears. It SHALL show downloaded bytes, available total, speed, and approximate ETA without fabricated placeholders. After transfer it SHALL identify Merging, Converting, or other Finalizing work with indeterminate progress. A displayed 100 percent SHALL represent transferred bytes only and SHALL NOT cause completion; only successful process exit and transactional publication SHALL enter Completed. The Windows taskbar SHALL mirror active progress when supported and otherwise remain a no-op. Completed SHALL show the exact published path with Show in folder and Download another. Error SHALL categorize availability, network, storage, processing, tool, and unknown failures without backend jargon and SHALL expose Retry; storage failures SHALL additionally expose Change folder.
 
 #### Scenario: User cancels a download
 
@@ -94,7 +99,17 @@ Downloading SHALL preserve media context, lock choices that must not change, and
 #### Scenario: Download completes
 
 - **WHEN** progress completes successfully
-- **THEN** Downlet publishes one final media file into the chosen destination, enters Completed, and offers Open folder and Download another
+- **THEN** Downlet publishes one final media file into the chosen destination, enters Completed with its exact path, and offers Show in folder and Download another
+
+#### Scenario: Destination filename already exists
+
+- **WHEN** publication finds the requested filename already present
+- **THEN** Downlet leaves every existing file unchanged and atomically publishes as `name (2).ext`, incrementing the suffix until an unused name succeeds
+
+#### Scenario: User reveals the completed file
+
+- **WHEN** the user activates Show in folder
+- **THEN** Downlet asks Windows Explorer to select the exact path stored by Completed without reconstructing it from media metadata
 
 #### Scenario: Transfer total is unavailable
 
@@ -110,6 +125,11 @@ Downloading SHALL preserve media context, lock choices that must not change, and
 
 - **WHEN** downloading fails
 - **THEN** Downlet removes files owned by the failed attempt, enters category-specific Error guidance, and Retry restarts the download with the previous choices
+
+#### Scenario: Known diagnostics map to actionable categories
+
+- **WHEN** diagnostics identify path-length failures, HTTP 404 or DRM availability failures, or DNS and abruptly closed network failures
+- **THEN** Downlet maps them to Storage, Availability, or Network respectively while unknown and stale-format failures remain Unknown
 
 #### Scenario: Storage recovery changes destination
 
@@ -139,7 +159,7 @@ Successful preview and resolution results SHALL be cached only for the current a
 
 ### Requirement: Tool setup is explicit and verified
 
-Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required notices, but SHALL NOT include yt-dlp or FFmpeg in its distribution. After Previewing succeeds, Setup SHALL appear only when yt-dlp or FFmpeg is unavailable. Tool discovery SHALL check valid explicit environment overrides, then Downlet-managed tools under local application data, then `PATH`, and SHALL NOT scan other folders or drives. Invalid overrides SHALL fall through to the next source, and FFmpeg SHALL count as available only when `ffmpeg` and `ffprobe` are regular files in the same directory. Setup SHALL keep the media preview visible, name only the missing tools, state their approximate download size and purpose, clarify that tool setup does not download the media, leave consent unselected, and download nothing until the user selects consent and activates Download and continue. Setup SHALL expose Read full terms, which replaces the work area with preview-network, tool-license, media-responsibility, and liability information and provides Back to setup without losing the URL or consent state. Downlet SHALL retrieve pinned upstream artifacts, verify their SHA-256 hashes before installation, store them under the user's local application-data directory, and invoke them as separate processes. Editing the URL SHALL remain available as a way to leave or cancel Setup.
+Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required notices, but SHALL NOT include yt-dlp or FFmpeg in its distribution. After Previewing succeeds, Setup SHALL appear when yt-dlp or FFmpeg is unavailable or when a previously installed Downlet-managed copy requires repair. Tool discovery SHALL check valid explicit environment overrides, then integrity-verified Downlet-managed tools under local application data, then `PATH`, and SHALL NOT scan other folders or drives. Invalid overrides and invalid managed copies SHALL fall through to the next source, and FFmpeg SHALL count as available only when its co-located `ffmpeg` and `ffprobe` executables match their pinned SHA-256 hashes. Setup for missing tools SHALL keep the media preview visible, name only the missing tools, state their approximate download size and purpose, clarify that tool setup does not download the media, leave consent unselected, and download nothing until the user selects consent and activates Download and continue. A damaged or incomplete managed installation with no valid external fallback SHALL enter automatic Repair without renewed consent, replace only the affected managed tools with the same pinned and verified versions, and SHALL NOT alter overrides or `PATH` tools. Bundled QuickJS-NG SHALL repair locally without network access. Setup SHALL expose Read full terms, which replaces the work area with preview-network, tool-license, media-responsibility, and liability information and provides Back to setup without losing the URL or consent state. Downlet SHALL retrieve pinned upstream artifacts, verify their SHA-256 hashes before installation, store them under the user's local application-data directory, and invoke them as separate processes. Editing the URL SHALL remain available as a way to leave or cancel Setup or Repair.
 
 #### Scenario: User declines tool setup
 
@@ -156,10 +176,30 @@ Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required not
 - **WHEN** valid yt-dlp and co-located FFmpeg and ffprobe executables are available through an override, Downlet-managed storage, or `PATH`
 - **THEN** Downlet bypasses Setup and continues resolving without downloading replacement tools
 
+#### Scenario: Managed tool is damaged
+
+- **WHEN** an existing Downlet-managed yt-dlp or FFmpeg installation fails integrity validation and no valid override or `PATH` fallback exists
+- **THEN** Downlet enters automatic Repair, downloads only the affected pinned tool, verifies it before replacement, re-resolves the media, preserves the destination, and returns to Ready with default choices and fresh download authorization
+
+#### Scenario: Bundled QuickJS is damaged
+
+- **WHEN** the managed QuickJS executable fails integrity validation
+- **THEN** Downlet restores it from the bundled verified resource without network access or consent
+
+#### Scenario: External tool fails
+
+- **WHEN** an override or `PATH` tool cannot run
+- **THEN** Downlet reports a Tool error without changing, deleting, or replacing that external tool
+
 #### Scenario: Verification or installation fails
 
 - **WHEN** a tool download, hash verification, or installation fails
 - **THEN** Setup reports a concise failure and allows the user to try again without exposing backend output
+
+#### Scenario: Automatic repair fails repeatedly
+
+- **WHEN** automatic Repair fails or the repaired tool fails again in the same operation
+- **THEN** Downlet allows an explicit repair retry after installation failure and otherwise reports a recoverable Tool error without looping or restarting the media download
 
 ### Requirement: Windows distribution is portable and self-contained
 

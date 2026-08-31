@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -54,8 +55,9 @@ class DownloadStateTest {
         item: DownloadItem = DownloadFixtures.normal,
         tools: List<DownloadTool> = listOf(DownloadTool.YtDlp, DownloadTool.Ffmpeg),
         phase: ToolSetupPhase = ToolSetupPhase.AwaitingConsent,
+        intent: ToolSetupIntent = ToolSetupIntent.Install,
     ) {
-        showDesignState(DownloadUiState.Setup(item, tools, phase))
+        showDesignState(DownloadUiState.Setup(item, tools, phase, intent))
     }
 
     private fun DownloadStateHolder.showResolving(item: DownloadItem = DownloadFixtures.normal) {
@@ -69,9 +71,14 @@ class DownloadStateTest {
         showDesignState(DownloadUiState.Downloading(item, progress))
     }
 
-    private fun DownloadStateHolder.showCompleted(item: DownloadItem = DownloadFixtures.normal) {
-        showDesignState(DownloadUiState.Completed(item))
+    private fun DownloadStateHolder.showCompleted(
+        item: DownloadItem = DownloadFixtures.normal,
+        file: Path = DownloadFixtures.completedFile(item),
+    ) {
+        showDesignState(DownloadUiState.Completed(item, file))
     }
+
+    private fun canonicalUrl(value: String): String = requireNotNull(YouTubeUrl.parse(value)).toString()
 
     private fun DownloadStateHolder.startAuthorizedDownload() {
         updateDownloadAuthorization(true)
@@ -91,7 +98,7 @@ class DownloadStateTest {
                 DownloadUiState.Resolving(normal),
                 DownloadUiState.Ready(normal),
                 DownloadUiState.Downloading(normal, transferProgress(43)),
-                DownloadUiState.Completed(normal),
+                DownloadUiState.Completed(normal, DownloadFixtures.completedFile(normal)),
                 DownloadUiState.Error(failure),
             ).map(DownloadUiState::label)
 
@@ -107,10 +114,11 @@ class DownloadStateTest {
             val runtime = ControlledPreviewRuntime(listOf(DownloadTool.YtDlp, DownloadTool.Ffmpeg))
             val holder = testHolder(runtime)
             val sourceUrl = "https://youtu.be/setup"
+            val canonicalUrl = canonicalUrl(sourceUrl)
 
             holder.beginResolution(sourceUrl)
             runCurrent()
-            assertEquals(sourceUrl, (holder.state as DownloadUiState.Previewing).item.source.toString())
+            assertEquals(canonicalUrl, (holder.state as DownloadUiState.Previewing).item.source.toString())
             runtime.completePreview()
             runCurrent()
             assertEquals(
@@ -132,10 +140,10 @@ class DownloadStateTest {
             runCurrent()
 
             assertEquals(1, runtime.installCount)
-            assertEquals(sourceUrl, (holder.state as DownloadUiState.Resolving).item.source.toString())
+            assertEquals(canonicalUrl, (holder.state as DownloadUiState.Resolving).item.source.toString())
             advanceTimeBy(FAKE_RESOLUTION_DELAY)
             runCurrent()
-            assertEquals(sourceUrl, (holder.state as DownloadUiState.Ready).item.source.toString())
+            assertEquals(canonicalUrl, (holder.state as DownloadUiState.Ready).item.source.toString())
         }
 
     @Test
@@ -144,18 +152,176 @@ class DownloadStateTest {
             val runtime = ControlledPreviewRuntime()
             val holder = testHolder(runtime)
             val sourceUrl = "https://youtu.be/already-ready"
+            val canonicalUrl = canonicalUrl(sourceUrl)
 
             holder.beginResolution(sourceUrl)
             runCurrent()
-            assertEquals(sourceUrl, (holder.state as DownloadUiState.Previewing).item.source.toString())
+            assertEquals(canonicalUrl, (holder.state as DownloadUiState.Previewing).item.source.toString())
 
             runtime.completePreview()
             runCurrent()
-            assertEquals(sourceUrl, (holder.state as DownloadUiState.Resolving).item.source.toString())
+            assertEquals(canonicalUrl, (holder.state as DownloadUiState.Resolving).item.source.toString())
 
             advanceTimeBy(FAKE_RESOLUTION_DELAY)
             runCurrent()
-            assertEquals(sourceUrl, (holder.state as DownloadUiState.Ready).item.source.toString())
+            assertEquals(canonicalUrl, (holder.state as DownloadUiState.Ready).item.source.toString())
+        }
+
+    @Test
+    fun `damaged managed tools repair automatically after preview`() =
+        runTest {
+            val runtime = ControlledRepairRuntime(ToolStatus(repairable = listOf(DownloadTool.YtDlp)))
+            val holder = testHolder(runtime)
+
+            holder.beginResolution("https://youtu.be/repair-preview")
+            runCurrent()
+
+            assertEquals(
+                DownloadUiState.Setup(
+                    DownloadFixtures.normal.copy(
+                        source = requireNotNull(YouTubeUrl.parse("https://youtu.be/repair-preview")),
+                    ),
+                    listOf(DownloadTool.YtDlp),
+                    ToolSetupPhase.Installing,
+                    ToolSetupIntent.Repair,
+                ),
+                holder.state,
+            )
+            assertFalse(holder.toolSetupAccepted)
+            assertFalse(holder.toolSetupEnabled)
+
+            runtime.completeRepair()
+            runCurrent()
+            assertTrue(holder.state is DownloadUiState.Resolving)
+            advanceTimeBy(FAKE_RESOLUTION_DELAY)
+            runCurrent()
+
+            assertTrue(holder.state is DownloadUiState.Ready)
+            assertEquals(1, runtime.repairCount)
+        }
+
+    @Test
+    fun `failed automatic repair retries without consent`() =
+        runTest {
+            val runtime =
+                ControlledRepairRuntime(
+                    ToolStatus(repairable = listOf(DownloadTool.Ffmpeg)),
+                    failRepair = true,
+                ).also(ControlledRepairRuntime::completeRepair)
+            val holder = testHolder(runtime)
+
+            holder.beginResolution("https://youtu.be/repair-retry")
+            runCurrent()
+
+            val failed = holder.state as DownloadUiState.Setup
+            assertEquals(ToolSetupIntent.Repair, failed.intent)
+            assertEquals(ToolSetupPhase.Failed, failed.phase)
+            assertFalse(holder.toolSetupAccepted)
+            assertTrue(holder.toolSetupEnabled)
+
+            runtime.failRepair = false
+            holder.installTools()
+            runCurrent()
+            assertTrue(holder.state is DownloadUiState.Resolving)
+            advanceTimeBy(FAKE_RESOLUTION_DELAY)
+            runCurrent()
+
+            assertTrue(holder.state is DownloadUiState.Ready)
+            assertEquals(2, runtime.repairCount)
+        }
+
+    @Test
+    fun `automatic repair returns to consent setup for another missing tool`() =
+        runTest {
+            val runtime =
+                ControlledRepairRuntime(
+                    initialStatus = ToolStatus(repairable = listOf(DownloadTool.YtDlp)),
+                    statusAfterRepair = ToolStatus(missing = listOf(DownloadTool.Ffmpeg)),
+                ).also(ControlledRepairRuntime::completeRepair)
+            val holder = testHolder(runtime)
+
+            holder.beginResolution("https://youtu.be/mixed-tools")
+            runCurrent()
+
+            assertEquals(
+                DownloadUiState.Setup(
+                    item =
+                        DownloadFixtures.normal.copy(
+                            source = requireNotNull(YouTubeUrl.parse("https://youtu.be/mixed-tools")),
+                        ),
+                    tools = listOf(DownloadTool.Ffmpeg),
+                ),
+                holder.state,
+            )
+            assertFalse(holder.toolSetupAccepted)
+            assertFalse(holder.toolSetupEnabled)
+        }
+
+    @Test
+    fun `repair during download preserves destination and returns ready without resuming`() =
+        runTest {
+            val runtime = ControlledRepairRuntime(failDownloadWithManagedTool = true)
+            val holder = testHolder(runtime)
+            holder.showReady()
+            holder.selectMode(DownloadMode.Audio)
+            holder.selectQuality(1)
+            holder.changeDestination()
+            val destination = requireNotNull(holder.destination)
+
+            holder.startAuthorizedDownload()
+            runCurrent()
+
+            val repairing = holder.state as DownloadUiState.Setup
+            assertEquals(ToolSetupIntent.Repair, repairing.intent)
+            assertEquals(ToolSetupPhase.Installing, repairing.phase)
+            runtime.completeRepair()
+            runCurrent()
+            advanceTimeBy(FAKE_RESOLUTION_DELAY)
+            runCurrent()
+
+            assertTrue(holder.state is DownloadUiState.Ready)
+            assertEquals(destination, holder.destination)
+            assertEquals(DownloadMode.Video, holder.selectedMode)
+            assertEquals(0, holder.selectedQualityIndex)
+            assertFalse(holder.downloadAuthorizationAccepted)
+            assertEquals(1, runtime.downloadCount)
+        }
+
+    @Test
+    fun `repeated managed failure after repair becomes a tool error`() =
+        runTest {
+            val runtime =
+                ControlledRepairRuntime(
+                    ToolStatus(repairable = listOf(DownloadTool.YtDlp)),
+                    failResolveWithManagedTool = true,
+                ).also(ControlledRepairRuntime::completeRepair)
+            val holder = testHolder(runtime)
+
+            holder.beginResolution("https://youtu.be/repeated-repair")
+            runCurrent()
+
+            assertEquals(
+                DownloadFailureReason.Tool,
+                (holder.state as DownloadUiState.Error).reason,
+            )
+            assertEquals(1, runtime.repairCount)
+        }
+
+    @Test
+    fun `editing the url cancels automatic repair`() =
+        runTest {
+            val runtime = ControlledRepairRuntime(ToolStatus(repairable = listOf(DownloadTool.YtDlp)))
+            val holder = testHolder(runtime)
+
+            holder.beginResolution("https://youtu.be/cancel-repair")
+            runCurrent()
+            assertTrue(holder.state is DownloadUiState.Setup)
+
+            assertTrue(holder.observeLinkEdit("https://youtu.be/replacement"))
+            runtime.completeRepair()
+            runCurrent()
+
+            assertEquals(DownloadUiState.Empty, holder.state)
         }
 
     @Test
@@ -170,7 +336,7 @@ class DownloadStateTest {
             runCurrent()
 
             assertEquals(DownloadErrorKind.Resolution, (holder.state as DownloadUiState.Error).kind)
-            assertEquals(0, runtime.missingToolsCount)
+            assertEquals(0, runtime.toolStatusCount)
             assertEquals(0, runtime.installCount)
         }
 
@@ -232,13 +398,23 @@ class DownloadStateTest {
 
     @Test
     @Suppress("HttpUrlsUsage")
-    fun `youtube url validation accepts only supported hosts and schemes`() {
+    fun `youtube url parser canonicalizes supported single-video forms`() {
+        val videoId = "dQw4w9WgXcQ"
+        val canonical = "https://www.youtube.com/watch?v=$videoId"
+
         listOf(
-            "https://youtube.com/watch?v=one",
-            "https://www.youtube.com/watch?v=two",
-            "http://m.youtube.com/watch?v=three",
-            "https://youtu.be/four",
-        ).forEach { assertTrue(isValidYouTubeUrl(it), it) }
+            "https://youtube.com/watch?feature=share&v=$videoId&t=43#fragment",
+            "https://www.youtube.com/watch?v=$videoId",
+            "http://m.youtube.com/watch?v=$videoId",
+            "https://music.youtube.com/watch?v=$videoId&list=RDignored",
+            "https://youtu.be/$videoId?t=43",
+            "https://youtube.com/shorts/$videoId?si=ignored",
+            "https://youtube.com/embed/$videoId",
+            "https://youtube.com/live/$videoId?feature=share",
+            "https://www.youtube-nocookie.com/embed/$videoId",
+        ).forEach { value ->
+            assertEquals(canonical, YouTubeUrl.parse(value)?.toString(), value)
+        }
 
         listOf(
             "",
@@ -247,6 +423,17 @@ class DownloadStateTest {
             "https://youtube.example/video",
             "https://youtube.com.evil.example/video",
             "https:///missing-host",
+            "https://youtu.be",
+            "https://youtu.be/$videoId/extra",
+            "https://youtube.com",
+            "https://youtube.com/watch",
+            "https://youtube.com/watch?list=playlist",
+            "https://youtube.com/playlist?list=playlist",
+            "https://youtube.com/@channel",
+            "https://youtube.com/results?search_query=video",
+            "https://youtube.com/watch?v=invalid.value",
+            "https://www.youtube-nocookie.com/watch?v=$videoId",
+            "https://user@youtube.com/watch?v=$videoId",
         ).forEach { assertFalse(isValidYouTubeUrl(it), it) }
     }
 
@@ -264,13 +451,18 @@ class DownloadStateTest {
             }
             runCurrent()
 
-            val pastedUrl = "https://youtu.be/pasted"
+            val pastedUrl = "https://youtu.be/pasted?si=ignored"
+            val pastedCanonical = canonicalUrl(pastedUrl)
             holder.linkFieldState.setTextAndPlaceCursorAtEnd(pastedUrl)
             Snapshot.sendApplyNotifications()
             runCurrent()
-            assertEquals(pastedUrl, (holder.state as DownloadUiState.Resolving).item.source.toString())
+            assertEquals(pastedCanonical, holder.linkFieldState.text.toString())
+            assertEquals(pastedCanonical, (holder.state as DownloadUiState.Resolving).item.source.toString())
+            Snapshot.sendApplyNotifications()
+            runCurrent()
 
-            val typedUrl = "${pastedUrl}x"
+            val typedUrl = "${pastedCanonical}x"
+            val typedCanonical = canonicalUrl(typedUrl)
             holder.linkFieldState.setTextAndPlaceCursorAtEnd(typedUrl)
             Snapshot.sendApplyNotifications()
             runCurrent()
@@ -278,7 +470,7 @@ class DownloadStateTest {
             assertEquals(DownloadUiState.Empty, holder.state)
             advanceTimeBy(1.milliseconds)
             runCurrent()
-            assertEquals(typedUrl, (holder.state as DownloadUiState.Resolving).item.source.toString())
+            assertEquals(typedCanonical, (holder.state as DownloadUiState.Resolving).item.source.toString())
         }
 
     @Test
@@ -297,10 +489,10 @@ class DownloadStateTest {
             runCurrent()
 
             advanceTimeBy(PASTE_INTENT_LIFETIME)
-            holder.linkFieldState.setTextAndPlaceCursorAtEnd("https://youtu.b")
+            holder.linkFieldState.setTextAndPlaceCursorAtEnd("https://youtu.be/typed.")
             Snapshot.sendApplyNotifications()
             runCurrent()
-            val typedUrl = "https://youtu.be"
+            val typedUrl = "https://youtu.be/typed"
             holder.linkFieldState.setTextAndPlaceCursorAtEnd(typedUrl)
             Snapshot.sendApplyNotifications()
             runCurrent()
@@ -309,7 +501,7 @@ class DownloadStateTest {
             assertEquals(DownloadUiState.Empty, holder.state)
             advanceTimeBy(1.milliseconds)
             runCurrent()
-            assertEquals(typedUrl, (holder.state as DownloadUiState.Resolving).item.source.toString())
+            assertEquals(canonicalUrl(typedUrl), (holder.state as DownloadUiState.Resolving).item.source.toString())
         }
 
     @Test
@@ -341,7 +533,7 @@ class DownloadStateTest {
             assertEquals(DownloadUiState.Empty, holder.state)
             advanceTimeBy(1.milliseconds)
             runCurrent()
-            assertEquals(newerUrl, (holder.state as DownloadUiState.Resolving).item.source.toString())
+            assertEquals(canonicalUrl(newerUrl), (holder.state as DownloadUiState.Resolving).item.source.toString())
         }
 
     @Test
@@ -405,13 +597,14 @@ class DownloadStateTest {
             }
             runCurrent()
             val validUrl = "https://youtu.be/quiet-transfer"
+            val canonicalUrl = canonicalUrl(validUrl)
 
             holder.linkFieldState.setTextAndPlaceCursorAtEnd(validUrl)
             Snapshot.sendApplyNotifications()
             runCurrent()
             val resolving = holder.state as DownloadUiState.Resolving
-            assertEquals(validUrl, holder.linkFieldState.text.toString())
-            assertEquals(validUrl, resolving.item.source.toString())
+            assertEquals(canonicalUrl, holder.linkFieldState.text.toString())
+            assertEquals(canonicalUrl, resolving.item.source.toString())
             assertNull(holder.validationMessage)
 
             advanceTimeBy(FAKE_RESOLUTION_DELAY)
@@ -569,7 +762,10 @@ class DownloadStateTest {
 
             advanceTimeBy(FAKE_PROGRESS_INTERVAL)
             runCurrent()
-            assertEquals(DownloadUiState.Completed(DownloadFixtures.normal), holder.state)
+            assertEquals(
+                DownloadUiState.Completed(DownloadFixtures.normal, DownloadFixtures.completedFile()),
+                holder.state,
+            )
         }
 
     @Test
@@ -592,6 +788,28 @@ class DownloadStateTest {
             advanceTimeBy(FAKE_PROGRESS_INTERVAL)
             runCurrent()
             assertEquals(DownloadUiState.Error(DownloadFixtures.failure), holder.state)
+        }
+
+    @Test
+    fun `publication failure enters error instead of completed`() =
+        runTest {
+            val runtime =
+                object : DownloadRuntime by PreviewDownloadRuntime() {
+                    override suspend fun download(
+                        request: DownloadRequest,
+                        onProgress: suspend (DownloadProgress) -> Unit,
+                    ): Path = throw DownloadRuntimeException(reason = DownloadFailureReason.Storage)
+                }
+            val holder = testHolder(runtime)
+            holder.showReady()
+
+            holder.startAuthorizedDownload()
+            runCurrent()
+
+            assertEquals(
+                DownloadUiState.Error(DownloadFixtures.normal, reason = DownloadFailureReason.Storage),
+                holder.state,
+            )
         }
 
     @Test
@@ -676,13 +894,23 @@ class DownloadStateTest {
         }
 
     @Test
-    fun `open folder acknowledges without leaving completed and download another resets focus`() {
-        val holder = immediateHolder()
-        holder.showCompleted()
+    fun `show in folder uses exact completed path without leaving completed`() {
+        val shownFiles = mutableListOf<Path>()
+        val runtime =
+            object : DownloadRuntime by PreviewDownloadRuntime() {
+                override fun showInFolder(file: Path): String? {
+                    shownFiles.add(file)
+                    return ProductCopy.SHOW_IN_FOLDER_ACKNOWLEDGEMENT
+                }
+            }
+        val holder = immediateHolder(runtime)
+        val completedFile = DownloadFixtures.completedFile()
+        holder.showCompleted(file = completedFile)
 
-        holder.openFolder()
-        assertEquals(DownloadUiState.Completed(DownloadFixtures.normal), holder.state)
-        assertEquals(ProductCopy.OPEN_FOLDER_ACKNOWLEDGEMENT, holder.completedFeedback)
+        holder.showInFolder()
+        assertEquals(listOf(completedFile), shownFiles)
+        assertEquals(DownloadUiState.Completed(DownloadFixtures.normal, completedFile), holder.state)
+        assertEquals(ProductCopy.SHOW_IN_FOLDER_ACKNOWLEDGEMENT, holder.completedFeedback)
 
         val focusRequest = holder.linkFocusRequest
         holder.downloadAnother()
@@ -718,7 +946,10 @@ class DownloadStateTest {
             holder.showCompleted()
             advanceTimeBy(FAKE_PROGRESS_INTERVAL * 6)
             runCurrent()
-            assertEquals(DownloadUiState.Completed(DownloadFixtures.normal), holder.state)
+            assertEquals(
+                DownloadUiState.Completed(DownloadFixtures.normal, DownloadFixtures.completedFile()),
+                holder.state,
+            )
 
             holder.showReady()
             holder.startAuthorizedDownload()
@@ -822,7 +1053,7 @@ class DownloadStateTest {
         var installCount = 0
             private set
 
-        var missingToolsCount = 0
+        var toolStatusCount = 0
             private set
 
         fun completePreview() {
@@ -835,13 +1066,67 @@ class DownloadStateTest {
             return DownloadFixtures.normal.copy(source = source)
         }
 
-        override fun missingTools(): List<DownloadTool> {
-            missingToolsCount += 1
-            return if (installCount == 0) tools else emptyList()
+        override suspend fun toolStatus(): ToolStatus {
+            toolStatusCount += 1
+            return if (installCount == 0) ToolStatus(missing = tools) else ToolStatus()
         }
 
         override suspend fun installMissingTools() {
             installCount += 1
+        }
+    }
+
+    private class ControlledRepairRuntime(
+        initialStatus: ToolStatus = ToolStatus(),
+        var failRepair: Boolean = false,
+        private val failDownloadWithManagedTool: Boolean = false,
+        private val failResolveWithManagedTool: Boolean = false,
+        private val statusAfterRepair: ToolStatus = ToolStatus(),
+    ) : DownloadRuntime by PreviewDownloadRuntime() {
+        private val repairGate = CompletableDeferred<Unit>()
+        private var status = initialStatus
+
+        var repairCount = 0
+            private set
+
+        var downloadCount = 0
+            private set
+
+        fun completeRepair() {
+            repairGate.complete(Unit)
+        }
+
+        override suspend fun toolStatus(): ToolStatus = status
+
+        override suspend fun repairManagedTools(tools: List<DownloadTool>) {
+            repairCount += 1
+            repairGate.await()
+            if (failRepair) throw DownloadRuntimeException(reason = DownloadFailureReason.Tool)
+            status = statusAfterRepair
+        }
+
+        override suspend fun resolve(source: YouTubeUrl): DownloadItem {
+            if (failResolveWithManagedTool) {
+                throw DownloadRuntimeException(
+                    reason = DownloadFailureReason.Tool,
+                    repairableTools = listOf(DownloadTool.YtDlp),
+                )
+            }
+            return PreviewDownloadRuntime().resolve(source)
+        }
+
+        override suspend fun download(
+            request: DownloadRequest,
+            onProgress: suspend (DownloadProgress) -> Unit,
+        ): Path {
+            downloadCount += 1
+            if (failDownloadWithManagedTool) {
+                throw DownloadRuntimeException(
+                    reason = DownloadFailureReason.Tool,
+                    repairableTools = listOf(DownloadTool.YtDlp),
+                )
+            }
+            return PreviewDownloadRuntime().download(request, onProgress)
         }
     }
 
@@ -851,9 +1136,9 @@ class DownloadStateTest {
         override suspend fun download(
             request: DownloadRequest,
             onProgress: suspend (DownloadProgress) -> Unit,
-        ) {
+        ): Path {
             progressCallbacks += onProgress
-            CompletableDeferred<Unit>().await()
+            return CompletableDeferred<Path>().await()
         }
     }
 }

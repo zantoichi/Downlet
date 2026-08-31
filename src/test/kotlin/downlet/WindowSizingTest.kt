@@ -24,13 +24,19 @@ class WindowSizingTest {
         val expandedStates =
             listOf(
                 DownloadUiState.Setup(DownloadFixtures.normal, listOf(DownloadTool.YtDlp)),
+                DownloadUiState.Setup(
+                    DownloadFixtures.normal,
+                    listOf(DownloadTool.YtDlp),
+                    ToolSetupPhase.Installing,
+                    ToolSetupIntent.Repair,
+                ),
                 DownloadUiState.Resolving(DownloadFixtures.normal),
                 DownloadUiState.Ready(DownloadFixtures.normal),
                 DownloadUiState.Downloading(
                     DownloadFixtures.normal,
                     DownloadProgress.Transferring(downloadedBytes = 43, totalBytes = 100, fraction = 0.43f),
                 ),
-                DownloadUiState.Completed(DownloadFixtures.normal),
+                DownloadUiState.Completed(DownloadFixtures.normal, DownloadFixtures.completedFile()),
                 DownloadUiState.Error(DownloadFixtures.failure),
             )
 

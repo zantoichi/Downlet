@@ -14,11 +14,13 @@ internal object ProductCopy {
     const val INVALID_LINK_MESSAGE = "Enter a valid YouTube link."
     const val TOOL_SETUP_FAILURE_MESSAGE =
         "Couldn't install the required tools. Check your connection and try again."
+    const val TOOL_REPAIR_FAILURE_MESSAGE =
+        "Couldn't repair the required tools. Check your connection and try again."
     const val TOOL_SETUP_CONSENT_TEXT =
         "I choose to download these tools and accept the tool terms."
     const val DOWNLOAD_AUTHORIZATION_TEXT = "I own this media or have permission to download it."
-    const val OPEN_FOLDER_ACKNOWLEDGEMENT = "Folder opening is unavailable in this design preview."
-    const val OPEN_FOLDER_FAILURE_MESSAGE = "Couldn't open the download folder."
+    const val SHOW_IN_FOLDER_ACKNOWLEDGEMENT = "File reveal is unavailable in this design preview."
+    const val SHOW_IN_FOLDER_FAILURE_MESSAGE = "Couldn't show the completed file in its folder."
 
     fun downloadFailure(
         kind: DownloadErrorKind,
@@ -57,7 +59,7 @@ internal object ProductCopy {
             DownloadFailureReason.Tool -> {
                 DownloadFailureCopy(
                     "A required download tool couldn’t run.",
-                    "Restart Downlet and try again.",
+                    "Check any configured yt-dlp or FFmpeg tools, then try again.",
                 )
             }
 
@@ -84,6 +86,10 @@ internal object ProductCopy {
             "They are not included with Downlet. Downloading them does not download this media. " +
             "Download size is about $estimatedDownloadMegabytes MB."
 
+    fun toolRepairDescription(toolNames: String): String =
+        "Downlet found a damaged managed copy of $toolNames. It is replacing it with the same pinned, " +
+            "SHA-256-verified version. This does not download the media."
+
     val legalSections =
         listOf(
             LegalSectionCopy(
@@ -96,7 +102,8 @@ internal object ProductCopy {
                 title = "Third-party tools",
                 body =
                     "Downlet includes QuickJS-NG for YouTube JavaScript support. If you choose to continue, Downlet " +
-                        "downloads only missing pinned copies of yt-dlp and FFmpeg, verifies each SHA-256 hash, " +
+                        "downloads only missing or damaged pinned copies of yt-dlp and FFmpeg, verifies each " +
+                        "SHA-256 hash, " +
                         "stores " +
                         "them in your local application-data folder, and runs the tools as separate programs.",
             ),
