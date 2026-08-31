@@ -16,6 +16,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
@@ -36,13 +38,20 @@ import org.jetbrains.jewel.intui.window.styling.lightWithLightHeader
 import org.jetbrains.jewel.ui.ComponentStyling
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.ToggleableIconActionButton
+import org.jetbrains.jewel.ui.component.styling.ButtonMetrics
+import org.jetbrains.jewel.ui.component.styling.ButtonStyle
+import org.jetbrains.jewel.ui.component.styling.LocalDefaultButtonStyle
+import org.jetbrains.jewel.ui.component.styling.LocalOutlinedButtonStyle
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
+import org.jetbrains.jewel.ui.theme.defaultButtonStyle
+import org.jetbrains.jewel.ui.theme.outlinedButtonStyle
 import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
 import org.jetbrains.jewel.window.styling.DecoratedWindowStyle
 import org.jetbrains.jewel.window.styling.TitleBarStyle
 
 private const val PRODUCT_WINDOW_TITLE = "Downlet"
+private val PRODUCT_BUTTON_MIN_HEIGHT = 36.dp
 
 fun main() =
     application {
@@ -104,9 +113,19 @@ internal fun ProductWindow(
             },
     ) {
         val typography = downletTypography()
+        val defaultButtonStyle = JewelTheme.defaultButtonStyle
+        val outlinedButtonStyle = JewelTheme.outlinedButtonStyle
         CompositionLocalProvider(
             LocalDownletTypography provides typography,
             LocalTextStyle provides typography.body,
+            LocalDefaultButtonStyle provides
+                remember(defaultButtonStyle) {
+                    defaultButtonStyle.withMinHeight(PRODUCT_BUTTON_MIN_HEIGHT)
+                },
+            LocalOutlinedButtonStyle provides
+                remember(outlinedButtonStyle) {
+                    outlinedButtonStyle.withMinHeight(PRODUCT_BUTTON_MIN_HEIGHT)
+                },
         ) {
             val appIcon = painterResource(Res.drawable.app_icon)
             DecoratedWindow(
@@ -158,3 +177,17 @@ internal fun ProductWindow(
         }
     }
 }
+
+private fun ButtonStyle.withMinHeight(height: Dp): ButtonStyle =
+    ButtonStyle(
+        colors = colors,
+        metrics =
+            ButtonMetrics(
+                cornerSize = metrics.cornerSize,
+                padding = metrics.padding,
+                minSize = DpSize(metrics.minSize.width, height),
+                borderWidth = metrics.borderWidth,
+                focusOutlineExpand = metrics.focusOutlineExpand,
+            ),
+        focusOutlineAlignment = focusOutlineAlignment,
+    )

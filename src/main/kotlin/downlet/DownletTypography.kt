@@ -6,48 +6,37 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
-import downlet.generated.resources.Res
-import downlet.generated.resources.mona_sans_regular
-import downlet.generated.resources.mona_sans_variable
-import org.jetbrains.compose.resources.Font
-import org.jetbrains.compose.resources.FontResource
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 
-internal const val DOWNLET_FONT_FEATURES = "\"ss03\", \"ss05\", \"ss06\""
-internal const val DOWNLET_NUMERIC_FEATURES = "$DOWNLET_FONT_FEATURES, \"tnum\", \"ss08\""
-internal const val DOWNLET_EXACT_TEXT_FEATURES = "$DOWNLET_FONT_FEATURES, \"liga\" 0, \"clig\" 0"
+internal const val DOWNLET_NUMERIC_FEATURES = "\"tnum\""
+internal const val DOWNLET_EXACT_TEXT_FEATURES = "\"liga\" 0, \"clig\" 0"
+internal val DOWNLET_FONT_FAMILY = FontFamily.SansSerif
 
 @Immutable
 internal data class DownletTypeRole(
     val fontSize: TextUnit,
     val lineHeight: TextUnit,
     val weight: FontWeight,
-    val width: Float,
-    val opticalSize: TextUnit,
     val letterSpacing: TextUnit = TextUnit.Unspecified,
-    val fontFeatureSettings: String = DOWNLET_FONT_FEATURES,
+    val fontFeatureSettings: String? = null,
 )
 
 internal object DownletTypeRoles {
-    val titleBar = DownletTypeRole(14.sp, 18.sp, FontWeight.SemiBold, 108f, 14.sp, (-0.1).sp)
-    val sectionHeading = DownletTypeRole(17.sp, 21.sp, FontWeight.SemiBold, 102f, 17.sp, (-0.1).sp)
-    val mediaTitle = DownletTypeRole(16.sp, 20.sp, FontWeight.SemiBold, 102f, 16.sp)
-    val body = DownletTypeRole(15.sp, 21.sp, FontWeight.Normal, 100f, 15.sp)
-    val legal = DownletTypeRole(14.sp, 20.sp, FontWeight.Normal, 100f, 14.sp)
-    val formLabel = DownletTypeRole(13.sp, 16.sp, FontWeight.SemiBold, 100f, 13.sp)
-    val metadata = DownletTypeRole(13.sp, 16.sp, FontWeight.Normal, 94f, 13.sp)
+    val titleBar = DownletTypeRole(15.sp, 19.sp, FontWeight.SemiBold, (-0.1).sp)
+    val sectionHeading = DownletTypeRole(17.sp, 22.sp, FontWeight.SemiBold, (-0.1).sp)
+    val mediaTitle = DownletTypeRole(16.sp, 21.sp, FontWeight.SemiBold)
+    val body = DownletTypeRole(16.sp, 22.sp, FontWeight.Normal)
+    val legal = DownletTypeRole(15.sp, 21.sp, FontWeight.Normal)
+    val formLabel = DownletTypeRole(14.sp, 18.sp, FontWeight.SemiBold)
+    val metadata = DownletTypeRole(14.sp, 18.sp, FontWeight.Normal)
     val progressNumber =
         DownletTypeRole(
-            fontSize = 14.sp,
-            lineHeight = 18.sp,
+            fontSize = 15.sp,
+            lineHeight = 20.sp,
             weight = FontWeight.SemiBold,
-            width = 100f,
-            opticalSize = 14.sp,
             fontFeatureSettings = DOWNLET_NUMERIC_FEATURES,
         )
 }
@@ -73,14 +62,14 @@ internal val LocalDownletTypography =
 @Composable
 internal fun downletTypography(): DownletTypography {
     val secondaryColor = JewelTheme.contentColor.copy(alpha = if (JewelTheme.isDark) 0.78f else 0.70f)
-    val body = DownletTypeRoles.body.toTextStyle(Res.font.mona_sans_regular)
+    val body = DownletTypeRoles.body.toTextStyle()
     val metadata = DownletTypeRoles.metadata.toTextStyle(color = secondaryColor)
     return DownletTypography(
         titleBar = DownletTypeRoles.titleBar.toTextStyle(),
         sectionHeading = DownletTypeRoles.sectionHeading.toTextStyle(),
         mediaTitle = DownletTypeRoles.mediaTitle.toTextStyle(),
         body = body,
-        legal = DownletTypeRoles.legal.toTextStyle(Res.font.mona_sans_regular),
+        legal = DownletTypeRoles.legal.toTextStyle(),
         formLabel = DownletTypeRoles.formLabel.toTextStyle(),
         metadata = metadata,
         numericMetadata = metadata.copy(fontFeatureSettings = DOWNLET_NUMERIC_FEATURES),
@@ -91,27 +80,10 @@ internal fun downletTypography(): DownletTypography {
 }
 
 @Composable
-private fun DownletTypeRole.toTextStyle(
-    resource: FontResource = Res.font.mona_sans_variable,
-    color: Color = Color.Unspecified,
-): TextStyle =
+private fun DownletTypeRole.toTextStyle(color: Color = Color.Unspecified): TextStyle =
     JewelTheme.defaultTextStyle.copy(
         color = color,
-        fontFamily =
-            FontFamily(
-                Font(
-                    resource = resource,
-                    weight = weight,
-                    style = FontStyle.Normal,
-                    variationSettings =
-                        FontVariation.Settings(
-                            weight,
-                            FontStyle.Normal,
-                            FontVariation.width(width),
-                            FontVariation.opticalSizing(opticalSize),
-                        ),
-                ),
-            ),
+        fontFamily = DOWNLET_FONT_FAMILY,
         fontWeight = weight,
         fontSize = fontSize,
         lineHeight = lineHeight,
