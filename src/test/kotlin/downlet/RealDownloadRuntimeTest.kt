@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 /** Opt in with DOWNLET_YT_DLP_TEST pointing to the pinned external CLI. */
 class RealDownloadRuntimeTest {
     @Test
-    fun `prewarming waits for consent then downloads cached information through stdin`() =
+    fun `Unicode cached information preserves filenames with and without prewarming`() =
         runBlocking {
             val executable = System.getenv("DOWNLET_YT_DLP_TEST") ?: return@runBlocking
             val directory = Files.createTempDirectory("downlet-real-cli-")
@@ -41,7 +41,7 @@ class RealDownloadRuntimeTest {
                     Json
                         .parseToJsonElement(
                             """
-                            {"id":"fixture","title":"Fixture","extractor":"generic","extractor_key":"Generic",
+                            {"id":"fixture","title":"Η Εκπομπή 🚌","extractor":"generic","extractor_key":"Generic",
                              "webpage_url":"${item.source}","formats":[{"format_id":"a","ext":"webm",
                              "vcodec":"none","acodec":"opus","url":"http://127.0.0.1:${server.address.port}/audio.webm"}]}
                             """.trimIndent(),
@@ -53,9 +53,14 @@ class RealDownloadRuntimeTest {
                 assertEquals(0, requests.get(), "Prewarming must not request media")
                 var progressObserved = false
                 val file = withTimeout(15_000) { runtime.download(request) { progressObserved = true } }
+                assertEquals("Η Εκπομπή 🚌 [fixture].webm", file.fileName.toString())
                 assertContentEquals(bytes, Files.readAllBytes(file))
                 assertTrue(requests.get() > 0)
                 assertTrue(progressObserved)
+                Files.delete(file)
+                val directFile = withTimeout(15_000) { runtime.download(request) {} }
+                assertEquals("Η Εκπομπή 🚌 [fixture].webm", directFile.fileName.toString())
+                assertContentEquals(bytes, Files.readAllBytes(directFile))
                 runtime.prepareDownload(request)
                 runtime.cancel()
                 delay(250)

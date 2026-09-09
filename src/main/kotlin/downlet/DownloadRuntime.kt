@@ -279,71 +279,73 @@ internal class YtDlpDownloadRuntime(
         if (tools.any { it in status.missing || it in status.repairable }) throw DownloadRuntimeException()
     }
 
-    override suspend fun preview(source: YouTubeUrl): DownloadItem {
-        cache.preview(source)?.let { return it }
-        val metadata = requestPreview(source)
-        val thumbnailBytes =
-            metadata.thumbnailUri?.let { uri ->
-                try {
-                    requestThumbnail(uri)
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    null
+    override suspend fun preview(source: YouTubeUrl): DownloadItem =
+        withContext(Dispatchers.IO) {
+            cache.preview(source)?.let { return@withContext it }
+            val metadata = requestPreview(source)
+            val thumbnailBytes =
+                metadata.thumbnailUri?.let { uri ->
+                    try {
+                        requestThumbnail(uri)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        null
+                    }
                 }
-            }
-        return DownloadItem(
-            source = source,
-            title = metadata.title,
-            channel = metadata.channel,
-            duration = null,
-            destination = downloadDirectory,
-            thumbnail =
-                thumbnailBytes
-                    ?.let(::ThumbnailData)
-                    ?.let(MediaThumbnail::Remote)
-                    ?: MediaThumbnail.Unavailable,
-        ).also(cache::putPreview)
-    }
-
-    override suspend fun resolve(
-        source: YouTubeUrl,
-        browserCookies: BrowserCookieSource?,
-    ): DownloadItem {
-        val identity = toolIdentity()
-        cache.resolved(source, browserCookies, identity)?.let { return it }
-        ensureQuickJs()
-        val output =
-            execute(
-                commonArguments(browserCookies) +
-                    listOf(
-                        "--skip-download",
-                        "--format",
-                        "ba",
-                        "--dump-single-json",
-                        source.toString(),
-                    ),
-                captureInformation = true,
-            )
-        val information = Json.parseToJsonElement(output.single()).jsonObject
-        val metadata =
-            parseResolvedMedia(
-                listOf("$MEDIA_JSON_PREFIX$information", "$FORMATS_JSON_PREFIX${information["formats"]}"),
-            )
-        val item =
             DownloadItem(
                 source = source,
                 title = metadata.title,
                 channel = metadata.channel,
-                duration = metadata.duration,
+                duration = null,
                 destination = downloadDirectory,
-                originalAudio = metadata.originalAudio,
-                videoQualities = metadata.videoQualities,
-                thumbnail = MediaThumbnail.Unavailable,
-            )
-        cache.putResolved(item, browserCookies, information, identity)
-        return item
-    }
+                thumbnail =
+                    thumbnailBytes
+                        ?.let(::ThumbnailData)
+                        ?.let(MediaThumbnail::Remote)
+                        ?: MediaThumbnail.Unavailable,
+            ).also(cache::putPreview)
+        }
+
+    override suspend fun resolve(
+        source: YouTubeUrl,
+        browserCookies: BrowserCookieSource?,
+    ): DownloadItem =
+        withContext(Dispatchers.IO) {
+            val identity = toolIdentity()
+            cache.resolved(source, browserCookies, identity)?.let { return@withContext it }
+            ensureQuickJs()
+            val output =
+                execute(
+                    commonArguments(browserCookies) +
+                        listOf(
+                            "--skip-download",
+                            "--format",
+                            "ba",
+                            "--dump-single-json",
+                            source.toString(),
+                        ),
+                    captureInformation = true,
+                )
+            val information = Json.parseToJsonElement(output.single()).jsonObject
+            val metadata =
+                parseResolvedMedia(
+                    listOf("$MEDIA_JSON_PREFIX$information", "$FORMATS_JSON_PREFIX${information["formats"]}"),
+                )
+            val item =
+                DownloadItem(
+                    source = source,
+                    title = metadata.title,
+                    channel = metadata.channel,
+                    duration = metadata.duration,
+                    destination = downloadDirectory,
+                    originalAudio = metadata.originalAudio,
+                    videoQualities = metadata.videoQualities,
+                    thumbnail = MediaThumbnail.Unavailable,
+                )
+            cache.putResolved(item, browserCookies, information, identity)
+            item
+        }
 
     @Suppress("TooGenericExceptionCaught")
     override suspend fun download(
@@ -551,7 +553,12 @@ internal class YtDlpDownloadRuntime(
                     ),
                 )
                 addAll(browserCookieArguments(browserCookies))
-                addAll(quickJsArguments(quickJsExecutable()))
+                addAll(
+                    javascriptRuntimeArguments(
+                        quickJsExecutable(),
+                        quickJsOnly = !environment["DOWNLET_QUICKJS"].isNullOrBlank(),
+                    ),
+                )
                 addAll(ffmpegLocationArguments(ffmpegTools()))
             }
         }
@@ -606,7 +613,7 @@ internal class YtDlpDownloadRuntime(
                         scope.async {
                             beforeInput(process)
                             process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { stdin ->
-                                if (input != null) stdin.write(input)
+                                if (input != null) stdin.write(escapeJsonForStdin(input))
                             }
                         }
                     val output =
@@ -940,6 +947,8 @@ internal fun parseResolvedMedia(output: List<String>): ResolvedMedia {
             OriginalAudio(
                 container = audio.container,
                 codec = requireNotNull(audio.audioCodec),
+                sizeBytes = audio.bestFileSize?.takeIf { it > 0 },
+                sizeIsEstimated = audio.fileSizeIsApproximate,
                 bitRateKilobitsPerSecond =
                     (audio.audioBitrate ?: audio.totalBitrate)
                         ?.roundToInt()
@@ -1057,7 +1066,7 @@ private fun formatBitrate(kilobitsPerSecond: Double): String =
         "~${kilobitsPerSecond.roundToInt()} kbps"
     }
 
-private fun formatFileSize(
+internal fun formatFileSize(
     bytes: Long,
     approximate: Boolean,
 ): String {
@@ -1140,8 +1149,26 @@ internal suspend fun <T> CompletableFuture<T>.awaitCancellable(): T =
         continuation.invokeOnCancellation { cancel(true) }
     }
 
-internal fun quickJsArguments(executable: String?): List<String> =
-    executable?.let { listOf("--no-js-runtimes", "--js-runtimes", "quickjs:$it") }.orEmpty()
+internal fun javascriptRuntimeArguments(
+    quickJsExecutable: String?,
+    quickJsOnly: Boolean = false,
+): List<String> =
+    listOf("--no-js-runtimes") +
+        (if (quickJsOnly) emptyList() else listOf("--js-runtimes", "node")) +
+        quickJsExecutable?.let { listOf("--js-runtimes", "quickjs:$it") }.orEmpty()
+
+/** yt-dlp reads stdin using the Windows locale even when its output encoding is UTF-8. */
+@Suppress("MagicNumber") // JSON Unicode escapes use four hexadecimal digits per non-ASCII UTF-16 code unit.
+internal fun escapeJsonForStdin(json: String): String =
+    buildString(json.length) {
+        for (character in json) {
+            if (character.code > 0x7F) {
+                append("\\u").append(character.code.toString(16).padStart(4, '0'))
+            } else {
+                append(character)
+            }
+        }
+    }
 
 internal fun browserCookieArguments(source: BrowserCookieSource?): List<String> =
     source?.let { listOf("--cookies-from-browser", it.ytDlpName) }.orEmpty()

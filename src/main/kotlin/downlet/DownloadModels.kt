@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package downlet
 
 import java.net.URI
@@ -110,11 +112,14 @@ internal data class OriginalAudio(
     val container: String,
     val codec: String,
     val bitRateKilobitsPerSecond: Int?,
+    val sizeBytes: Long? = null,
+    val sizeIsEstimated: Boolean = false,
 ) {
     init {
         require(container.isNotBlank())
         require(codec.isNotBlank())
         require(bitRateKilobitsPerSecond == null || bitRateKilobitsPerSecond > 0)
+        require(sizeBytes == null || sizeBytes > 0)
     }
 
     val description: String
@@ -160,17 +165,24 @@ internal val videoQualityOptions =
         ),
     )
 
-internal fun audioQualityOptions(originalAudio: OriginalAudio?) =
-    listOf(
-        DownloadQuality(
-            label = "Original · ${originalAudio?.description ?: "details unavailable"}",
-            supportingText = "No conversion. Fastest option; keeps the source audio unchanged.",
-            ytDlpArguments = listOf("--format", "ba"),
-        ),
-        mp3Quality(),
-        mp3Quality(bitRateKilobitsPerSecond = 160),
-        mp3Quality(bitRateKilobitsPerSecond = 128),
-    )
+internal fun audioQualityOptions(
+    originalAudio: OriginalAudio?,
+    duration: Duration? = null,
+) = listOf(
+    DownloadQuality(
+        label = "Original · ${originalAudio?.description ?: "details unavailable"}",
+        supportingText =
+            (
+                originalAudio?.sizeBytes?.let { formatFileSize(it, originalAudio.sizeIsEstimated) }
+                    ?: estimatedAudioSize(duration, originalAudio?.bitRateKilobitsPerSecond)
+            )?.let { "$it · No conversion; keeps the source audio unchanged." }
+                ?: "No conversion. Fastest option; keeps the source audio unchanged.",
+        ytDlpArguments = listOf("--format", "ba"),
+    ),
+    mp3Quality(duration = duration),
+    mp3Quality(bitRateKilobitsPerSecond = 160, duration = duration),
+    mp3Quality(bitRateKilobitsPerSecond = 128, duration = duration),
+)
 
 internal fun String.toContainerLabel(): String =
     when (lowercase(Locale.ROOT)) {
@@ -192,13 +204,20 @@ internal fun String.toCodecLabel(): String =
         else -> uppercase(Locale.ROOT)
     }
 
-private fun mp3Quality(bitRateKilobitsPerSecond: Int? = null): DownloadQuality =
+@Suppress("MagicNumber") // 190 kbps is the approximate bitrate of the existing VBR preset.
+private fun mp3Quality(
+    bitRateKilobitsPerSecond: Int? = null,
+    duration: Duration? = null,
+): DownloadQuality =
     DownloadQuality(
         label =
             bitRateKilobitsPerSecond
                 ?.let { "MP3 · $it kbps" }
                 ?: "MP3 · High-quality VBR · ~190 kbps",
-        supportingText = "Converts to MP3. Quality cannot exceed the source and may be reduced.",
+        supportingText =
+            estimatedAudioSize(duration, bitRateKilobitsPerSecond ?: 190)
+                ?.let { "$it output · Converts to MP3; quality cannot exceed the source." }
+                ?: "Converts to MP3. Quality cannot exceed the source and may be reduced.",
         ytDlpArguments =
             listOf(
                 "--format",
@@ -210,6 +229,18 @@ private fun mp3Quality(bitRateKilobitsPerSecond: Int? = null): DownloadQuality =
                 bitRateKilobitsPerSecond?.let { "${it}K" } ?: "2",
             ),
     )
+
+@Suppress("MagicNumber") // Convert kilobits per second to bytes per second.
+private fun estimatedAudioSize(
+    duration: Duration?,
+    bitRateKilobitsPerSecond: Int?,
+): String? {
+    if (duration == null || bitRateKilobitsPerSecond == null) return null
+    return duration.takeIf { it.isFinite() && it > Duration.ZERO }?.let {
+        val bytes = (it.inWholeMilliseconds / 1000.0 * bitRateKilobitsPerSecond * 1000 / 8).toLong()
+        bytes.takeIf { it > 0 }?.let { formatFileSize(it, approximate = true) }
+    }
+}
 
 private val YOUTUBE_HOSTS = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com")
 private val YOUTUBE_NO_COOKIE_HOSTS = setOf("youtube-nocookie.com", "www.youtube-nocookie.com")

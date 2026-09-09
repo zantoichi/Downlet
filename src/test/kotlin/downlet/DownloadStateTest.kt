@@ -37,18 +37,68 @@ class DownloadStateTest {
                 }
             val holder = testHolder(runtime)
             holder.beginResolution(DownloadFixtures.normal.source.toString())
+            assertEquals(
+                MediaThumbnail.BundledPreview,
+                holder.state.itemOrNull?.thumbnail,
+            )
             advanceTimeBy(FAKE_RESOLUTION_DELAY)
             runCurrent()
             assertTrue(holder.state is DownloadUiState.Ready)
             holder.selectMode(DownloadMode.Audio)
             holder.selectQuality(1)
             holder.updateDownloadAuthorization(true)
-            preview.complete(DownloadFixtures.normal.copy(title = "Optional preview title"))
+            advanceTimeBy(4_000)
+            preview.complete(DownloadFixtures.remoteThumbnail.copy(title = "Optional preview title"))
             runCurrent()
             assertEquals(DownloadFixtures.normal.title, (holder.state as DownloadUiState.Ready).item.title)
+            assertTrue((holder.state as DownloadUiState.Ready).item.thumbnail is MediaThumbnail.Remote)
             assertEquals(DownloadMode.Audio, holder.selectedMode)
             assertEquals(1, holder.selectedQualityIndex)
             assertTrue(holder.downloadAuthorizationAccepted)
+        }
+
+    @Test
+    fun `late thumbnail survives download progress and completion`() =
+        runTest {
+            val preview = CompletableDeferred<DownloadItem>()
+            val runtime =
+                object : DownloadRuntime by PreviewDownloadRuntime() {
+                    override suspend fun preview(source: YouTubeUrl): DownloadItem = preview.await()
+                }
+            val holder = testHolder(runtime)
+            holder.beginResolution(DownloadFixtures.normal.source.toString())
+            advanceTimeBy(FAKE_RESOLUTION_DELAY)
+            runCurrent()
+            holder.updateDownloadAuthorization(true)
+            holder.download()
+            assertTrue(holder.state is DownloadUiState.Downloading)
+            preview.complete(DownloadFixtures.remoteThumbnail)
+            runCurrent()
+            assertTrue(holder.state.itemOrNull?.thumbnail is MediaThumbnail.Remote)
+            advanceTimeBy(FAKE_PROGRESS_INTERVAL)
+            runCurrent()
+            assertTrue(holder.state.itemOrNull?.thumbnail is MediaThumbnail.Remote)
+            advanceTimeBy(4_000)
+            runCurrent()
+            assertTrue(holder.state is DownloadUiState.Completed)
+            assertTrue(holder.state.itemOrNull?.thumbnail is MediaThumbnail.Remote)
+        }
+
+    @Test
+    fun `failed thumbnail retrieval keeps the bundled placeholder`() =
+        runTest {
+            val preview = CompletableDeferred<DownloadItem>()
+            val runtime =
+                object : DownloadRuntime by PreviewDownloadRuntime() {
+                    override suspend fun preview(source: YouTubeUrl): DownloadItem = preview.await()
+                }
+            val holder = testHolder(runtime)
+            holder.beginResolution(DownloadFixtures.normal.source.toString())
+
+            preview.complete(DownloadFixtures.missingThumbnail)
+            runCurrent()
+
+            assertTrue(holder.state.itemOrNull?.thumbnail is MediaThumbnail.BundledPreview)
         }
 
     @Test

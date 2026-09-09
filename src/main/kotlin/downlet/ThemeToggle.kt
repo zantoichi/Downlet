@@ -7,7 +7,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.TooltipPlacement
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -30,7 +32,22 @@ import org.jetbrains.jewel.ui.component.Tooltip
 import org.jetbrains.jewel.ui.component.styling.IconButtonStyle
 import org.jetbrains.jewel.ui.theme.iconButtonStyle
 
-private const val THEME_MORPH_DURATION_MILLIS = 160
+private const val THEME_MORPH_DURATION_MILLIS = 100
+
+@Composable
+private fun themeMorphProgress(
+    target: Float,
+    animationsEnabled: Boolean,
+): State<Float> =
+    if (animationsEnabled) {
+        animateFloatAsState(
+            targetValue = target,
+            animationSpec = tween(THEME_MORPH_DURATION_MILLIS),
+            label = "Sun to moon",
+        )
+    } else {
+        rememberUpdatedState(target)
+    }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -45,11 +62,7 @@ internal fun ThemeToggle(
     val darkMode = theme == DownletTheme.Dark
     val themeAction = if (darkMode) "Use light theme" else "Use dark theme"
     val target = if (darkMode) 1f else 0f
-    val animatedProgress by animateFloatAsState(
-        targetValue = target,
-        animationSpec = tween(if (animationsEnabled) THEME_MORPH_DURATION_MILLIS else 0),
-        label = "Sun to moon",
-    )
+    val animatedProgress = themeMorphProgress(target, animationsEnabled)
     Tooltip(
         tooltip = { Text(themeAction) },
         modifier = modifier,
@@ -74,7 +87,7 @@ internal fun ThemeToggle(
             val foreground by style.colors.toggleableForegroundFor(buttonState)
             val iconColor = foreground.takeOrElse { JewelTheme.contentColor }
             Canvas(Modifier.size(20.dp)) {
-                val progress = if (animationsEnabled) animatedProgress else target
+                val progress = animatedProgress.value
                 val unit = size.minDimension / 20f
                 val cutoutOffset = (12f - 9f * progress) * unit
                 val cutout =

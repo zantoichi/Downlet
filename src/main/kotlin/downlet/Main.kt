@@ -172,6 +172,11 @@ private fun ButtonStyle.withMinHeight(height: Dp): ButtonStyle =
         focusOutlineAlignment = focusOutlineAlignment,
     )
 
+private class ProductTitleBarStyles {
+    var light: TitleBarStyle? = null
+    var dark: TitleBarStyle? = null
+}
+
 @Composable
 internal fun ProductTheme(
     theme: DownletTheme,
@@ -179,19 +184,25 @@ internal fun ProductTheme(
 ) {
     val lightTheme = remember { JewelTheme.lightThemeDefinition() }
     val darkTheme = remember { JewelTheme.darkThemeDefinition() }
-    val lightTitleBar = TitleBarStyle.lightWithLightHeader()
-    val darkTitleBar = TitleBarStyle.dark()
-    val lightStyling =
-        remember(lightTitleBar) {
-            ComponentStyling.decoratedWindow(DecoratedWindowStyle.light(), lightTitleBar)
+    val titleBarStyles = remember { ProductTitleBarStyles() }
+    val lightWindowStyle = remember { DecoratedWindowStyle.light() }
+    val darkWindowStyle = remember { DecoratedWindowStyle.dark() }
+    val isDark = theme == DownletTheme.Dark
+    val titleBarStyle =
+        if (isDark) {
+            titleBarStyles.dark ?: TitleBarStyle.dark().also { titleBarStyles.dark = it }
+        } else {
+            titleBarStyles.light ?: TitleBarStyle.lightWithLightHeader().also { titleBarStyles.light = it }
         }
-    val darkStyling =
-        remember(darkTitleBar) {
-            ComponentStyling.decoratedWindow(DecoratedWindowStyle.dark(), darkTitleBar)
+    val windowStyle =
+        if (isDark) darkWindowStyle else lightWindowStyle
+    val styling =
+        remember(titleBarStyle, windowStyle) {
+            ComponentStyling.decoratedWindow(windowStyle, titleBarStyle)
         }
     IntUiTheme(
-        theme = if (theme == DownletTheme.Dark) darkTheme else lightTheme,
-        styling = if (theme == DownletTheme.Dark) darkStyling else lightStyling,
+        theme = if (isDark) darkTheme else lightTheme,
+        styling = styling,
         content = content,
     )
 }

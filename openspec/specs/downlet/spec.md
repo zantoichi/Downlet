@@ -22,7 +22,7 @@ Downlet SHALL present one primary Windows desktop window and keep the user's URL
 
 ### Requirement: URL input starts preview directly
 
-Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A valid pasted link SHALL begin Previewing immediately, and a valid manually typed link SHALL begin it after a short idle delay. Watch, short, embed, live, `youtu.be`, and privacy-enhanced embed links for one video SHALL normalize to `https://www.youtube.com/watch?v=<id>` before preview; playlist-only, channel, profile, search, homepage, malformed, and unsupported links SHALL remain invalid. Previewing SHALL request only lightweight YouTube identity metadata and a bounded thumbnail, SHALL download no media, and SHALL not require yt-dlp. Invalid text SHALL remain editable with concise inline validation that is visually and semantically distinct without relying on color alone. No separate Paste or Analyze action SHALL be required.
+Downlet SHALL keep a visibly labelled YouTube-link field throughout the flow. A valid pasted link SHALL begin Previewing immediately, and a valid manually typed link SHALL begin it after a short idle delay. Watch, short, embed, live, `youtu.be`, and privacy-enhanced embed links for one video SHALL normalize to `https://www.youtube.com/watch?v=<id>` before preview; playlist-only, channel, profile, search, homepage, malformed, and unsupported links SHALL remain invalid. Previewing SHALL request only lightweight YouTube identity metadata and a bounded thumbnail, SHALL show the bundled neutral placeholder while the thumbnail is pending or unavailable, SHALL download no media, and SHALL not require yt-dlp. Invalid text SHALL remain editable with concise inline validation that is visually and semantically distinct without relying on color alone. No separate Paste or Analyze action SHALL be required.
 
 #### Scenario: User enters a valid link
 
@@ -61,7 +61,7 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 #### Scenario: User chooses audio output
 
 - **WHEN** the user selects Audio
-- **THEN** Original audio without conversion is selected by default and shows its source codec, container, and average bitrate, while MP3 remains available at high-quality VBR around 190 kbps, 160 kbps, and 128 kbps quality
+- **THEN** Original audio without conversion is selected by default and shows its source codec, container, and average bitrate, while MP3 remains available at high-quality VBR around 190 kbps, 160 kbps, and 128 kbps quality. Supporting text shows the reported Original size when available, otherwise an estimate from duration and bitrate; MP3 shows estimated output size at the selected bitrate. Estimates are marked with `~`, and unavailable sizes are omitted
 - **AND** Downlet explains that MP3 re-encodes the source for compatibility, cannot restore missing detail, and may add quality loss
 
 #### Scenario: User reads audio quality help
@@ -156,7 +156,7 @@ Downloading SHALL preserve media context, lock choices that must not change, and
 
 ### Requirement: Optional work does not delay readiness
 
-After the first main-content draw and a serviced UI event, Downlet SHALL initialize its download runtime and prevalidate installed tools in the background without downloading tools. Preview metadata and thumbnails SHALL have a combined three-second budget and SHALL run independently of tool validation and resolution. Ready SHALL appear as soon as formats resolve. Late previews SHALL preserve resolved identity, mode, quality, destination, and consent; obsolete requests SHALL not change the current state. Resolving SHALL stop after thirty seconds with a recoverable network error and terminate its process tree. This deadline SHALL NOT cap media transfer or conversion.
+After the first main-content draw and a serviced UI event, Downlet SHALL initialize its download runtime and prevalidate installed tools in the background without downloading tools. Preview metadata and thumbnail requests SHALL each retain their bounded twenty-second network timeout and SHALL run independently of tool validation and resolution. A slow thumbnail SHALL remain eligible to appear in Ready, Downloading, and Completed, and subsequent transfer progress SHALL preserve it. Preview and format parsing SHALL run off the UI thread. Ready SHALL appear as soon as formats resolve. Late previews SHALL preserve resolved identity, mode, quality, destination, and consent; obsolete requests SHALL not change the current state. Resolving SHALL stop after thirty seconds with a recoverable network error and terminate its process tree. This deadline SHALL NOT cap media transfer or conversion.
 
 After a successful resolution, Downlet MAY prepare at most one selected download CLI process after a 250 ms debounce. It SHALL withhold media information until explicit Download authorization, expire unused preparation after sixty seconds, cancel obsolete preparation, and start normally if preparation is unavailable. Cancellation or expiry SHALL not automatically respawn it. Tool setup MAY download the two independent assets concurrently only after existing consent requirements are satisfied, SHALL show per-tool progress, and SHALL verify each asset before activation. Fragment downloads SHALL use bounded concurrency and SHALL fail rather than publish an incomplete result.
 
@@ -209,6 +209,17 @@ Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required not
 
 - **WHEN** the managed QuickJS executable fails integrity validation
 - **THEN** Downlet restores it from the bundled verified resource without network access or consent
+
+#### Scenario: An installed Node runtime is available
+
+- **WHEN** no nonblank `DOWNLET_QUICKJS` override is set
+- **THEN** Downlet enables Node alongside bundled QuickJS and lets yt-dlp select a compatible installed Node runtime or fall back to QuickJS for unavailable, incompatible, or failing challenge providers, without downloading another runtime
+- **AND** an explicit `DOWNLET_QUICKJS` override keeps runtime selection QuickJS-only
+
+#### Scenario: Cached media information contains Unicode
+
+- **WHEN** a prepared or direct download receives cached information through stdin
+- **THEN** Downlet sends non-ASCII characters as JSON Unicode escapes so Windows locale decoding preserves the original title and filename, including supplementary characters, without weakening cache sanitization
 
 #### Scenario: External tool fails
 
@@ -316,7 +327,7 @@ Downlet SHALL provide logical keyboard order, visible focus, meaningful control 
 - **WHEN** the user activates the title-bar theme control
 - **THEN** Downlet switches between light and dark immediately without restarting or changing the entered URL, current download state, or selections
 - **AND** the icon-only control has a `32dp` target and a `20dp` sun in light mode or crescent moon with a selected background in dark mode; its tooltip names the next action and accessibility semantics expose the current mode
-- **AND** the sun and moon morph into one another over `160 ms`, reversing from the current shape when interrupted, without delaying the window colors; disabled motion shows the final shape immediately
+- **AND** the sun and moon morph into one another over `100 ms`, reversing from the current shape when interrupted, without delaying the window colors; disabled motion shows the final shape immediately
 
 #### Scenario: Motion is disabled
 

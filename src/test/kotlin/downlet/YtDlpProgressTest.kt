@@ -188,6 +188,7 @@ class YtDlpProgressTest {
         listOf(
             DownloadFailureReason.Storage to "OSError: [WinError 206] The filename or extension is too long",
             DownloadFailureReason.Availability to "HTTP Error 404: Not Found",
+            DownloadFailureReason.Availability to "ERROR: [youtube] xTrHIOEe2OA: This video is unavailable",
             DownloadFailureReason.Availability to "This video is DRM protected",
             DownloadFailureReason.Availability to "This video is no longer available",
             DownloadFailureReason.Network to "Temporary failure in name resolution",

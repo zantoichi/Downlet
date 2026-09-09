@@ -43,6 +43,7 @@ internal fun classifyDownloadFailure(lines: List<String>): DownloadFailureReason
 
         hasAny(
             "video unavailable",
+            "video is unavailable",
             "private video",
             "this video has been removed",
             "members-only",

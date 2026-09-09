@@ -19,7 +19,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -115,7 +114,7 @@ internal class DownloadStateHolder(
             if (selectedMode == DownloadMode.Video) {
                 state.itemOrNull?.videoQualities ?: videoQualityOptions
             } else {
-                audioQualityOptions(state.itemOrNull?.originalAudio)
+                audioQualityOptions(state.itemOrNull?.originalAudio, state.itemOrNull?.duration)
             }
 
     private val selectedQuality: DownloadQuality
@@ -156,7 +155,7 @@ internal class DownloadStateHolder(
                 title = "YouTube video",
                 channel = "YouTube",
                 duration = null,
-                thumbnail = MediaThumbnail.Unavailable,
+                thumbnail = MediaThumbnail.BundledPreview,
             ),
         )
     }
@@ -418,7 +417,7 @@ internal class DownloadStateHolder(
     ) {
         val preview =
             try {
-                withTimeoutOrNull(3.seconds) { runtime.preview(item.source) } ?: return
+                runtime.preview(item.source)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -427,17 +426,22 @@ internal class DownloadStateHolder(
         if (generation != metadataGeneration) return
         val current = state
         val currentItem = current.itemOrNull?.takeIf { it.source == item.source } ?: return
+        val thumbnail = preview.thumbnail.takeUnless { it is MediaThumbnail.Unavailable } ?: currentItem.thumbnail
+        val hasResolvedIdentity =
+            when (current) {
+                is DownloadUiState.Ready, is DownloadUiState.Downloading, is DownloadUiState.Completed -> true
+                is DownloadUiState.Error -> current.kind == DownloadErrorKind.Download
+                else -> false
+            }
         val updated =
-            if (current is DownloadUiState.Ready ||
-                (current is DownloadUiState.Error && current.kind == DownloadErrorKind.Download)
-            ) {
-                currentItem.copy(thumbnail = preview.thumbnail)
+            if (hasResolvedIdentity) {
+                currentItem.copy(thumbnail = thumbnail)
             } else {
                 currentItem.copy(
                     title = preview.title,
                     channel = preview.channel,
                     duration = preview.duration,
-                    thumbnail = preview.thumbnail,
+                    thumbnail = thumbnail,
                     destination = preview.destination,
                 )
             }
@@ -447,6 +451,8 @@ internal class DownloadStateHolder(
                 is DownloadUiState.Setup -> current.copy(item = updated)
                 is DownloadUiState.Resolving -> current.copy(item = updated)
                 is DownloadUiState.Ready -> current.copy(item = updated)
+                is DownloadUiState.Downloading -> current.copy(item = updated)
+                is DownloadUiState.Completed -> current.copy(item = updated)
                 is DownloadUiState.Error -> current.copy(item = updated)
                 else -> current
             }
@@ -537,8 +543,6 @@ internal class DownloadStateHolder(
                 } == true
         if (!canStart) return
 
-        previewJob?.cancel()
-        previewJob = null
         preparationJob?.cancel()
         preparationJob = null
         downloadJob?.cancel()
@@ -556,7 +560,7 @@ internal class DownloadStateHolder(
                 if (isCurrentDownload(item, generation)) {
                     downloadJob = null
                     completedFeedback = null
-                    transitionTo(DownloadUiState.Completed(item, file))
+                    transitionTo(DownloadUiState.Completed(item.withPreviewFrom(state.itemOrNull ?: item), file))
                 }
             }
     }
@@ -614,7 +618,9 @@ internal class DownloadStateHolder(
             runtime.download(request) { progress ->
                 withContext(stateContext) {
                     if (isCurrentDownload(item, generation)) {
-                        transitionTo(DownloadUiState.Downloading(item, progress))
+                        transitionTo(
+                            DownloadUiState.Downloading(item.withPreviewFrom(state.itemOrNull ?: item), progress),
+                        )
                     }
                 }
             }
@@ -627,7 +633,7 @@ internal class DownloadStateHolder(
                 val repairStarted =
                     runtimeError != null &&
                         startAutomaticRepair(
-                            item,
+                            item.withPreviewFrom(state.itemOrNull ?: item),
                             runtimeError.repairableTools,
                             metadataGeneration,
                             DownloadErrorKind.Download,
@@ -635,7 +641,7 @@ internal class DownloadStateHolder(
                 if (!repairStarted) {
                     transitionTo(
                         DownloadUiState.Error(
-                            item,
+                            item.withPreviewFrom(state.itemOrNull ?: item),
                             reason = runtimeError?.reason ?: DownloadFailureReason.Unknown,
                         ),
                     )
@@ -769,7 +775,8 @@ internal class DownloadStateHolder(
     private fun isCurrentDownload(
         item: DownloadItem,
         generation: Long,
-    ): Boolean = generation == downloadGeneration && (state as? DownloadUiState.Downloading)?.item == item
+    ): Boolean =
+        generation == downloadGeneration && (state as? DownloadUiState.Downloading)?.item?.source == item.source
 
     private fun transitionTo(nextState: DownloadUiState) {
         showingLegalDetails = false
@@ -820,7 +827,7 @@ internal class DownloadStateHolder(
 
 private fun DownloadItem.withPreviewFrom(preview: DownloadItem): DownloadItem =
     copy(
-        thumbnail = if (thumbnail is MediaThumbnail.Unavailable) preview.thumbnail else thumbnail,
+        thumbnail = if (thumbnail !is MediaThumbnail.Remote) preview.thumbnail else thumbnail,
     )
 
 private const val PREPARATION_DEBOUNCE_MILLIS = 250L

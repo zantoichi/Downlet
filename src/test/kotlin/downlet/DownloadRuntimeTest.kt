@@ -6,6 +6,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
+import kotlinx.serialization.json.Json
 import java.net.InetSocketAddress
 import java.net.URI
 import java.net.http.HttpClient
@@ -30,6 +31,31 @@ import kotlin.time.toJavaDuration
 
 class DownloadRuntimeTest {
     @Test
+    fun `audio sizes prefer reported bytes and estimate each output preset`() {
+        val audio = OriginalAudio("webm", "opus", 128, sizeBytes = 1_048_576)
+        assertTrue(audioQualityOptions(audio, 60.seconds)[0].supportingText!!.startsWith("1 MB ·"))
+        assertTrue(
+            audioQualityOptions(
+                audio.copy(sizeIsEstimated = true),
+                60.seconds,
+            )[0].supportingText!!.startsWith("~1 MB ·"),
+        )
+        val estimates = audioQualityOptions(audio.copy(sizeBytes = null), 60.seconds)
+        assertEquals(
+            listOf("~0.9 MB", "~1.4 MB output", "~1.1 MB output", "~0.9 MB output"),
+            estimates.map { it.supportingText!!.substringBefore(" ·") },
+        )
+        assertFalse(audioQualityOptions(null).any { it.supportingText!!.contains(" MB") })
+        assertFalse(audioQualityOptions(null, 0.seconds).any { it.supportingText!!.contains(" MB") })
+        val metadata =
+            parseResolvedMedia(
+                resolvedMediaOutput().map { it.replace("\"filesize\":1000000", "\"filesize_approx\":1000000") },
+            )
+        assertEquals(1_000_000, metadata.originalAudio.sizeBytes)
+        assertTrue(metadata.originalAudio.sizeIsEstimated)
+    }
+
+    @Test
     fun `yt-dlp JSON resolves exact media formats and display details`() {
         val metadata = parseResolvedMedia(resolvedMediaOutput())
 
@@ -37,7 +63,7 @@ class DownloadRuntimeTest {
         assertEquals("North Window", metadata.channel)
         assertEquals(754.seconds, metadata.duration)
         assertEquals(
-            OriginalAudio(container = "webm", codec = "opus", bitRateKilobitsPerSecond = 126),
+            OriginalAudio(container = "webm", codec = "opus", bitRateKilobitsPerSecond = 126, sizeBytes = 1_000_000),
             metadata.originalAudio,
         )
         assertEquals(
@@ -132,12 +158,24 @@ class DownloadRuntimeTest {
     }
 
     @Test
-    fun `bundled quickjs disables other runtimes before selecting quickjs`() {
+    fun `installed node is enabled alongside bundled quickjs unless explicitly overridden`() {
+        assertEquals(
+            listOf("--no-js-runtimes", "--js-runtimes", "node", "--js-runtimes", "quickjs:C:\\Downlet\\qjs.exe"),
+            javascriptRuntimeArguments("C:\\Downlet\\qjs.exe"),
+        )
         assertEquals(
             listOf("--no-js-runtimes", "--js-runtimes", "quickjs:C:\\Downlet\\qjs.exe"),
-            quickJsArguments("C:\\Downlet\\qjs.exe"),
+            javascriptRuntimeArguments("C:\\Downlet\\qjs.exe", quickJsOnly = true),
         )
-        assertEquals(emptyList(), quickJsArguments(null))
+        assertEquals(listOf("--no-js-runtimes", "--js-runtimes", "node"), javascriptRuntimeArguments(null))
+    }
+
+    @Test
+    fun `stdin JSON is ASCII without changing Unicode or existing escapes`() {
+        val json = """{"title":"Η Εκπομπή 🚌","quote":"\"","path":"C:\\Downloads","line":"\n"}"""
+        val escaped = escapeJsonForStdin(json)
+        assertTrue(escaped.all { it.code <= 0x7F })
+        assertEquals(Json.parseToJsonElement(json), Json.parseToJsonElement(escaped))
     }
 
     @Test

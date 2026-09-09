@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import downlet.generated.resources.Res
 import downlet.generated.resources.preview_unavailable
-import downlet.generated.resources.thumbnail_city_after_rain
+import downlet.generated.resources.thumbnail_placeholder
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -765,7 +765,7 @@ private fun MediaIdentity(
             )
         } else if (item.thumbnail is MediaThumbnail.BundledPreview) {
             Image(
-                painter = painterResource(Res.drawable.thumbnail_city_after_rain),
+                painter = painterResource(Res.drawable.thumbnail_placeholder),
                 contentDescription = null,
                 modifier = previewModifier,
                 contentScale = ContentScale.Crop,
