@@ -51,6 +51,7 @@ import kotlin.time.toJavaDuration
 internal data class DownloadRequest(
     val item: DownloadItem,
     val quality: DownloadQuality,
+    val browserCookies: BrowserCookieSource? = null,
 )
 
 internal data class ToolStatus(
@@ -73,7 +74,10 @@ internal interface DownloadRuntime {
 
     suspend fun repairManagedTools(tools: List<DownloadTool>) = Unit
 
-    suspend fun resolve(source: YouTubeUrl): DownloadItem
+    suspend fun resolve(
+        source: YouTubeUrl,
+        browserCookies: BrowserCookieSource? = null,
+    ): DownloadItem
 
     suspend fun download(
         request: DownloadRequest,
@@ -137,7 +141,10 @@ internal class SessionMediaCache(
 internal class PreviewDownloadRuntime : DownloadRuntime {
     override suspend fun preview(source: YouTubeUrl): DownloadItem = DownloadFixtures.normal.copy(source = source)
 
-    override suspend fun resolve(source: YouTubeUrl): DownloadItem {
+    override suspend fun resolve(
+        source: YouTubeUrl,
+        browserCookies: BrowserCookieSource?,
+    ): DownloadItem {
         delay(FAKE_RESOLUTION_DELAY)
         return DownloadFixtures.normal.copy(source = source)
     }
@@ -258,12 +265,15 @@ internal class YtDlpDownloadRuntime(
         ).also(cache::putPreview)
     }
 
-    override suspend fun resolve(source: YouTubeUrl): DownloadItem {
-        cache.resolved(source)?.let { return it }
+    override suspend fun resolve(
+        source: YouTubeUrl,
+        browserCookies: BrowserCookieSource?,
+    ): DownloadItem {
+        if (browserCookies == null) cache.resolved(source)?.let { return it }
         ensureQuickJs()
         val output =
             execute(
-                commonArguments() +
+                commonArguments(browserCookies) +
                     listOf(
                         "--skip-download",
                         "--format",
@@ -277,16 +287,19 @@ internal class YtDlpDownloadRuntime(
                     ),
             )
         val metadata = parseResolvedMedia(output)
-        return DownloadItem(
-            source = source,
-            title = metadata.title,
-            channel = metadata.channel,
-            duration = metadata.duration,
-            destination = defaultDownloadDirectory(),
-            originalAudio = metadata.originalAudio,
-            videoQualities = metadata.videoQualities,
-            thumbnail = MediaThumbnail.Unavailable,
-        ).also(cache::putResolved)
+        val item =
+            DownloadItem(
+                source = source,
+                title = metadata.title,
+                channel = metadata.channel,
+                duration = metadata.duration,
+                destination = defaultDownloadDirectory(),
+                originalAudio = metadata.originalAudio,
+                videoQualities = metadata.videoQualities,
+                thumbnail = MediaThumbnail.Unavailable,
+            )
+        if (browserCookies == null) cache.putResolved(item)
+        return item
     }
 
     override suspend fun download(
@@ -335,9 +348,7 @@ internal class YtDlpDownloadRuntime(
     override fun chooseDestination(current: Path): Path? = WindowsFolderPicker.choose(current)
 
     override fun showInFolder(file: Path): String? =
-        runCatching {
-            ProcessBuilder("explorer.exe", "/select,${file.toAbsolutePath().normalize()}").start()
-        }.fold(onSuccess = { null }, onFailure = { ProductCopy.SHOW_IN_FOLDER_FAILURE_MESSAGE })
+        if (WindowsFileRevealer.reveal(file)) null else ProductCopy.SHOW_IN_FOLDER_FAILURE_MESSAGE
 
     private suspend fun requestPreview(source: YouTubeUrl): OEmbedMetadata =
         URLEncoder.encode(source.toString(), StandardCharsets.UTF_8).let { encodedUrl ->
@@ -407,7 +418,7 @@ internal class YtDlpDownloadRuntime(
         request: DownloadRequest,
         attempt: DownloadAttempt,
     ): List<String> =
-        commonArguments() +
+        commonArguments(request.browserCookies) +
             listOf(
                 "--no-simulate",
                 "--newline",
@@ -435,10 +446,11 @@ internal class YtDlpDownloadRuntime(
             request.quality.ytDlpArguments +
             request.item.source.toString()
 
-    private suspend fun commonArguments(): List<String> =
+    private suspend fun commonArguments(browserCookies: BrowserCookieSource? = null): List<String> =
         withContext(Dispatchers.IO) {
             buildList {
                 addAll(listOf("--ignore-config", "--encoding", "UTF-8", "--no-colors", "--no-playlist"))
+                addAll(browserCookieArguments(browserCookies))
                 addAll(quickJsArguments(quickJsExecutable()))
                 addAll(ffmpegLocationArguments(ffmpegTools()))
             }
@@ -614,7 +626,7 @@ internal class YtDlpDownloadRuntime(
         }
     }
 
-    private suspend fun downloadVerified(asset: ToolAsset): Path =
+    internal suspend fun downloadVerified(asset: ToolAsset): Path =
         withContext(Dispatchers.IO) {
             Files.createDirectories(toolsDirectory)
             val target = Files.createTempFile(toolsDirectory, ".downlet-download-", ".tmp")
@@ -628,9 +640,16 @@ internal class YtDlpDownloadRuntime(
                         .build()
                 val response =
                     httpClient
-                        .sendAsync(request, HttpResponse.BodyHandlers.ofFile(target))
-                        .awaitCancellable()
-                if (response.statusCode() !in HTTP_SUCCESS_MIN..HTTP_SUCCESS_MAX) throw DownloadRuntimeException()
+                        .sendAsync(
+                            request,
+                            HttpResponse.BodyHandlers.limiting(
+                                HttpResponse.BodyHandlers.ofFile(target),
+                                asset.maxBytes,
+                            ),
+                        ).awaitCancellable()
+                if (response.statusCode() !in HTTP_SUCCESS_MIN..HTTP_SUCCESS_MAX) {
+                    throw DownloadRuntimeException(reason = DownloadFailureReason.Tool)
+                }
                 requireSha256(target, asset.sha256)
                 target
             } catch (error: CancellationException) {
@@ -641,7 +660,7 @@ internal class YtDlpDownloadRuntime(
                 throw error
             } catch (error: IOException) {
                 Files.deleteIfExists(target)
-                throw DownloadRuntimeException(error)
+                throw DownloadRuntimeException(error, DownloadFailureReason.Tool)
             } catch (error: SecurityException) {
                 Files.deleteIfExists(target)
                 throw DownloadRuntimeException(error)
@@ -961,6 +980,9 @@ internal suspend fun <T> CompletableFuture<T>.awaitCancellable(): T =
 internal fun quickJsArguments(executable: String?): List<String> =
     executable?.let { listOf("--no-js-runtimes", "--js-runtimes", "quickjs:$it") }.orEmpty()
 
+internal fun browserCookieArguments(source: BrowserCookieSource?): List<String> =
+    source?.let { listOf("--cookies-from-browser", it.ytDlpName) }.orEmpty()
+
 internal fun requireSha256(
     path: Path,
     expected: String,
@@ -996,10 +1018,10 @@ internal fun defaultDownloadDirectory(): Path = WindowsKnownFolders.downloads()
 
 internal fun defaultToolsDirectory(): Path = WindowsKnownFolders.localAppData().resolve("Downlet").resolve("tools")
 
-private data class ToolAsset(
-    val tool: DownloadTool,
+internal data class ToolAsset(
     val uri: URI,
     val sha256: String,
+    val maxBytes: Long,
 )
 
 private const val MAX_CAPTURED_OUTPUT_LINES = 100
@@ -1025,6 +1047,8 @@ private const val DOWNLET_DOWNLOAD_AGENT_VERSION = "0.1"
 private const val YT_DLP_VERSION = "2026.08.19"
 private const val QUICKJS_VERSION = "0.16.2"
 private const val FFMPEG_VERSION = "9.0.1"
+private const val YT_DLP_MAX_DOWNLOAD_BYTES = 64L * 1024 * 1024
+private const val FFMPEG_MAX_DOWNLOAD_BYTES = 256L * 1024 * 1024
 private const val OEMBED_ENDPOINT = "https://www.youtube.com/oembed"
 private const val YOUTUBE_THUMBNAIL_HOST = "i.ytimg.com"
 private const val QUICKJS_RESOURCE_PATH = "/tools/quickjs-ng/$QUICKJS_VERSION/qjs.exe"
@@ -1033,14 +1057,14 @@ private const val FFMPEG_EXECUTABLE_SHA256 = "72a489eccd008c2ec2c0a5856c5c75bc3d
 private const val FFPROBE_EXECUTABLE_SHA256 = "19202b23c0043f15ad1b7bce2344f406fd52bd6efd8f995ce02e7392a1cec52f"
 private val YT_DLP_ASSET =
     ToolAsset(
-        DownloadTool.YtDlp,
-        URI("https://github.com/yt-dlp/yt-dlp/releases/download/$YT_DLP_VERSION/yt-dlp.exe"),
-        "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+        uri = URI("https://github.com/yt-dlp/yt-dlp/releases/download/$YT_DLP_VERSION/yt-dlp.exe"),
+        sha256 = "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+        maxBytes = YT_DLP_MAX_DOWNLOAD_BYTES,
     )
 private val FFMPEG_ASSET =
     ToolAsset(
-        DownloadTool.Ffmpeg,
-        URI("https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-$FFMPEG_VERSION-essentials_build.zip"),
-        "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9",
+        uri = URI("https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-$FFMPEG_VERSION-essentials_build.zip"),
+        sha256 = "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9",
+        maxBytes = FFMPEG_MAX_DOWNLOAD_BYTES,
     )
 private val PREVIEW_FAILURE_PROGRESS = fakeProgressSteps[2]

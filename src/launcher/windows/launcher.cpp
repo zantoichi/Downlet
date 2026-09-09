@@ -21,6 +21,8 @@ namespace {
 constexpr int kCabinetResource = 101;
 constexpr int kManifestResource = 102;
 constexpr wchar_t kProductName[] = L"Downlet";
+constexpr wchar_t kPayloadLeaseSuffix[] = L".lease-v1";
+constexpr size_t kSha256HexLength = 64;
 
 struct ResourceBytes {
     const unsigned char* data;
@@ -35,6 +37,11 @@ struct ManifestEntry {
 struct CabinetContext {
     fs::path root;
     std::wstring error;
+};
+
+struct PayloadLease {
+    fs::path directory;
+    HANDLE handle;
 };
 
 std::wstring WindowsError(DWORD code) {
@@ -252,12 +259,134 @@ fs::path LocalAppData() {
     return path;
 }
 
-fs::path EnsurePayload(ResourceBytes cabinet, ResourceBytes manifestResource) {
+std::wstring PayloadHashFromCacheName(const std::wstring& cacheName) {
+    if (cacheName.size() <= kSha256HexLength || cacheName[cacheName.size() - kSha256HexLength - 1] != L'-') {
+        return {};
+    }
+    std::wstring hash = cacheName.substr(cacheName.size() - kSha256HexLength);
+    for (wchar_t character : hash) {
+        bool hexadecimal =
+            (character >= L'0' && character <= L'9') ||
+            (character >= L'a' && character <= L'f') ||
+            (character >= L'A' && character <= L'F');
+        if (!hexadecimal) return {};
+    }
+    return hash;
+}
+
+fs::path PayloadLeasePath(const fs::path& runtimeRoot, const std::wstring& cacheName) {
+    return runtimeRoot / (cacheName + kPayloadLeaseSuffix);
+}
+
+void EnsurePayloadLeaseFile(const fs::path& leasePath) {
+    DWORD attributes = GetFileAttributesW(leasePath.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        DWORD error = GetLastError();
+        if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) {
+            Fail(L"Downlet could not inspect its runtime lease.");
+        }
+        std::ofstream output(leasePath, std::ios::binary | std::ios::trunc);
+        if (!output) Fail(L"Downlet could not create its runtime lease.");
+        attributes = GetFileAttributesW(leasePath.c_str());
+    }
+    if (
+        attributes == INVALID_FILE_ATTRIBUTES ||
+        (attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) {
+        Fail(L"Downlet runtime lease is invalid.");
+    }
+}
+
+HANDLE OpenPayloadLease(const fs::path& leasePath, DWORD shareMode) {
+    HANDLE handle =
+        CreateFileW(
+            leasePath.c_str(),
+            GENERIC_READ,
+            shareMode,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        Fail(
+            shareMode == 0
+                ? L"Downlet cannot replace a runtime cache while it is in use."
+                : L"Downlet could not acquire its runtime lease.");
+    }
+    return handle;
+}
+
+void PruneStalePayloads(const fs::path& runtimeRoot, const fs::path& currentDirectory) {
+    std::error_code iterationError;
+    fs::directory_iterator iterator(runtimeRoot, iterationError);
+    fs::directory_iterator end;
+    while (!iterationError && iterator != end) {
+        fs::path leasePath = iterator->path();
+        iterator.increment(iterationError);
+
+        DWORD leaseAttributes = GetFileAttributesW(leasePath.c_str());
+        if (
+            leaseAttributes == INVALID_FILE_ATTRIBUTES ||
+            (leaseAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) {
+            continue;
+        }
+
+        std::wstring leaseName = leasePath.filename().wstring();
+        std::wstring suffix = kPayloadLeaseSuffix;
+        if (!leaseName.ends_with(suffix)) continue;
+        std::wstring cacheName = leaseName.substr(0, leaseName.size() - suffix.size());
+        if (cacheName == currentDirectory.filename().wstring()) continue;
+        std::wstring payloadHash = PayloadHashFromCacheName(cacheName);
+        if (payloadHash.empty()) continue;
+
+        std::wstring mutexName = L"Local\\Downlet-runtime-" + payloadHash;
+        HANDLE mutex = CreateMutexW(nullptr, FALSE, mutexName.c_str());
+        if (!mutex) continue;
+        DWORD wait = WaitForSingleObject(mutex, 0);
+        if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) {
+            CloseHandle(mutex);
+            continue;
+        }
+
+        HANDLE exclusiveLease =
+            CreateFileW(
+                leasePath.c_str(),
+                GENERIC_READ,
+                0,
+                nullptr,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                nullptr);
+        if (exclusiveLease != INVALID_HANDLE_VALUE) {
+            fs::path candidate = runtimeRoot / cacheName;
+            DWORD candidateAttributes = GetFileAttributesW(candidate.c_str());
+            bool removed = candidateAttributes == INVALID_FILE_ATTRIBUTES;
+            if (
+                !removed &&
+                (candidateAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
+                (candidateAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
+                std::error_code removeError;
+                fs::remove_all(candidate, removeError);
+                removed = !removeError;
+            }
+            CloseHandle(exclusiveLease);
+            if (removed) {
+                std::error_code markerError;
+                fs::remove(leasePath, markerError);
+            }
+        }
+
+        ReleaseMutex(mutex);
+        CloseHandle(mutex);
+    }
+}
+
+PayloadLease EnsurePayload(ResourceBytes cabinet, ResourceBytes manifestResource) {
     auto manifest = ParseManifest(manifestResource);
     std::string payloadHash = Sha256(manifestResource.data, manifestResource.size);
     std::wstring payloadHashWide(payloadHash.begin(), payloadHash.end());
     fs::path runtimeRoot = LocalAppData() / L"Downlet" / L"runtime";
     fs::path finalDirectory = runtimeRoot / (std::wstring(DOWNLET_VERSION) + L"-" + payloadHashWide);
+    fs::path leasePath = PayloadLeasePath(runtimeRoot, finalDirectory.filename().wstring());
 
     std::wstring mutexName = L"Local\\Downlet-runtime-" + payloadHashWide;
     HANDLE mutex = CreateMutexW(nullptr, FALSE, mutexName.c_str());
@@ -276,6 +405,8 @@ fs::path EnsurePayload(ResourceBytes cabinet, ResourceBytes manifestResource) {
             CloseHandle(mutex);
             Fail(L"Downlet could not create its local runtime folder.");
         }
+        EnsurePayloadLeaseFile(leasePath);
+        HANDLE exclusiveLease = OpenPayloadLease(leasePath, 0);
         fs::remove_all(finalDirectory, error);
         if (error) {
             ReleaseMutex(mutex);
@@ -309,11 +440,14 @@ fs::path EnsurePayload(ResourceBytes cabinet, ResourceBytes manifestResource) {
             CloseHandle(mutex);
             Fail(L"Downlet could not activate its local runtime: " + WindowsError(moveError));
         }
+        CloseHandle(exclusiveLease);
     }
 
+    EnsurePayloadLeaseFile(leasePath);
+    HANDLE activeLease = OpenPayloadLease(leasePath, FILE_SHARE_READ);
     ReleaseMutex(mutex);
     CloseHandle(mutex);
-    return finalDirectory;
+    return {finalDirectory, activeLease};
 }
 
 std::wstring QuoteArgument(const std::wstring& argument) {
@@ -370,6 +504,7 @@ DWORD LaunchApplication(const fs::path& runtimeDirectory) {
         Fail(L"Downlet could not start: " + WindowsError(GetLastError()));
     }
     CloseHandle(process.hThread);
+    PruneStalePayloads(runtimeDirectory.parent_path(), runtimeDirectory);
     WaitForSingleObject(process.hProcess, INFINITE);
     DWORD exitCode = 1;
     GetExitCodeProcess(process.hProcess, &exitCode);
@@ -381,5 +516,8 @@ DWORD LaunchApplication(const fs::path& runtimeDirectory) {
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     ResourceBytes cabinet = LoadEmbeddedResource(kCabinetResource);
     ResourceBytes manifest = LoadEmbeddedResource(kManifestResource);
-    return static_cast<int>(LaunchApplication(EnsurePayload(cabinet, manifest)));
+    PayloadLease payload = EnsurePayload(cabinet, manifest);
+    DWORD exitCode = LaunchApplication(payload.directory);
+    CloseHandle(payload.handle);
+    return static_cast<int>(exitCode);
 }

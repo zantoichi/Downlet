@@ -1,15 +1,20 @@
 package downlet
 
 import com.sun.jna.platform.win32.KnownFolders
+import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
+import java.net.InetSocketAddress
+import java.net.URI
+import java.net.http.HttpClient
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Comparator
 import java.util.concurrent.CompletableFuture
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -117,6 +122,33 @@ class DownloadRuntimeTest {
             quickJsArguments("C:\\Downlet\\qjs.exe"),
         )
         assertEquals(emptyList(), quickJsArguments(null))
+    }
+
+    @Test
+    fun `browser cookies are added only after an explicit choice`() {
+        assertEquals(
+            listOf("--cookies-from-browser", "firefox"),
+            browserCookieArguments(BrowserCookieSource.Firefox),
+        )
+        assertEquals(
+            listOf("--cookies-from-browser", "chrome"),
+            browserCookieArguments(BrowserCookieSource.Chrome),
+        )
+        assertEquals(
+            listOf("--cookies-from-browser", "edge"),
+            browserCookieArguments(BrowserCookieSource.Edge),
+        )
+        assertEquals(emptyList(), browserCookieArguments(null))
+    }
+
+    @Test
+    fun `show in folder preserves normalized paths with spaces and unicode`() {
+        val file = Path.of("Downloads", ".", "Ο δικός μου Valentino.mp3")
+
+        assertEquals(
+            file.toAbsolutePath().normalize().toString(),
+            normalizedRevealPath(file),
+        )
     }
 
     @Test
@@ -314,6 +346,50 @@ class DownloadRuntimeTest {
         assertEquals(listOf("yt-dlp", "FFmpeg"), DownloadTool.entries.map(DownloadTool::label))
         assertEquals(123, DownloadTool.entries.sumOf(DownloadTool::estimatedDownloadMegabytes))
     }
+
+    @Test
+    fun `managed tool downloads enforce byte limits and remove partial files`() =
+        withTempDirectory { root ->
+            val payload = "tool!".toByteArray()
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+            server.createContext("/tool") { exchange ->
+                exchange.sendResponseHeaders(200, payload.size.toLong())
+                exchange.responseBody.use { it.write(payload) }
+            }
+            server.start()
+            try {
+                runTest {
+                    val toolsDirectory = root.resolve("tools")
+                    val expected = root.resolve("expected.bin").also { Files.write(it, payload) }
+                    val runtime =
+                        YtDlpDownloadRuntime(
+                            toolsDirectory = toolsDirectory,
+                            environment = emptyMap(),
+                            httpClient = HttpClient.newHttpClient(),
+                        )
+                    val uri = URI("http://127.0.0.1:${server.address.port}/tool")
+                    val sha256 = sha256(expected)
+
+                    val downloaded =
+                        runtime.downloadVerified(
+                            ToolAsset(uri = uri, sha256 = sha256, maxBytes = payload.size.toLong()),
+                        )
+                    assertContentEquals(payload, Files.readAllBytes(downloaded))
+                    Files.delete(downloaded)
+
+                    val error =
+                        assertFailsWith<DownloadRuntimeException> {
+                            runtime.downloadVerified(
+                                ToolAsset(uri = uri, sha256 = sha256, maxBytes = payload.size.toLong() - 1),
+                            )
+                        }
+                    assertEquals(DownloadFailureReason.Tool, error.reason)
+                    Files.list(toolsDirectory).use { files -> assertFalse(files.findAny().isPresent) }
+                }
+            } finally {
+                server.stop(0)
+            }
+        }
 
     @Test
     fun `known folder lookup uses native result or fallback`() {
@@ -538,7 +614,7 @@ class DownloadRuntimeTest {
         id: String,
         thumbnail: ByteArray,
     ) = DownloadFixtures.normal.copy(
-        source = requireNotNull(YouTubeUrl.parse("https://youtu.be/$id")),
+        source = requireNotNull(YouTubeUrl.parse("https://youtu.be/${id.padEnd(11, '0')}")),
         thumbnail = MediaThumbnail.Remote(ThumbnailData(thumbnail)),
     )
 

@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import downlet.generated.resources.Res
 import downlet.generated.resources.preview_unavailable
 import downlet.generated.resources.thumbnail_city_after_rain
+import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.CheckboxRow
@@ -51,12 +53,15 @@ import org.jetbrains.jewel.ui.component.CircularProgressIndicator
 import org.jetbrains.jewel.ui.component.DefaultButton
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.InlineErrorBanner
+import org.jetbrains.jewel.ui.component.InlineWarningBanner
 import org.jetbrains.jewel.ui.component.Link
 import org.jetbrains.jewel.ui.component.ListComboBox
 import org.jetbrains.jewel.ui.component.RadioButtonRow
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.nanoseconds
+import kotlin.time.Duration.Companion.seconds
 
 @Composable
 @Suppress("LongMethod")
@@ -189,7 +194,7 @@ internal fun LegalDetailsContent(
             style = LocalDownletTypography.current.sectionHeading,
         )
         ProductCopy.legalSections.forEach { section ->
-            LegalSection(title = section.title, body = section.body)
+            InformationSection(title = section.title, body = section.body)
         }
     }
 }
@@ -217,7 +222,7 @@ internal fun ResolvingContent(state: DownloadUiState.Resolving) {
 }
 
 @Composable
-private fun LegalSection(
+private fun InformationSection(
     title: String,
     body: String,
 ) {
@@ -236,30 +241,55 @@ internal fun DownloadWorkPlaneContent(
     state: DownloadUiState,
     animationsEnabled: Boolean,
 ) {
-    if (state is DownloadUiState.Error && state.kind == DownloadErrorKind.Resolution) {
+    if (
+        state is DownloadUiState.Error &&
+        (state.kind == DownloadErrorKind.Resolution || state.reason == DownloadFailureReason.Authentication)
+    ) {
         ErrorActionRegion(stateHolder, state)
         return
     }
     val item = state.itemOrNull ?: return
     val controlsEnabled = state is DownloadUiState.Ready
-    val controlGap = 10.dp
-    val thumbnailWidth = 96.dp
+    var showingAudioHelp by remember(item.source, state::class, stateHolder.selectedMode) { mutableStateOf(false) }
+    if (showingAudioHelp) {
+        AudioQualityHelp(onBack = { showingAudioHelp = false })
+    } else {
+        val controlGap = 10.dp
+        val thumbnailWidth = 96.dp
 
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(controlGap),
+        ) {
+            MediaIdentity(item, thumbnailWidth)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                DownloadModeRow(stateHolder, controlsEnabled, Modifier.weight(1f)) {
+                    showingAudioHelp = true
+                }
+                QualityRow(stateHolder, controlsEnabled, Modifier.weight(QUALITY_COLUMN_WEIGHT))
+            }
+            DestinationRow(stateHolder, controlsEnabled)
+            if (state is DownloadUiState.Ready) DownloadAuthorizationRow(stateHolder)
+            StateActionRegion(stateHolder, state, animationsEnabled)
+        }
+    }
+}
+
+@Composable
+private fun AudioQualityHelp(onBack: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(controlGap),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        MediaIdentity(item, thumbnailWidth)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            DownloadModeRow(stateHolder, controlsEnabled, Modifier.weight(1f))
-            QualityRow(stateHolder, controlsEnabled, Modifier.weight(QUALITY_COLUMN_WEIGHT))
+        IconLink(AllIconsKeys.Actions.Back, "Back to download", onClick = onBack)
+        Text("Audio quality explained", style = LocalDownletTypography.current.sectionHeading)
+        ProductCopy.audioQualityAnswers.forEach { (question, answer) ->
+            InformationSection(title = question, body = answer)
         }
-        DestinationRow(stateHolder, controlsEnabled)
-        if (state is DownloadUiState.Ready) DownloadAuthorizationRow(stateHolder)
-        StateActionRegion(stateHolder, state, animationsEnabled)
+        Link("Back to download", onClick = onBack)
     }
 }
 
@@ -297,6 +327,7 @@ private fun DownloadModeRow(
     stateHolder: DownloadStateHolder,
     enabled: Boolean,
     modifier: Modifier,
+    onShowAudioHelp: () -> Unit,
 ) {
     LabeledSection(
         icon = AllIconsKeys.Actions.Download,
@@ -316,6 +347,9 @@ private fun DownloadModeRow(
                 onClick = { stateHolder.selectMode(DownloadMode.Audio) },
                 enabled = enabled,
             )
+        }
+        if (stateHolder.selectedMode == DownloadMode.Audio && enabled) {
+            Link("Audio quality explained", onClick = onShowAudioHelp)
         }
     }
 }
@@ -433,7 +467,7 @@ private fun DownloadingActionRegion(
     state: DownloadUiState.Downloading,
     animationsEnabled: Boolean,
 ) {
-    val presentation = downloadProgressPresentation(state.progress)
+    val presentation = downloadProgressPresentation(state.progress, rememberConversionElapsed(state))
     val announcement = downloadProgressAnnouncement(state.progress)
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -472,6 +506,27 @@ private fun DownloadingActionRegion(
             Link("Cancel", onClick = stateHolder::cancelDownload)
         }
     }
+}
+
+@Composable
+private fun rememberConversionElapsed(state: DownloadUiState.Downloading): Duration? {
+    val processing =
+        (state.progress as? DownloadProgress.Processing)
+            ?.takeIf { it.stage == DownloadProcessingStage.Converting }
+            ?: return null
+
+    var elapsed by remember(state.item.source, processing.stage) { mutableStateOf(Duration.ZERO) }
+    LaunchedEffect(state.item.source, processing.stage) {
+        val startedAtNanos = withFrameNanos { it }
+        while (true) {
+            delay(1.seconds)
+            withFrameNanos { frameTimeNanos ->
+                val current = (frameTimeNanos - startedAtNanos).coerceAtLeast(0).nanoseconds
+                if (current.inWholeSeconds != elapsed.inWholeSeconds) elapsed = current
+            }
+        }
+    }
+    return elapsed
 }
 
 @Composable
@@ -533,6 +588,10 @@ private fun ErrorActionRegion(
     stateHolder: DownloadStateHolder,
     error: DownloadUiState.Error,
 ) {
+    if (error.reason == DownloadFailureReason.Authentication) {
+        AuthenticationActionRegion(stateHolder, error)
+        return
+    }
     val copy = ProductCopy.downloadFailure(error.kind, error.reason)
     val errorColor = JewelTheme.globalColors.text.error
     InlineErrorBanner(
@@ -555,7 +614,34 @@ private fun ErrorActionRegion(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(copy.title, color = errorColor, style = LocalDownletTypography.current.mediaTitle)
-            Text(copy.guidance, color = errorColor)
+            Text(copy.guidance)
+        }
+    }
+}
+
+@Composable
+private fun AuthenticationActionRegion(
+    stateHolder: DownloadStateHolder,
+    error: DownloadUiState.Error,
+) {
+    val copy = ProductCopy.downloadFailure(error.kind, error.reason)
+    InlineWarningBanner(
+        linkActions = {
+            BrowserCookieSource.entries.forEach { source ->
+                action("Use ${source.name}") { stateHolder.retryWithBrowserCookies(source) }
+            }
+        },
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .semantics {
+                    contentDescription = "Warning: ${copy.title} ${copy.guidance}"
+                    liveRegion = LiveRegionMode.Polite
+                },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(copy.title, style = LocalDownletTypography.current.mediaTitle)
+            Text(copy.guidance)
         }
     }
 }

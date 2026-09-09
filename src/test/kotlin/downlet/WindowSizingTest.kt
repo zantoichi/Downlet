@@ -76,7 +76,7 @@ class WindowSizingTest {
 
     @Test
     fun `logical tier dimensions scale to native device pixels`() {
-        val size = DpSize(760.dp, 480.dp)
+        val size = WindowPresentationTier.Expanded.preferredSize
 
         assertEquals(IntSize(760, 480), size.toDevicePixels(density = 1f))
         assertEquals(IntSize(950, 600), size.toDevicePixels(density = 1.25f))

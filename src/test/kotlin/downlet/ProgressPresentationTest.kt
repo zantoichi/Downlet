@@ -17,6 +17,33 @@ class ProgressPresentationTest {
         assertEquals("About 13 sec", formatEta(13.seconds))
         assertEquals("About 2 min", formatEta(90.seconds))
         assertEquals("About 2 hr 5 min", formatEta(2.hours + 5.minutes))
+        assertEquals("12 sec elapsed", formatElapsed(12.seconds))
+        assertEquals("2 min 5 sec elapsed", formatElapsed(2.minutes + 5.seconds))
+        assertEquals("1 hr 2 min elapsed", formatElapsed(1.hours + 2.minutes + 3.seconds))
+    }
+
+    @Test
+    fun `elapsed time appears only while converting audio`() {
+        val elapsed = 12.seconds
+        assertEquals(
+            "12 sec elapsed",
+            downloadProgressPresentation(
+                DownloadProgress.Processing(DownloadProcessingStage.Converting),
+                elapsed,
+            ).rightText,
+        )
+        assertNull(
+            downloadProgressPresentation(
+                DownloadProgress.Processing(DownloadProcessingStage.Merging),
+                elapsed,
+            ).rightText,
+        )
+        assertNull(
+            downloadProgressPresentation(
+                DownloadProgress.Processing(DownloadProcessingStage.Finalizing),
+                elapsed,
+            ).rightText,
+        )
     }
 
     @Test
@@ -80,8 +107,21 @@ class ProgressPresentationTest {
             ),
         )
         assertEquals(
+            TaskbarProgress(TaskbarProgressState.Indeterminate),
+            taskbarProgress(
+                DownloadUiState.Downloading(
+                    DownloadFixtures.normal,
+                    DownloadProgress.Processing(DownloadProcessingStage.Converting),
+                ),
+            ),
+        )
+        assertEquals(
             TaskbarProgress(TaskbarProgressState.Error, 100),
             taskbarProgress(DownloadUiState.Error(DownloadFixtures.failure)),
+        )
+        assertEquals(
+            TaskbarProgress(TaskbarProgressState.Off),
+            taskbarProgress(DownloadUiState.Error(DownloadFixtures.failure, DownloadErrorKind.Resolution)),
         )
         assertEquals(
             TaskbarProgress(TaskbarProgressState.Off),

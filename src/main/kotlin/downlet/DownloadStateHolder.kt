@@ -98,6 +98,7 @@ internal class DownloadStateHolder(
     private var metadataJob: Job? = null
     private var downloadJob: Job? = null
     private var observedLinkText = ""
+    private var browserCookies: BrowserCookieSource? = null
     private val automaticRepairAttempts = mutableSetOf<DownloadTool>()
 
     private val availableQualities: List<DownloadQuality>
@@ -115,6 +116,7 @@ internal class DownloadStateHolder(
         if (text == observedLinkText) return false
 
         observedLinkText = text
+        browserCookies = null
         validationMessage =
             text
                 .takeIf { it.isNotBlank() && !isValidYouTubeUrl(it) }
@@ -126,11 +128,15 @@ internal class DownloadStateHolder(
         return true
     }
 
-    fun beginResolution(text: String) {
+    fun beginResolution(
+        text: String,
+        browserCookies: BrowserCookieSource? = null,
+    ) {
         val source = YouTubeUrl.parse(text) ?: return
         val value = source.toString()
 
         replaceLink(value)
+        this.browserCookies = browserCookies
         validationMessage = null
         clearReadySelection()
         automaticRepairAttempts.clear()
@@ -249,7 +255,20 @@ internal class DownloadStateHolder(
     fun retryDownload() {
         val error = state as? DownloadUiState.Error ?: return
         if (error.kind == DownloadErrorKind.Resolution) {
-            beginResolution(error.item.source.toString())
+            beginResolution(error.item.source.toString(), browserCookies)
+        } else {
+            startDownload(error.item)
+        }
+    }
+
+    fun retryWithBrowserCookies(source: BrowserCookieSource) {
+        val error =
+            (state as? DownloadUiState.Error)?.takeIf {
+                it.reason == DownloadFailureReason.Authentication
+            } ?: return
+        browserCookies = source
+        if (error.kind == DownloadErrorKind.Resolution) {
+            beginResolution(error.item.source.toString(), source)
         } else {
             startDownload(error.item)
         }
@@ -268,6 +287,7 @@ internal class DownloadStateHolder(
         linkFieldState.clearText()
         validationMessage = null
         clearReadySelection()
+        browserCookies = null
         automaticRepairAttempts.clear()
         requestLinkFocus()
         transitionTo(DownloadUiState.Empty)
@@ -291,6 +311,7 @@ internal class DownloadStateHolder(
         }
         this.validationMessage = validationMessage
         clearReadySelection()
+        browserCookies = null
         automaticRepairAttempts.clear()
         when (state) {
             is DownloadUiState.Ready -> prepareReady()
@@ -305,6 +326,7 @@ internal class DownloadStateHolder(
 
     fun close() {
         cancelActiveWork()
+        browserCookies = null
         holderJob.cancel()
     }
 
@@ -370,7 +392,7 @@ internal class DownloadStateHolder(
 
         transitionTo(DownloadUiState.Resolving(requestItem))
         try {
-            val resolvedItem = runtime.resolve(requestItem.source).withPreviewFrom(requestItem)
+            val resolvedItem = runtime.resolve(requestItem.source, browserCookies).withPreviewFrom(requestItem)
             if (isCurrentResolution(requestItem, generation)) {
                 prepareReady()
                 transitionTo(DownloadUiState.Ready(resolvedItem))
@@ -415,7 +437,7 @@ internal class DownloadStateHolder(
         downloadGeneration += 1
         val generation = downloadGeneration
         automaticRepairAttempts.clear()
-        val request = DownloadRequest(item, selectedQuality)
+        val request = DownloadRequest(item, selectedQuality, browserCookies)
         readyFeedback = null
         completedFeedback = null
         transitionTo(DownloadUiState.Downloading(item, DownloadProgress.Preparing))

@@ -137,7 +137,10 @@ internal data class DownloadProgressPresentation(
     val rightText: String? = null,
 )
 
-internal fun downloadProgressPresentation(progress: DownloadProgress): DownloadProgressPresentation =
+internal fun downloadProgressPresentation(
+    progress: DownloadProgress,
+    processingElapsed: Duration? = null,
+): DownloadProgressPresentation =
     when (progress) {
         DownloadProgress.Preparing -> {
             DownloadProgressPresentation("Preparing", "Preparing download…")
@@ -159,6 +162,12 @@ internal fun downloadProgressPresentation(progress: DownloadProgress): DownloadP
                         DownloadProcessingStage.Merging -> "Merging video and audio…"
                         DownloadProcessingStage.Converting -> "Converting audio…"
                         DownloadProcessingStage.Finalizing -> "Preparing the completed file…"
+                    },
+                rightText =
+                    if (progress.stage == DownloadProcessingStage.Converting) {
+                        processingElapsed?.let(::formatElapsed)
+                    } else {
+                        null
                     },
             )
         }
@@ -232,6 +241,28 @@ internal fun formatEta(duration: Duration): String {
             val hours = seconds / 3_600
             val minutes = (seconds % 3_600) / 60
             "About $hours hr $minutes min"
+        }
+    }
+}
+
+@Suppress("MagicNumber")
+internal fun formatElapsed(duration: Duration): String {
+    val seconds = duration.inWholeSeconds.coerceAtLeast(0)
+    return when {
+        seconds < 60 -> {
+            "$seconds sec elapsed"
+        }
+
+        seconds < 3_600 -> {
+            val minutes = seconds / 60
+            val remainingSeconds = seconds % 60
+            if (remainingSeconds == 0L) "$minutes min elapsed" else "$minutes min $remainingSeconds sec elapsed"
+        }
+
+        else -> {
+            val hours = seconds / 3_600
+            val minutes = (seconds % 3_600) / 60
+            if (minutes == 0L) "$hours hr elapsed" else "$hours hr $minutes min elapsed"
         }
     }
 }

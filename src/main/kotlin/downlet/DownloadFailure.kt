@@ -29,14 +29,22 @@ internal fun classifyDownloadFailure(lines: List<String>): DownloadFailureReason
         ) -> DownloadFailureReason.Processing
 
         hasAny(
+            "sign in to confirm your age",
+            "sign in to confirm you're not a bot",
+            "use --cookies-from-browser or --cookies for the authentication",
+            "login required",
+            "age-restricted",
+            "cookies database",
+            "failed to extract cookies",
+            "failed to load cookies",
+            "cookie load error",
+        ) -> DownloadFailureReason.Authentication
+
+        hasAny(
             "video unavailable",
             "private video",
             "this video has been removed",
-            "sign in",
-            "login required",
-            "cookies",
             "members-only",
-            "age-restricted",
             "not available in your country",
             "http error 403",
             "http error 404",

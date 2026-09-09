@@ -64,6 +64,13 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 - **THEN** Original audio without conversion is selected by default and shows its source codec, container, and average bitrate, while MP3 remains available at high-quality VBR around 190 kbps, 160 kbps, and 128 kbps quality
 - **AND** Downlet explains that MP3 re-encodes the source for compatibility, cannot restore missing detail, and may add quality loss
 
+#### Scenario: User reads audio quality help
+
+- **WHEN** the user opens Audio quality explained beside the audio format selector
+- **THEN** Downlet shows scrollable explanations of Original, MP3, FLAC's source-quality ceiling, playback loudness, clipping limits, and ReplayGain's metadata-only adjustment and player dependence
+- **AND** the help states that Downlet does not boost or normalize exports and does not currently add ReplayGain tags
+- **AND** Back to download restores the user's format, destination, and authorization without starting a download
+
 #### Scenario: User changes the destination
 
 - **WHEN** the user activates Change
@@ -89,7 +96,7 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 
 ### Requirement: Download outcomes remain actionable
 
-Downloading SHALL preserve media context, lock choices that must not change, and expose Cancel as a secondary action. Each attempt SHALL begin in Preparing. Transfer progress SHALL aggregate downloaded bytes across selected video and audio streams in completion order, use exact totals before estimates, remain indeterminate when no trustworthy total exists, and never move the visible fraction backward when totals change or an unexpected stream appears. It SHALL show downloaded bytes, available total, speed, and approximate ETA without fabricated placeholders. After transfer it SHALL identify Merging, Converting, or other Finalizing work with indeterminate progress. A displayed 100 percent SHALL represent transferred bytes only and SHALL NOT cause completion; only successful process exit and transactional publication SHALL enter Completed. The Windows taskbar SHALL mirror active progress when supported and otherwise remain a no-op. Completed SHALL show the exact published path with Show in folder and Download another. Error SHALL categorize availability, network, storage, processing, tool, and unknown failures without backend jargon and SHALL expose Retry; storage failures SHALL additionally expose Change folder.
+Downloading SHALL preserve media context, lock choices that must not change, and expose Cancel as a secondary action. Each attempt SHALL begin in Preparing. Transfer progress SHALL aggregate downloaded bytes across selected video and audio streams in completion order, use exact totals before estimates, remain indeterminate when no trustworthy total exists, and never move the visible fraction backward when totals change or an unexpected stream appears. It SHALL show downloaded bytes, available total, speed, and approximate ETA without fabricated placeholders. After transfer it SHALL identify Merging, Converting, or other Finalizing work with indeterminate progress. Audio conversion SHALL show elapsed time without presenting a fabricated percentage or remaining-time estimate. A displayed 100 percent SHALL represent transferred bytes only and SHALL NOT cause completion; only successful process exit and transactional publication SHALL enter Completed. The Windows taskbar SHALL mirror active progress when supported and otherwise remain a no-op. Completed SHALL show the exact published path with Show in folder and Download another; Show in folder SHALL open the containing folder with that exact file selected, including paths with spaces or Unicode characters. Error SHALL categorize authentication, availability, network, storage, processing, tool, and unknown failures without raw diagnostics. Authentication recovery SHALL use warning severity and expose Firefox, Chrome, and Edge session actions; other failures SHALL expose Retry, and storage failures SHALL additionally expose Change folder.
 
 #### Scenario: User cancels a download
 
@@ -131,6 +138,12 @@ Downloading SHALL preserve media context, lock choices that must not change, and
 - **WHEN** diagnostics identify path-length failures, HTTP 404 or DRM availability failures, or DNS and abruptly closed network failures
 - **THEN** Downlet maps them to Storage, Availability, or Network respectively while unknown and stale-format failures remain Unknown
 
+#### Scenario: YouTube requires authentication
+
+- **WHEN** diagnostics require age confirmation or browser cookies
+- **THEN** Downlet offers Firefox, Chrome, and Edge, explains that the selected profile must already have an age-verified YouTube session, and does not expose a redundant unauthenticated Retry
+- **AND** selecting a browser gives yt-dlp temporary cookie access for resolution, download, and retries of only the current video without Downlet storing or displaying cookie values
+
 #### Scenario: Storage recovery changes destination
 
 - **WHEN** a storage failure is visible and the user activates Change folder
@@ -138,9 +151,9 @@ Downloading SHALL preserve media context, lock choices that must not change, and
 
 ### Requirement: Downloads use yt-dlp
 
-Normal product operation SHALL use a local `yt-dlp` process after Previewing and any required Setup to resolve authoritative YouTube metadata and download the selected Video or Audio format and quality. Resolution SHALL obtain media identity and available formats in one process call, select explicit stream IDs, and use those IDs for download so displayed details match the selected streams. MP3 downloads SHALL transfer audio-only input and high-quality VBR SHALL use quality level 2. Each attempt SHALL use an isolated staging directory inside the chosen destination, and Downlet SHALL publish the final media file only after `yt-dlp` exits successfully. It SHALL provide bundled QuickJS-NG to `yt-dlp` for YouTube JavaScript support and FFmpeg for merging and audio processing. Resolving SHALL use `--skip-download`, preserve preview identity while checking available formats, and download no media. Downlet SHALL translate transfer and processing events into its existing product states, SHALL stop and await the active process tree when Cancel is activated, SHALL remove attempt-owned staging files after success, failure, or cancellation, and SHALL keep command output and backend options out of the interface. The deterministic fake runtime MAY remain available only for tests and the Design Review app.
+Normal product operation SHALL use a local `yt-dlp` process after Previewing and any required Setup to resolve authoritative YouTube metadata and download the selected Video or Audio format and quality. Resolution SHALL obtain media identity and available formats in one process call, select explicit stream IDs, and use those IDs for download so displayed details match the selected streams. MP3 downloads SHALL transfer audio-only input and high-quality VBR SHALL use quality level 2. Each attempt SHALL use an isolated staging directory inside the chosen destination, and Downlet SHALL publish the final media file only after `yt-dlp` exits successfully. It SHALL provide bundled QuickJS-NG to `yt-dlp` for YouTube JavaScript support and FFmpeg for merging and audio processing. Resolving SHALL use `--skip-download`, preserve preview identity while checking available formats, and download no media. After an explicit browser choice, resolution and download SHALL add only `--cookies-from-browser` with the selected Firefox, Chrome, or Edge identifier. Downlet SHALL translate transfer and processing events into its existing product states, SHALL stop and await the active process tree when Cancel is activated, SHALL remove attempt-owned staging files after success, failure, or cancellation, and SHALL keep command output and cookie values out of the interface. The deterministic fake runtime MAY remain available only for tests and the Design Review app.
 
-Successful preview and resolution results SHALL be cached only for the current application session. The cache SHALL retain at most 16 media entries and 16 MiB of compressed thumbnail data, evict least-recently-used complete entries when either limit is exceeded, and SHALL NOT cache failures, user choices, progress, destinations, or downloaded files.
+Successful preview and unauthenticated resolution results SHALL be cached only for the current application session. Authenticated resolution SHALL bypass resolution-cache reads and writes. The cache SHALL retain at most 16 media entries and 16 MiB of compressed thumbnail data, evict least-recently-used complete entries when either limit is exceeded, and SHALL NOT cache failures, user choices, progress, destinations, cookie sources, or downloaded files.
 
 #### Scenario: A link resolves through yt-dlp
 
@@ -159,7 +172,7 @@ Successful preview and resolution results SHALL be cached only for the current a
 
 ### Requirement: Tool setup is explicit and verified
 
-Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required notices, but SHALL NOT include yt-dlp or FFmpeg in its distribution. After Previewing succeeds, Setup SHALL appear when yt-dlp or FFmpeg is unavailable or when a previously installed Downlet-managed copy requires repair. Tool discovery SHALL check valid explicit environment overrides, then integrity-verified Downlet-managed tools under local application data, then `PATH`, and SHALL NOT scan other folders or drives. Invalid overrides and invalid managed copies SHALL fall through to the next source, and FFmpeg SHALL count as available only when its co-located `ffmpeg` and `ffprobe` executables match their pinned SHA-256 hashes. Setup for missing tools SHALL keep the media preview visible, name only the missing tools, state their approximate download size and purpose, clarify that tool setup does not download the media, leave consent unselected, and download nothing until the user selects consent and activates Download and continue. A damaged or incomplete managed installation with no valid external fallback SHALL enter automatic Repair without renewed consent, replace only the affected managed tools with the same pinned and verified versions, and SHALL NOT alter overrides or `PATH` tools. Bundled QuickJS-NG SHALL repair locally without network access. Setup SHALL expose Read full terms, which replaces the work area with preview-network, tool-license, media-responsibility, and liability information and provides Back to setup without losing the URL or consent state. Downlet SHALL retrieve pinned upstream artifacts, verify their SHA-256 hashes before installation, store them under the user's local application-data directory, and invoke them as separate processes. Editing the URL SHALL remain available as a way to leave or cancel Setup or Repair.
+Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required notices, but SHALL NOT include yt-dlp or FFmpeg in its distribution. After Previewing succeeds, Setup SHALL appear when yt-dlp or FFmpeg is unavailable or when a previously installed Downlet-managed copy requires repair. Tool discovery SHALL check valid explicit environment overrides, then integrity-verified Downlet-managed tools under local application data, then `PATH`, and SHALL NOT scan other folders or drives. Invalid overrides and invalid managed copies SHALL fall through to the next source, and FFmpeg SHALL count as available only when its co-located `ffmpeg` and `ffprobe` executables match their pinned SHA-256 hashes. Setup for missing tools SHALL keep the media preview visible, name only the missing tools, state their approximate download size and purpose, clarify that tool setup does not download the media, leave consent unselected, and download nothing until the user selects consent and activates Download and continue. A damaged or incomplete managed installation with no valid external fallback SHALL enter automatic Repair without renewed consent, replace only the affected managed tools with the same pinned and verified versions, and SHALL NOT alter overrides or `PATH` tools. Bundled QuickJS-NG SHALL repair locally without network access. Setup SHALL expose Read full terms, which replaces the work area with preview-network, tool-license, media-responsibility, and liability information and provides Back to setup without losing the URL or consent state. Downlet SHALL retrieve pinned upstream artifacts with a fixed upper byte limit, verify their SHA-256 hashes before installation, delete partial artifacts after failure or cancellation, store verified tools under the user's local application-data directory, and invoke them as separate processes. Editing the URL SHALL remain available as a way to leave or cancel Setup or Repair.
 
 #### Scenario: User declines tool setup
 
@@ -201,9 +214,9 @@ Downlet SHALL bundle a pinned QuickJS-NG Windows executable and its required not
 - **WHEN** automatic Repair fails or the repaired tool fails again in the same operation
 - **THEN** Downlet allows an explicit repair retry after installation failure and otherwise reports a recoverable Tool error without looping or restarting the media download
 
-### Requirement: Windows distribution is portable and self-contained
+### Requirement: Windows distributions are self-contained and user-scoped
 
-Downlet SHALL be distributed for Windows 10 and 11 x64 as one downloadable `Downlet.exe` that requires neither installation nor a system Java runtime. The application window, taskbar presence, and distributed executable SHALL use the same Downlet brand icon. The executable SHALL NOT exceed 90 MiB and SHOULD remain at or below the 65 MiB strong target. It MAY extract and cache its bundled, jlink-trimmed JetBrains Runtime and application payload under the user's local application-data directory. It SHALL verify the cached payload, recover from incomplete or invalid contents, coordinate simultaneous first launches, forward command-line arguments, and return the application's exit code. It SHALL create no registry entries, shortcuts, services, PATH changes, uninstaller, or administrator prompt. yt-dlp and FFmpeg SHALL remain external to the distributed executable.
+Downlet SHALL be distributed for Windows 10 and 11 x64 as both one portable `Downlet.exe` and one per-user MSI. Neither distribution SHALL require a system Java runtime or administrator elevation. The application window, taskbar presence, portable executable, installed launcher, Start Menu entry, and Apps & Features registration SHALL use the Downlet identity and brand icon. The portable executable SHALL NOT exceed 90 MiB and SHOULD remain at or below the 65 MiB strong target. It MAY extract and cache its bundled, jlink-trimmed JetBrains Runtime and application payload under the user's local application-data directory. It SHALL verify the cached payload, recover from incomplete or invalid contents, coordinate simultaneous first launches, forward command-line arguments, return the application's exit code, and best-effort remove inactive stale caches created by lease-aware launchers without delaying or failing startup. Current, active, unrecognized, and locked payload caches SHALL remain untouched. The portable distribution SHALL create no registry entries, shortcuts, services, PATH changes, uninstaller, or administrator prompt. The MSI SHALL install under local application data, create one Start Menu entry and Apps & Features registration, offer no directory chooser or desktop shortcut, and support silent per-user installation. Upgrade and uninstall SHALL preserve downloaded media, Downlet-managed tools, and other user-created data. yt-dlp, FFmpeg, and FFprobe SHALL remain external to both distributions.
 
 #### Scenario: Downlet starts on a machine without Java
 
@@ -224,6 +237,21 @@ Downlet SHALL be distributed for Windows 10 and 11 x64 as one downloadable `Down
 
 - **WHEN** payload verification fails
 - **THEN** Downlet replaces the invalid cache with a verified payload or shows a native error message if recovery fails
+
+#### Scenario: An older portable payload cache is inactive
+
+- **WHEN** a lease-aware older cache is not current or in use
+- **THEN** Downlet removes it without delaying startup, while cleanup failure leaves it available for a later retry
+
+#### Scenario: User installs the MSI
+
+- **WHEN** the user runs the MSI interactively or silently
+- **THEN** Downlet installs for that user without elevation, appears in the Start Menu and Apps & Features, and creates no desktop shortcut or PATH entry
+
+#### Scenario: User upgrades or uninstalls the MSI
+
+- **WHEN** the user installs a newer MSI or removes Downlet
+- **THEN** Windows updates or removes the registered application files while preserving downloads, managed tools, and other user-created data
 
 ### Requirement: Window size follows task stage
 
@@ -261,7 +289,9 @@ Downlet SHALL provide logical keyboard order, visible focus, meaningful control 
 #### Scenario: User switches theme
 
 - **WHEN** the user activates the title-bar theme control
-- **THEN** Downlet switches between light and dark without restarting or changing the current download state
+- **THEN** Downlet switches between light and dark immediately without restarting or changing the entered URL, current download state, or selections
+- **AND** the icon-only control has a `32dp` target and a `20dp` sun in light mode or crescent moon with a selected background in dark mode; its tooltip names the next action and accessibility semantics expose the current mode
+- **AND** the sun and moon morph into one another over `160 ms`, reversing from the current shape when interrupted, without delaying the window colors; disabled motion shows the final shape immediately
 
 #### Scenario: Motion is disabled
 

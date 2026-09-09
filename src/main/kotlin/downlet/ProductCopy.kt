@@ -22,16 +22,51 @@ internal object ProductCopy {
     const val SHOW_IN_FOLDER_ACKNOWLEDGEMENT = "File reveal is unavailable in this design preview."
     const val SHOW_IN_FOLDER_FAILURE_MESSAGE = "Couldn't show the completed file in its folder."
 
+    val audioQualityAnswers =
+        linkedMapOf(
+            "Which format preserves the source?" to
+                "Choose Original to keep YouTube's audio stream without re-encoding or changing its volume. " +
+                "Original means the stream available from YouTube, not the uploader's original recording.",
+            "Does FLAC improve YouTube audio?" to
+                "No. FLAC preserves the audio it receives without further loss, but cannot restore detail " +
+                "already lost in YouTube's compression. A larger file or higher sample rate does not recover it. " +
+                "Downlet currently offers Original and MP3.",
+            "Does a higher MP3 bitrate mean better quality?" to
+                "MP3 re-encodes the source for compatibility and may add quality loss. A higher output bitrate " +
+                "can reduce that extra loss, but cannot improve the source. Bitrates across different codecs " +
+                "are not a direct quality comparison.",
+            "Why can a download sound louder or better?" to
+                "YouTube may turn down audio during playback. A local player may use different volume settings " +
+                "or sound effects. Louder audio can seem fuller even when no detail was added. " +
+                "Compare at matched listening volume with player effects disabled.",
+            "Can volume increase without sacrificing quality?" to
+                "Only while there is room below the clipping limit. Beyond that, boosting requires changing " +
+                "the dynamics or risks distortion. Downlet does not boost, compress, or normalize exports.",
+            "What about ReplayGain?" to
+                "ReplayGain tags store a playback volume suggestion without changing the encoded audio. " +
+                "Compatible players can use it to even out loudness; other players ignore it. It may turn " +
+                "loud tracks down. Positive gain still needs peak-aware playback to avoid clipping. " +
+                "Downlet does not currently add ReplayGain tags.",
+        )
+
     fun downloadFailure(
         kind: DownloadErrorKind,
         reason: DownloadFailureReason,
     ): DownloadFailureCopy =
         when (reason) {
+            DownloadFailureReason.Authentication -> {
+                DownloadFailureCopy(
+                    "Sign in required.",
+                    "Choose a browser where you’re signed in with an age-verified account. yt-dlp temporarily reads " +
+                        "that browser profile’s cookies; Downlet doesn’t store them.",
+                )
+            }
+
             DownloadFailureReason.Availability -> {
                 DownloadFailureCopy(
                     "This media isn’t available to Downlet.",
-                    "It may be private, restricted, removed, or require sign-in. Check the link or use another " +
-                        "accessible video.",
+                    "It may be private, restricted, removed, or unavailable in your region. " +
+                        "Check the link or use another accessible video.",
                 )
             }
 

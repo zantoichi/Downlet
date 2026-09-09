@@ -41,7 +41,10 @@ internal fun taskbarProgress(uiState: DownloadUiState): TaskbarProgress =
         }
 
         is DownloadUiState.Error -> {
-            TaskbarProgress(TaskbarProgressState.Error, MAX_TRANSFER_PERCENT)
+            when (uiState.kind) {
+                DownloadErrorKind.Resolution -> TaskbarProgress(TaskbarProgressState.Off)
+                DownloadErrorKind.Download -> TaskbarProgress(TaskbarProgressState.Error, MAX_TRANSFER_PERCENT)
+            }
         }
 
         else -> {

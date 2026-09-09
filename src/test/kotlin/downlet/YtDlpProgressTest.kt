@@ -150,6 +150,22 @@ class YtDlpProgressTest {
             classifyDownloadFailure(listOf("ffmpeg not found", "conversion failed")),
         )
         assertEquals(DownloadFailureReason.Processing, classifyDownloadFailure(listOf("Postprocessing error")))
+        assertEquals(
+            DownloadFailureReason.Authentication,
+            classifyDownloadFailure(
+                listOf(
+                    "Sign in to confirm your age. Use --cookies-from-browser or --cookies for the authentication.",
+                ),
+            ),
+        )
+        assertEquals(
+            DownloadFailureReason.Authentication,
+            classifyDownloadFailure(listOf("ERROR: could not find chrome cookies database")),
+        )
+        assertEquals(
+            DownloadFailureReason.Authentication,
+            classifyDownloadFailure(listOf("ERROR: Failed to extract cookies from Firefox")),
+        )
         assertEquals(DownloadFailureReason.Availability, classifyDownloadFailure(listOf("Private video")))
         assertEquals(DownloadFailureReason.Network, classifyDownloadFailure(listOf("HTTP Error 503")))
         listOf(

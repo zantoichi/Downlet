@@ -29,7 +29,16 @@ internal enum class DownloadErrorKind {
     Download,
 }
 
+internal enum class BrowserCookieSource(
+    val ytDlpName: String,
+) {
+    Firefox("firefox"),
+    Chrome("chrome"),
+    Edge("edge"),
+}
+
 internal enum class DownloadFailureReason {
+    Authentication,
     Availability,
     Network,
     Storage,
@@ -201,7 +210,7 @@ private fun mp3Quality(bitRateKilobitsPerSecond: Int? = null): DownloadQuality =
 private val YOUTUBE_HOSTS = setOf("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com")
 private val YOUTUBE_NO_COOKIE_HOSTS = setOf("youtube-nocookie.com", "www.youtube-nocookie.com")
 private val YOUTUBE_VIDEO_PATHS = setOf("shorts", "embed", "live")
-private val YOUTUBE_VIDEO_ID = Regex("[A-Za-z0-9_-]+")
+private val YOUTUBE_VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
 private const val YOUTUBE_SHORT_HOST = "youtu.be"
 private const val YOUTUBE_CANONICAL_PREFIX = "https://www.youtube.com/watch?v="
 private const val PREFIXED_VIDEO_PATH_SEGMENTS = 3
@@ -340,7 +349,7 @@ internal data class DownloadItem(
 internal object DownloadFixtures {
     val normal =
         DownloadItem(
-            source = requireNotNull(YouTubeUrl.parse("https://www.youtube.com/watch?v=quiet-transfer")),
+            source = requireNotNull(YouTubeUrl.parse("https://www.youtube.com/watch?v=quiettransf")),
             title = "A calm walk through the city after rain",
             channel = "North Window",
             duration = 12.minutes + 34.seconds,
@@ -372,7 +381,7 @@ internal object DownloadFixtures {
 
     val failure =
         normal.copy(
-            source = requireNotNull(YouTubeUrl.parse("https://youtu.be/downlet-preview-failure")),
+            source = requireNotNull(YouTubeUrl.parse("https://youtu.be/failure0000")),
         )
 
     fun completedFile(item: DownloadItem = normal): Path = item.destination.resolve("downlet-preview.mp4")

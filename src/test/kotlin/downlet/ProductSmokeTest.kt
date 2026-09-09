@@ -1,22 +1,40 @@
 package downlet
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performMouseInput
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -35,8 +53,120 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.nanoseconds
+import kotlin.time.Duration.Companion.seconds
 
 class ProductSmokeTest {
+    @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
+    @Suppress("LongMethod")
+    @Test
+    fun `theme toggle preserves the product state`() {
+        val scheduler = TestCoroutineScheduler()
+        val holder =
+            DownloadStateHolder(
+                CoroutineScope(UnconfinedTestDispatcher(scheduler) + SupervisorJob()),
+                PreviewDownloadRuntime(),
+            )
+        try {
+            runComposeUiTest {
+                val theme = mutableStateOf(DownletTheme.Light)
+                setContent {
+                    ProductTheme(theme.value) {
+                        Column(Modifier.size(760.dp, 480.dp)) {
+                            ThemeToggle(theme.value, { theme.value = it })
+                            TestProductSurface(holder, animationsEnabled = false)
+                        }
+                    }
+                }
+                val states =
+                    listOf(
+                        DownloadUiState.Empty,
+                        DownloadUiState.Ready(DownloadFixtures.normal),
+                        DownloadUiState.Downloading(DownloadFixtures.normal, DownloadProgress.Preparing),
+                    )
+                for (productState in states) {
+                    runOnIdle {
+                        if (productState == DownloadUiState.Empty) {
+                            holder.showDesignState(productState, linkText = "unfinished link")
+                        } else {
+                            holder.showDesignState(productState)
+                        }
+                        if (productState is DownloadUiState.Ready) {
+                            holder.selectMode(DownloadMode.Audio)
+                            holder.selectQuality(1)
+                            holder.updateDownloadAuthorization(true)
+                        }
+                    }
+                    scheduler.runCurrent()
+                    waitForIdle()
+                    val link = holder.linkFieldState.text.toString()
+                    val selection = holder.selectedMode to holder.selectedQualityLabel
+                    val authorized = holder.downloadAuthorizationAccepted
+                    onNodeWithContentDescription("Use dark theme").assertIsOff().performClick()
+                    onNodeWithContentDescription("Use light theme")
+                        .assertIsOn()
+                        .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Dark theme"))
+                        .performSemanticsAction(SemanticsActions.RequestFocus)
+                        .assertIsFocused()
+                        .performKeyInput {
+                            keyDown(Key.Spacebar)
+                            keyUp(Key.Spacebar)
+                        }
+                    onNodeWithContentDescription("Use dark theme")
+                        .assertIsOff()
+                        .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Light theme"))
+                    assertEquals(DownletTheme.Light, theme.value)
+                    assertEquals(productState, holder.state)
+                    assertEquals(link, holder.linkFieldState.text.toString())
+                    assertEquals(selection, holder.selectedMode to holder.selectedQualityLabel)
+                    assertEquals(authorized, holder.downloadAuthorizationAccepted)
+                }
+            }
+        } finally {
+            holder.close()
+        }
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun `theme icon morph reverses and honors disabled motion`() =
+        runComposeUiTest {
+            val theme = mutableStateOf(DownletTheme.Light)
+            val animationsEnabled = mutableStateOf(true)
+            setContent {
+                ProductTheme(DownletTheme.Light) {
+                    ThemeToggle(theme.value, { theme.value = it }, animationsEnabled = animationsEnabled.value)
+                }
+            }
+
+            fun pixels(action: String): IntArray {
+                val bitmap = onNodeWithContentDescription(action).captureToImage()
+                return IntArray(bitmap.width * bitmap.height).also { bitmap.readPixels(it) }
+            }
+            onNodeWithContentDescription("Use dark theme").performMouseInput { enter(center) }
+            val sun = pixels("Use dark theme")
+            mainClock.autoAdvance = false
+            onNodeWithContentDescription("Use dark theme").performClick()
+            mainClock.advanceTimeBy(64)
+            val growingMoon = pixels("Use light theme")
+            mainClock.advanceTimeBy(200)
+            val moon = pixels("Use light theme")
+            assertTrue(!growingMoon.contentEquals(moon))
+            onNodeWithContentDescription("Use light theme").performClick()
+            mainClock.advanceTimeBy(64)
+            val growingSun = pixels("Use dark theme")
+            assertTrue(!growingSun.contentEquals(sun))
+            onNodeWithContentDescription("Use dark theme").performClick()
+            mainClock.advanceTimeBy(200)
+            assertTrue(moon.contentEquals(pixels("Use light theme")))
+            runOnIdle { animationsEnabled.value = false }
+            onNodeWithContentDescription("Use light theme").performClick()
+            mainClock.advanceTimeByFrame()
+            assertTrue(sun.contentEquals(pixels("Use dark theme")))
+            onNodeWithContentDescription("Use dark theme").performClick()
+            mainClock.advanceTimeByFrame()
+            assertTrue(moon.contentEquals(pixels("Use light theme")))
+        }
+
     @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
     @Suppress("LongMethod")
     @Test
@@ -148,7 +278,7 @@ class ProductSmokeTest {
                 ).assertExists()
 
                 mainClock.autoAdvance = false
-                linkField.performTextInput("https://youtu.be/smoke")
+                linkField.performTextInput("https://youtu.be/smoke000000")
                 mainClock.advanceTimeBy(MANUAL_LINK_DEBOUNCE.inWholeMilliseconds)
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
@@ -186,6 +316,16 @@ class ProductSmokeTest {
                 onNodeWithText(ProductCopy.DOWNLOAD_AUTHORIZATION_TEXT).performClick()
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Download").assertIsEnabled()
+                val selectedQuality = stateHolder.selectedQualityLabel
+                onNodeWithText("Audio quality explained").performClick()
+                mainClock.advanceTimeByFrame()
+                ProductCopy.audioQualityAnswers.keys.forEach { question ->
+                    onNodeWithText(question).performScrollTo().assertIsDisplayed()
+                }
+                onAllNodesWithText("Back to download")[1].performScrollTo().performClick()
+                mainClock.advanceTimeByFrame()
+                assertEquals(selectedQuality, stateHolder.selectedQualityLabel)
+                onNodeWithText("Download").performScrollTo().assertIsEnabled()
                 onNodeWithText("Download").performClick()
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
@@ -364,6 +504,97 @@ class ProductSmokeTest {
                 onNodeWithText("Video").assertDoesNotExist()
                 emptyStatus.assertExists()
                 linkField.assertIsFocused()
+            }
+        } finally {
+            stateHolder.close()
+        }
+    }
+
+    @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
+    @Test
+    fun `authentication error offers browser sessions instead of retry`() {
+        val stateScheduler = TestCoroutineScheduler()
+        val stateDispatcher = UnconfinedTestDispatcher(stateScheduler)
+        val stateHolder =
+            DownloadStateHolder(
+                CoroutineScope(stateDispatcher + SupervisorJob()),
+                PreviewDownloadRuntime(),
+            )
+        try {
+            stateHolder.showDesignState(
+                DownloadUiState.Error(
+                    DownloadFixtures.normal,
+                    DownloadErrorKind.Download,
+                    DownloadFailureReason.Authentication,
+                ),
+            )
+            runComposeUiTest {
+                setContent {
+                    IntUiTheme(
+                        theme = JewelTheme.lightThemeDefinition(),
+                        styling = ComponentStyling.default().decoratedWindow(),
+                    ) {
+                        TestProductSurface(stateHolder)
+                    }
+                }
+
+                onNodeWithText("Sign in required.").assertIsDisplayed()
+                onNodeWithText("Use Firefox").assertIsDisplayed()
+                onNodeWithText("Use Chrome").assertIsDisplayed()
+                onNodeWithText("Use Edge").assertIsDisplayed()
+                assertTrue(onAllNodesWithText("Retry").fetchSemanticsNodes().isEmpty())
+            }
+        } finally {
+            stateHolder.close()
+        }
+    }
+
+    @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
+    @Test
+    fun `audio conversion shows elapsed time until processing changes`() {
+        val stateScheduler = TestCoroutineScheduler()
+        val stateDispatcher = UnconfinedTestDispatcher(stateScheduler)
+        val stateHolder =
+            DownloadStateHolder(
+                CoroutineScope(stateDispatcher + SupervisorJob()),
+                PreviewDownloadRuntime(),
+            )
+        try {
+            stateHolder.showDesignState(
+                DownloadUiState.Downloading(
+                    DownloadFixtures.normal,
+                    DownloadProgress.Processing(DownloadProcessingStage.Converting),
+                ),
+            )
+            runComposeUiTest {
+                mainClock.autoAdvance = false
+                setContent {
+                    IntUiTheme(
+                        theme = JewelTheme.lightThemeDefinition(),
+                        styling = ComponentStyling.default().decoratedWindow(),
+                    ) {
+                        TestProductSurface(stateHolder)
+                    }
+                }
+
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("Converting audio…").assertExists()
+                onNodeWithText("0 sec elapsed").assertExists()
+
+                mainClock.advanceTimeBy(1.1.seconds.inWholeMilliseconds)
+                onNodeWithText("1 sec elapsed").assertExists()
+
+                runOnIdle {
+                    stateHolder.showDesignState(
+                        DownloadUiState.Downloading(
+                            DownloadFixtures.normal,
+                            DownloadProgress.Processing(DownloadProcessingStage.Merging),
+                        ),
+                    )
+                }
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("1 sec elapsed").assertDoesNotExist()
+                onNodeWithText("Merging video and audio…").assertExists()
             }
         } finally {
             stateHolder.close()

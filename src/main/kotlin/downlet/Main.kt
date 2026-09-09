@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -29,7 +30,6 @@ import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.foundation.theme.LocalTextStyle
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.theme.darkThemeDefinition
-import org.jetbrains.jewel.intui.standalone.theme.default
 import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
 import org.jetbrains.jewel.intui.window.decoratedWindow
 import org.jetbrains.jewel.intui.window.styling.dark
@@ -37,13 +37,12 @@ import org.jetbrains.jewel.intui.window.styling.light
 import org.jetbrains.jewel.intui.window.styling.lightWithLightHeader
 import org.jetbrains.jewel.ui.ComponentStyling
 import org.jetbrains.jewel.ui.component.Text
-import org.jetbrains.jewel.ui.component.ToggleableIconActionButton
 import org.jetbrains.jewel.ui.component.styling.ButtonMetrics
 import org.jetbrains.jewel.ui.component.styling.ButtonStyle
 import org.jetbrains.jewel.ui.component.styling.LocalDefaultButtonStyle
 import org.jetbrains.jewel.ui.component.styling.LocalOutlinedButtonStyle
-import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.ui.theme.defaultButtonStyle
+import org.jetbrains.jewel.ui.theme.iconButtonStyle
 import org.jetbrains.jewel.ui.theme.outlinedButtonStyle
 import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
@@ -89,29 +88,7 @@ internal fun ProductWindow(
             height = initialTier.preferredSize.height,
         )
 
-    IntUiTheme(
-        theme =
-            when (theme) {
-                DownletTheme.Light -> JewelTheme.lightThemeDefinition()
-                DownletTheme.Dark -> JewelTheme.darkThemeDefinition()
-            },
-        styling =
-            when (theme) {
-                DownletTheme.Light -> {
-                    ComponentStyling.default().decoratedWindow(
-                        DecoratedWindowStyle.light(),
-                        TitleBarStyle.lightWithLightHeader(),
-                    )
-                }
-
-                DownletTheme.Dark -> {
-                    ComponentStyling.default().decoratedWindow(
-                        DecoratedWindowStyle.dark(),
-                        TitleBarStyle.dark(),
-                    )
-                }
-            },
-    ) {
+    ProductTheme(theme) {
         val typography = downletTypography()
         val defaultButtonStyle = JewelTheme.defaultButtonStyle
         val outlinedButtonStyle = JewelTheme.outlinedButtonStyle
@@ -143,9 +120,8 @@ internal fun ProductWindow(
                 )
                 ManageWindowsTaskbarProgress(window, stateHolder.state)
 
-                TitleBar {
-                    val darkMode = theme == DownletTheme.Dark
-                    val themeAction = if (darkMode) "Use light theme" else "Use dark theme"
+                val themeToggleStyle = JewelTheme.iconButtonStyle
+                TitleBar(modifier = Modifier.focusProperties { canFocus = true }) {
                     Row(
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                         verticalAlignment = Alignment.CenterVertically,
@@ -154,19 +130,13 @@ internal fun ProductWindow(
                         Spacer(Modifier.width(6.dp))
                         Text(PRODUCT_WINDOW_TITLE, style = typography.titleBar)
                     }
-                    ToggleableIconActionButton(
-                        key = AllIconsKeys.MeetNewUi.DarkTheme,
-                        contentDescription = themeAction,
-                        value = darkMode,
-                        onValueChange = { enabled ->
-                            onThemeChange(if (enabled) DownletTheme.Dark else DownletTheme.Light)
-                        },
-                        modifier = Modifier.size(28.dp),
-                        iconModifier = Modifier.size(16.dp),
-                        tooltipModifier = Modifier.align(Alignment.End),
-                    ) {
-                        Text(themeAction)
-                    }
+                    ThemeToggle(
+                        theme = theme,
+                        onThemeChange = onThemeChange,
+                        modifier = Modifier.align(Alignment.End),
+                        animationsEnabled = animationsEnabled,
+                        style = themeToggleStyle,
+                    )
                 }
 
                 ProductSurface(
@@ -191,3 +161,27 @@ private fun ButtonStyle.withMinHeight(height: Dp): ButtonStyle =
             ),
         focusOutlineAlignment = focusOutlineAlignment,
     )
+
+@Composable
+internal fun ProductTheme(
+    theme: DownletTheme,
+    content: @Composable () -> Unit,
+) {
+    val lightTheme = remember { JewelTheme.lightThemeDefinition() }
+    val darkTheme = remember { JewelTheme.darkThemeDefinition() }
+    val lightTitleBar = TitleBarStyle.lightWithLightHeader()
+    val darkTitleBar = TitleBarStyle.dark()
+    val lightStyling =
+        remember(lightTitleBar) {
+            ComponentStyling.decoratedWindow(DecoratedWindowStyle.light(), lightTitleBar)
+        }
+    val darkStyling =
+        remember(darkTitleBar) {
+            ComponentStyling.decoratedWindow(DecoratedWindowStyle.dark(), darkTitleBar)
+        }
+    IntUiTheme(
+        theme = if (theme == DownletTheme.Dark) darkTheme else lightTheme,
+        styling = if (theme == DownletTheme.Dark) darkStyling else lightStyling,
+        content = content,
+    )
+}

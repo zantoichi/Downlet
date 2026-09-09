@@ -1,0 +1,230 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  actions: read
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign, and publish
+    runs-on: windows-2025
+    timeout-minutes: 90
+    environment: public-release
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag and version
+        id: release
+        run: |
+          $tag = '${{ github.ref_name }}'
+          if ($tag -eq 'v0.0.1-rc.1') {
+              $version = '0.0.1'
+              $unsignedBootstrap = 'true'
+          }
+          elseif ($tag -match '^v(?<version>\d+\.\d+\.\d+)$') {
+              $version = $Matches.version
+              $unsignedBootstrap = 'false'
+              $declaredVersion = (Select-String -LiteralPath gradle.properties -Pattern '^downletVersion=(.+)$').Matches.Groups[1].Value
+              if ($declaredVersion -ne $version) {
+                  throw "Tag version '$version' does not match gradle.properties '$declaredVersion'."
+              }
+          }
+          else {
+              throw "Unsupported release tag '$tag'. Use v<major>.<minor>.<patch>, or the one-time v0.0.1-rc.1 bootstrap tag."
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "unsigned_bootstrap=$unsignedBootstrap" >> $env:GITHUB_OUTPUT
+
+      - name: Run checks and build Windows distributions
+        run: |
+          .\gradlew.bat --no-daemon --console=plain check smokeTest packageWindowsSingleExe packageMsi '-PdownletVersion=${{ steps.release.outputs.version }}'
+
+      - name: Stage signing input
+        run: |
+          $version = '${{ steps.release.outputs.version }}'
+          $portable = Get-Item -LiteralPath build\compose\binaries\main\windows-single-exe\Downlet.exe
+          $msi = @(Get-ChildItem -LiteralPath build\compose\binaries\main\msi -Filter *.msi)
+          if ($msi.Count -ne 1 -or $msi[0].Name -ne "Downlet-$version.msi") {
+              throw "Expected exactly build/compose/binaries/main/msi/Downlet-$version.msi."
+          }
+
+          $inputDirectory = New-Item -ItemType Directory -Path build\signing-input -Force
+          Copy-Item -LiteralPath $portable.FullName -Destination (Join-Path $inputDirectory "Downlet-$version-windows-x64-portable.exe")
+          Copy-Item -LiteralPath $msi[0].FullName -Destination (Join-Path $inputDirectory "Downlet-$version-windows-x64-user.msi")
+
+      - name: Upload signing input
+        id: signing_input
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: signing-input-${{ github.run_id }}
+          path: build/signing-input/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Submit stable artifacts to SignPath
+        if: steps.release.outputs.unsigned_bootstrap != 'true'
+        uses: SignPath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.signing_input.outputs.artifact-id }}
+          output-artifact-directory: build/signed
+          wait-for-completion-timeout-in-seconds: '3600'
+
+      - name: Keep bootstrap artifacts unsigned
+        if: steps.release.outputs.unsigned_bootstrap == 'true'
+        run: |
+          New-Item -ItemType Directory -Path build\signed -Force | Out-Null
+          Copy-Item -Path build\signing-input\* -Destination build\signed
+
+      - name: Locate signed artifacts
+        id: signed
+        run: |
+          $version = '${{ steps.release.outputs.version }}'
+          $portableName = "Downlet-$version-windows-x64-portable.exe"
+          $msiName = "Downlet-$version-windows-x64-user.msi"
+          $portable = @(Get-ChildItem -LiteralPath build\signed -Recurse -File -Filter $portableName)
+          $msi = @(Get-ChildItem -LiteralPath build\signed -Recurse -File -Filter $msiName)
+          if ($portable.Count -ne 1 -or $msi.Count -ne 1) {
+              throw 'The signing output must contain exactly one expected portable EXE and one expected MSI.'
+          }
+          "portable=$($portable[0].FullName)" >> $env:GITHUB_OUTPUT
+          "msi=$($msi[0].FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Prepare final artifacts and package-manager metadata
+        run: |
+          $arguments = @{
+              Version = '${{ steps.release.outputs.version }}'
+              ReleaseTag = '${{ steps.release.outputs.tag }}'
+              Repository = '${{ github.repository }}'
+              PortablePath = '${{ steps.signed.outputs.portable }}'
+              MsiPath = '${{ steps.signed.outputs.msi }}'
+              OutputDirectory = 'build\release'
+          }
+          if ('${{ steps.release.outputs.unsigned_bootstrap }}' -eq 'true') {
+              $arguments.SkipSignatureCheck = $true
+              $arguments.SkipPackageManagerMetadata = $true
+          }
+          .\scripts\release\Prepare-Release.ps1 @arguments
+
+      - name: Pack Chocolatey submission
+        if: steps.release.outputs.unsigned_bootstrap != 'true'
+        run: |
+          $packageDirectory = Resolve-Path build\release\package-managers\chocolatey
+          $outputDirectory = New-Item -ItemType Directory -Path build\release\package-managers\chocolatey\out -Force
+          Push-Location $packageDirectory
+          try {
+              choco pack .\downlet.nuspec --outputdirectory $outputDirectory --limit-output
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Chocolatey package creation failed with exit code $LASTEXITCODE."
+              }
+          }
+          finally {
+              Pop-Location
+          }
+
+      - name: Validate WinGet manifests when tooling is available
+        if: steps.release.outputs.unsigned_bootstrap != 'true'
+        run: |
+          $winget = Get-Command winget -ErrorAction SilentlyContinue
+          if ($null -eq $winget) {
+              'WinGet is unavailable on this runner. Run winget validate and SandboxTest before submission.' >> $env:GITHUB_STEP_SUMMARY
+              Write-Warning 'WinGet validation remains a manual release step on this runner.'
+              exit 0
+          }
+          winget validate --manifest build\release\package-managers\winget
+          if ($LASTEXITCODE -ne 0) {
+              throw "WinGet manifest validation failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Generate GitHub artifact attestations
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-checksums: build/release/SHA256SUMS.txt
+
+      - name: Upload package-manager submission bundle
+        if: steps.release.outputs.unsigned_bootstrap != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package-manager-submissions-${{ steps.release.outputs.version }}
+          path: |
+            build/release/package-managers/chocolatey/out/*.nupkg
+            build/release/package-managers/winget/*.yaml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Write release notes
+        run: |
+          $version = '${{ steps.release.outputs.version }}'
+          $notesPath = 'build\release\RELEASE_NOTES.md'
+          if ('${{ steps.release.outputs.unsigned_bootstrap }}' -eq 'true') {
+              @"
+          # Downlet $version release candidate
+
+          > [!WARNING]
+          > This one-time bootstrap release is unsigned. Do not submit it to Chocolatey or WinGet. Windows may show a strong reputation warning.
+
+          Use this release only to validate the public repository, release workflow, artifact names, checksums, and installation behavior before trusted signing is enabled.
+          "@ | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
+          }
+          else {
+              @"
+          # Downlet $version
+
+          Initial public release for Windows 10 and 11 x64.
+
+          - Portable EXE with no installation or system Java requirement.
+          - User-scoped MSI for WinGet and Chocolatey.
+          - Timestamped Authenticode signatures, SHA-256 checksums, and GitHub artifact attestations.
+          - Real transfer bytes, speed, ETA, taskbar progress, cancellation, failure guidance, managed-tool repair, and exact **Show in folder** behavior.
+
+          Package-manager submissions are prepared by this workflow and remain subject to Chocolatey and WinGet review.
+          "@ | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
+          }
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ steps.release.outputs.version }}'
+          $tag = '${{ steps.release.outputs.tag }}'
+          $assets = @(
+              "build\release\Downlet-$version-windows-x64-portable.exe",
+              "build\release\Downlet-$version-windows-x64-user.msi",
+              'build\release\SHA256SUMS.txt',
+              'build\release\release-metadata.json'
+          )
+          $arguments = @('release', 'create', $tag, '--verify-tag', '--notes-file', 'build\release\RELEASE_NOTES.md')
+          if ('${{ steps.release.outputs.unsigned_bootstrap }}' -eq 'true') {
+              $arguments += @('--prerelease', '--title', "Downlet $version release candidate (unsigned)")
+          }
+          else {
+              $arguments += @('--title', "Downlet $version")
+          }
+          $arguments += $assets
+          gh @arguments

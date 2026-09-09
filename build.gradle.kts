@@ -14,6 +14,7 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JvmVendorSpec
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.process.ExecOperations
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -25,9 +26,13 @@ import java.security.MessageDigest
 import java.util.zip.ZipFile
 import javax.inject.Inject
 
-private val downletVersion = "0.1.0"
+private val downletVersion = providers.gradleProperty("downletVersion").get()
 private val strongDownloadTargetMiB = 65L
 private val maxDownloadSizeMiB = 90L
+
+check(downletVersion.matches(Regex("\\d+\\.\\d+\\.\\d+"))) {
+    "downletVersion must be a numeric three-part version such as 0.1.0."
+}
 
 abstract class PackageWindowsSingleExeTask
     @Inject
@@ -88,6 +93,7 @@ abstract class PackageWindowsSingleExeTask
                     .toSet()
             check("yt-dlp.exe" !in stagedNames) { "yt-dlp must remain external to the distribution." }
             check("ffmpeg.exe" !in stagedNames) { "FFmpeg must remain external to the distribution." }
+            check("ffprobe.exe" !in stagedNames) { "FFprobe must remain external to the distribution." }
             val downletJar =
                 staging.resolve("app").listFiles()?.singleOrNull {
                     it.name.startsWith("Downlet-") &&
@@ -389,11 +395,21 @@ compose.desktop {
                 .metadata.installationPath.asFile.absolutePath
         jvmArgs += listOf("--enable-native-access=ALL-UNNAMED", "-Xms64m", "-Xmx256m")
         nativeDistributions {
+            targetFormats(TargetFormat.Msi)
             packageName = "Downlet"
             packageVersion = downletVersion
+            description = "A focused Windows downloader for YouTube video and audio."
+            vendor = "Downlet"
             modules("java.instrument", "java.net.http", "jdk.unsupported")
             windows {
                 iconFile.set(project.file("src/launcher/windows/downlet.ico"))
+                dirChooser = false
+                perUserInstall = true
+                shortcut = false
+                menu = true
+                menuGroup = "Downlet"
+                upgradeUuid = "d94dd278-f441-4d0c-8be5-37f2116498f1"
+                msiPackageVersion = downletVersion
             }
         }
     }
@@ -463,6 +479,46 @@ tasks.register<PackageWindowsSingleExeTask>("packageWindowsSingleExe") {
     maximumSizeMiB.set(maxDownloadSizeMiB)
     workDirectory.set(layout.buildDirectory.dir("windows-single-exe/work"))
     distributionDirectory.set(layout.buildDirectory.dir("compose/binaries/main/windows-single-exe"))
+}
+
+val verifyWindowsDistributionPayload =
+    tasks.register("verifyWindowsDistributionPayload") {
+        description = "Verifies the shared Windows application image before packaging."
+        group = "verification"
+        dependsOn("createDistributable")
+        val appImageDirectory = layout.buildDirectory.dir("compose/binaries/main/app/Downlet")
+        inputs.dir(appImageDirectory)
+        doLast {
+            val appImage = appImageDirectory.get().asFile
+            val packagedNames =
+                appImage
+                    .walkTopDown()
+                    .filter(File::isFile)
+                    .map { it.name.lowercase() }
+                    .toSet()
+            val forbiddenTools = setOf("yt-dlp.exe", "ffmpeg.exe", "ffprobe.exe")
+            check(packagedNames.intersect(forbiddenTools).isEmpty()) {
+                "yt-dlp, FFmpeg, and FFprobe must remain external to Downlet distributions."
+            }
+            val downletJar =
+                appImage.resolve("app").listFiles()?.singleOrNull {
+                    it.name.startsWith("Downlet-") && it.extension == "jar"
+                }
+            check(
+                downletJar != null &&
+                    ZipFile(downletJar).use { it.getEntry("tools/quickjs-ng/0.16.2/qjs.exe") != null },
+            ) {
+                "Bundled QuickJS is missing from the Windows application image."
+            }
+        }
+    }
+
+tasks.named("packageWindowsSingleExe") {
+    dependsOn(verifyWindowsDistributionPayload)
+}
+
+tasks.matching { it.name == "packageMsi" }.configureEach {
+    dependsOn(verifyWindowsDistributionPayload)
 }
 
 afterEvaluate {
