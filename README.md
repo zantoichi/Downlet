@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/zantoichi/Downlet" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-0BSD-4c1" alt="License: 0BSD"></a>
   <a href="https://github.com/zantoichi/Downlet/releases"><img src="https://img.shields.io/github/v/tag/zantoichi/Downlet?sort=semver&label=current%20tag" alt="Current tag"></a>
 </p>
 
