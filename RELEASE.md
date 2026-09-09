@@ -35,7 +35,15 @@ Prepare unsigned metadata for local inspection only:
 
 `-SkipSignatureCheck` marks generated metadata as unverified. Never submit that output to Chocolatey or WinGet.
 
-## One-time repository setup
+## First preview: repository setup
+
+The unsigned demo needs only a public repository with GitHub Actions enabled and permission for the workflow token to publish releases. No SignPath credentials or protected environment are required. The workflow uses an unprotected `bootstrap-release` environment, separate from `public-release`.
+
+The workflow bootstraps Gradle with Java 21, resolves JetBrains Runtime 25 through the existing toolchain resolver, and checks the Windows runner for MSVC, makecab, and WiX before packaging.
+
+Create/connect `zantoichi/Downlet`, push the reviewed source and workflow, then follow **Unsigned bootstrap** below. Share the exact prerelease URL, since GitHub's latest-release link is intended for stable releases.
+
+## Later signed-release setup
 
 These steps require the public GitHub repository owner:
 
@@ -50,14 +58,20 @@ If SignPath Foundation rejects the project, stop the stable release. Evaluate an
 
 ## Unsigned bootstrap
 
-The one-time bootstrap validates the public workflow before trusted signing exists:
+The one-time bootstrap is a usable feedback demo and validates the public workflow before trusted signing exists:
 
 ```powershell
 git tag -a v0.0.1-rc.1 -m "Downlet 0.0.1 release candidate"
 git push origin v0.0.1-rc.1
 ```
 
-The workflow builds internal Windows version `0.0.1`, skips SignPath, omits package-manager metadata, and publishes a prominent unsigned prerelease warning. Test its portable and MSI behavior, but do not submit it to package managers.
+The workflow builds internal Windows version `0.0.1`, skips SignPath, omits package-manager metadata, and publishes a prominent unsigned prerelease warning. Normal development remains at `0.1.0`. Test its portable and MSI behavior, but do not submit it to package managers.
+
+For the local bootstrap build, run the local release command with `-PdownletVersion=0.0.1`. Prepare it with `-Version 0.0.1 -ReleaseTag v0.0.1-rc.1 -Repository zantoichi/Downlet` and both `-SkipSignatureCheck -SkipPackageManagerMetadata`.
+
+Before sharing, download both published assets, verify their checksums, and test on clean Windows without Java: portable launch; MSI install, launch, and uninstall; first-use tool setup; one video download and one MP3 conversion. Confirm uninstall preserves downloads. Ask for feedback on setup, confusing steps, and failed downloads.
+
+This release also supplies the existing downloadable artifacts required by [SignPath's application conditions](https://signpath.org/terms.html). Approval and package-manager onboarding remain separate later steps.
 
 ## Stable release
 

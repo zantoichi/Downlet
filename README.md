@@ -13,13 +13,14 @@ Windows 10 or 11 x64 is required. Downlet includes its own trimmed runtime, so s
 
 | Channel | Command or artifact | Status |
 | --- | --- | --- |
-| GitHub Releases | `Downlet-<version>-windows-x64-portable.exe` | Primary portable download |
-| WinGet | `winget install --id Downlet.Downlet --exact --scope user` | Available after WinGet review |
-| Chocolatey | `choco install downlet` | Available after Chocolatey review |
+| GitHub Releases | `Downlet-<version>-windows-x64-portable.exe` | Recommended: run without installing |
+| GitHub Releases | `Downlet-<version>-windows-x64-user.msi` | Optional per-user installer |
 
-The portable EXE runs without installation or elevation. The MSI used by WinGet and Chocolatey installs for the current user, adds one Start Menu entry, and appears in Apps & Features. It creates no desktop shortcut and does not modify `PATH`.
+Get both downloads from the [first preview release](https://github.com/zantoichi/Downlet/releases/tag/v0.0.1-rc.1). WinGet and Chocolatey distribution is planned for a later signed release and is not available yet.
 
-The one-time `v0.0.1-rc.1` bootstrap release is unsigned and exists only to validate the public release pipeline. Do not submit it to package managers. Stable releases are blocked until trusted signing works.
+The portable EXE runs without installation or elevation and caches its runtime under local application data. The MSI installs for the current user, adds one Start Menu entry, and appears in Apps & Features. It creates no desktop shortcut and does not modify `PATH`.
+
+The first `v0.0.1-rc.1` preview is unsigned and intended for feedback. Windows may show an unknown-publisher or SmartScreen warning. It also validates the pipeline for future signed releases. Do not submit it to package managers. Stable releases remain blocked until trusted signing works.
 
 ## What Downlet does
 
@@ -50,7 +51,7 @@ This program will not transfer any information to other networked systems unless
 
 ## Release size
 
-Each release includes `release-metadata.json` with exact signed artifact sizes and MSI identity. The current unsigned v0.1.0 baseline is:
+Each release includes `release-metadata.json` with exact artifact sizes, signature-verification status, and MSI identity. The local unsigned v0.1.0 baseline is:
 
 | Artifact | Size |
 | --- | ---: |
@@ -65,20 +66,18 @@ The portable release has a 90 MiB hard ceiling and a 65 MiB strong target.
 Download both the artifact and `SHA256SUMS.txt` from the same release. In PowerShell:
 
 ```powershell
-Get-FileHash .\Downlet-0.1.0-windows-x64-portable.exe -Algorithm SHA256
-Get-AuthenticodeSignature .\Downlet-0.1.0-windows-x64-portable.exe | Format-List Status,SignerCertificate,TimeStamperCertificate
+Get-FileHash .\Downlet-0.0.1-windows-x64-portable.exe -Algorithm SHA256
 ```
 
-Compare the hash with `SHA256SUMS.txt`. A stable artifact must report a valid Authenticode signature and a timestamp certificate.
+Compare the hash with `SHA256SUMS.txt`; use the MSI filename to verify the installer. The preview is unsigned. Future stable artifacts must also have a valid timestamped Authenticode signature.
 
 With GitHub CLI installed:
 
 ```powershell
-$repository = gh repo view --json nameWithOwner --jq .nameWithOwner
-gh attestation verify .\Downlet-0.1.0-windows-x64-portable.exe --repo $repository
+gh attestation verify .\Downlet-0.0.1-windows-x64-portable.exe --repo zantoichi/Downlet
 ```
 
-Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+SignPath Foundation signing is planned, subject to approval; it is not enabled for this preview.
 
 See the [code-signing policy](CODE_SIGNING.md) and [release guide](RELEASE.md) for the full trust and publication process.
 

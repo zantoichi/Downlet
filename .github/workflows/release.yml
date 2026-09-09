@@ -21,7 +21,8 @@ jobs:
     name: Build, sign, and publish
     runs-on: windows-2025
     timeout-minutes: 90
-    environment: public-release
+    # Bootstrap needs no signing credentials or protected-environment approval.
+    environment: ${{ github.ref_name == 'v0.0.1-rc.1' && 'bootstrap-release' || 'public-release' }}
     defaults:
       run:
         shell: pwsh
@@ -56,9 +57,28 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           "unsigned_bootstrap=$unsignedBootstrap" >> $env:GITHUB_OUTPUT
 
+      - name: Set up Java for Gradle
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Check Windows packaging tools
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-Command makecab.exe, gh -ErrorAction Stop | Out-Null
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vs -or -not (Test-Path "$vs\VC\Auxiliary\Build\vcvars64.bat")) {
+              throw 'Visual Studio MSVC x64 build tools are required.'
+          }
+          if (-not $env:WIX) { throw 'WiX is required for MSI packaging.' }
+          Get-Item "$env:WIX\bin\candle.exe", "$env:WIX\bin\light.exe" -ErrorAction Stop | Out-Null
+
       - name: Run checks and build Windows distributions
         run: |
           .\gradlew.bat --no-daemon --console=plain check smokeTest packageWindowsSingleExe packageMsi '-PdownletVersion=${{ steps.release.outputs.version }}'
+          if ($LASTEXITCODE -ne 0) { throw "Release build failed with exit code $LASTEXITCODE." }
 
       - name: Stage signing input
         run: |
@@ -187,9 +207,19 @@ jobs:
           # Downlet $version release candidate
 
           > [!WARNING]
-          > This one-time bootstrap release is unsigned. Do not submit it to Chocolatey or WinGet. Windows may show a strong reputation warning.
+          > This preview is unsigned. Windows may show an unknown-publisher or SmartScreen warning. Do not submit it to Chocolatey or WinGet.
 
-          Use this release only to validate the public repository, release workflow, artifact names, checksums, and installation behavior before trusted signing is enabled.
+          A first demo for feedback, also exercising the pipeline for future signed releases.
+
+          - **Recommended:** download Downlet-$version-windows-x64-portable.exe and run it without installation.
+          - **Installer:** download Downlet-$version-windows-x64-user.msi for a per-user install with a Start Menu entry.
+          - Windows 10 or 11 x64; no system Java required. Portable mode caches its runtime under local application data.
+          - On first use, Downlet asks before downloading the required yt-dlp and FFmpeg tools. Internet access is required.
+          - SHA256SUMS.txt provides download checksums; see the README for verification instructions.
+
+          Please share feedback on setup, confusing steps, and failed downloads, including your Windows version and what happened. Do not include browser cookies or other private data.
+
+          [Code signing policy](https://github.com/${{ github.repository }}/blob/${{ steps.release.outputs.tag }}/CODE_SIGNING.md)
           "@ | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
           }
           else {
@@ -228,3 +258,4 @@ jobs:
           }
           $arguments += $assets
           gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw "GitHub release publication failed with exit code $LASTEXITCODE." }

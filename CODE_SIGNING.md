@@ -1,6 +1,6 @@
 # Code-signing policy
 
-Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+Current preview releases are unsigned. SignPath Foundation signing is planned, subject to application and approval. The policy below describes the intended signed-release process, not an active signing service.
 
 ## Scope
 
@@ -31,7 +31,7 @@ Changes from outside contributors require maintainer review before merge. Releas
 7. GitHub artifact attestations bind the signed files to the release workflow.
 8. Published release assets are immutable. A correction requires a new patch release.
 
-The exact `v0.0.1-rc.1` tag is the only unsigned bootstrap exception. It must be marked unsigned and must never be submitted to Chocolatey or WinGet.
+The exact `v0.0.1-rc.1` tag is the only unsigned bootstrap exception. It serves as a feedback demo and the initial downloadable release for a future signing application. It uses the unprotected `bootstrap-release` environment without signing credentials, must be marked unsigned, and must never be submitted to Chocolatey or WinGet.
 
 ## Privacy policy
 
