@@ -15,7 +15,7 @@ internal object ProductCopy {
     const val TOOL_SETUP_FAILURE_MESSAGE =
         "Couldn't install the required tools. Check your connection and try again."
     const val TOOL_REPAIR_FAILURE_MESSAGE =
-        "Couldn't repair the required tools. Check your connection and try again."
+        "Couldn't prepare the required tools. Check your connection and try again."
     const val TOOL_SETUP_CONSENT_TEXT =
         "I choose to download these tools and accept the tool terms."
     const val DOWNLOAD_AUTHORIZATION_TEXT = "I own this media or have permission to download it."
@@ -55,7 +55,8 @@ internal object ProductCopy {
             "This can happen with public videos; it doesn’t mean the video is age-restricted. " +
                 "Open the video in your browser and complete any YouTube check, " +
                 "then choose that browser below. " +
-                "Downlet temporarily uses its cookies without storing them. You can also wait and retry.",
+                "Downlet reuses this browser until you close the app, without storing cookies. " +
+                "You can also wait and retry.",
         )
 
     fun downloadFailure(
@@ -71,7 +72,8 @@ internal object ProductCopy {
                 DownloadFailureCopy(
                     "Sign in required.",
                     "Choose a browser where you can watch this video while signed in. yt-dlp temporarily reads " +
-                        "that browser profile’s cookies; Downlet doesn’t store them.",
+                        "that browser profile’s cookies without saving them. " +
+                        "Downlet reuses this browser until you close the app.",
                 )
             }
 
@@ -85,8 +87,8 @@ internal object ProductCopy {
 
             DownloadFailureReason.Network -> {
                 DownloadFailureCopy(
-                    "The connection was interrupted.",
-                    "Check your connection, wait a moment, and try again.",
+                    "Downlet couldn’t connect.",
+                    "Check your connection and VPN or firewall settings, then try again.",
                 )
             }
 
@@ -135,7 +137,7 @@ internal object ProductCopy {
             "Download size is about $estimatedDownloadMegabytes MB."
 
     fun toolRepairDescription(toolNames: String): String =
-        "Downlet found a damaged managed copy of $toolNames. It is replacing it with the same pinned, " +
+        "Downlet is preparing $toolNames using the pinned, " +
             "SHA-256-verified version. This does not download the media."
 
     val legalSections =

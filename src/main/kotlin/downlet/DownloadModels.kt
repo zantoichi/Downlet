@@ -14,7 +14,7 @@ internal val MANUAL_LINK_DEBOUNCE: Duration = 350.milliseconds
 internal val FAKE_RESOLUTION_DELAY: Duration = 550.milliseconds
 internal val PASTE_INTENT_LIFETIME: Duration = 1.seconds
 internal val FAKE_PROGRESS_INTERVAL: Duration = 350.milliseconds
-private const val YT_DLP_ESTIMATED_DOWNLOAD_MEGABYTES = 17
+private const val YT_DLP_ESTIMATED_DOWNLOAD_MEGABYTES = 18
 private const val FFMPEG_ESTIMATED_DOWNLOAD_MEGABYTES = 106
 private const val REMOTE_THUMBNAIL_FIXTURE_BASE64 =
     "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGN0q7jEgA0wYRUdtBIAO+sBoPuKweIAAAAASUVORK5CYII="
@@ -423,6 +423,7 @@ internal sealed interface DownloadUiState {
         val tools: List<DownloadTool>,
         val phase: ToolSetupPhase = ToolSetupPhase.AwaitingConsent,
         val intent: ToolSetupIntent = ToolSetupIntent.Install,
+        val progress: Map<DownloadTool, String> = emptyMap(),
     ) : DownloadUiState {
         init {
             require(tools.isNotEmpty())

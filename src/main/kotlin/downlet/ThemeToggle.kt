@@ -4,9 +4,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipPlacement
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -19,6 +21,7 @@ import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Text
@@ -47,7 +50,17 @@ internal fun ThemeToggle(
         animationSpec = tween(if (animationsEnabled) THEME_MORPH_DURATION_MILLIS else 0),
         label = "Sun to moon",
     )
-    Tooltip(tooltip = { Text(themeAction) }, modifier = modifier) {
+    Tooltip(
+        tooltip = { Text(themeAction) },
+        modifier = modifier,
+        // Leave room for Jewel's 12.dp popup shadow outside the button's hit area.
+        tooltipPlacement =
+            TooltipPlacement.ComponentRect(
+                anchor = Alignment.BottomCenter,
+                alignment = Alignment.BottomCenter,
+                offset = DpOffset(0.dp, 16.dp),
+            ),
+    ) {
         ToggleableIconButton(
             value = darkMode,
             onValueChange = { enabled -> onThemeChange(if (enabled) DownletTheme.Dark else DownletTheme.Light) },

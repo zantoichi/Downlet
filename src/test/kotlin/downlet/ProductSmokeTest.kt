@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -54,6 +55,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
 
+@Suppress("LargeClass")
 class ProductSmokeTest {
     @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
     @Suppress("LongMethod")
@@ -124,6 +126,38 @@ class ProductSmokeTest {
             holder.close()
         }
     }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun `theme tooltip stays outside the button and repeated mouse clicks work`() =
+        runComposeUiTest {
+            val theme = mutableStateOf(DownletTheme.Light)
+            setContent {
+                ProductTheme(theme.value) {
+                    Column(Modifier.size(760.dp, 480.dp)) {
+                        ThemeToggle(theme.value, { theme.value = it })
+                    }
+                }
+            }
+            val button = onNodeWithContentDescription("Use dark theme")
+            button.performMouseInput { enter(Offset(16f, 2f)) }
+            mainClock.advanceTimeBy(1_000)
+            waitForIdle()
+            val buttonBounds = button.fetchSemanticsNode().boundsInRoot
+            val tooltipBounds = onNodeWithText("Use dark theme").fetchSemanticsNode().boundsInRoot
+            assertTrue(tooltipBounds.top >= buttonBounds.bottom, "Tooltip must stay below its button")
+            repeat(4) {
+                val action = if (theme.value == DownletTheme.Light) "Use dark theme" else "Use light theme"
+                val before = theme.value
+                onNodeWithContentDescription(action).performMouseInput {
+                    press()
+                    release()
+                }
+                runOnIdle { assertTrue(theme.value != before) }
+                mainClock.advanceTimeBy(1_000)
+                waitForIdle()
+            }
+        }
 
     @OptIn(ExperimentalTestApi::class)
     @Test
@@ -236,9 +270,9 @@ class ProductSmokeTest {
                 )
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
-                onNodeWithText("Repair download tools").assertExists()
+                onNodeWithText("Preparing tools").assertExists()
                 onNodeWithText(ProductCopy.TOOL_SETUP_CONSENT_TEXT).assertDoesNotExist()
-                onNodeWithText("Try repair again").assertIsEnabled()
+                onNodeWithText("Try again").assertIsEnabled()
             }
         } finally {
             stateHolder.close()

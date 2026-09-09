@@ -116,6 +116,22 @@ class DownloadRuntimeTest {
     }
 
     @Test
+    fun `resolved cache isolates browsers and evicts their entries`() {
+        val item = cachedItem("session", byteArrayOf(1))
+        val cache = SessionMediaCache(maximumEntries = 2)
+        cache.putResolved(item)
+        cache.putResolved(item.copy(title = "Authenticated"), BrowserCookieSource.Firefox)
+        assertEquals(item, cache.resolved(item.source))
+        assertEquals("Authenticated", cache.resolved(item.source, BrowserCookieSource.Firefox)?.title)
+        assertNull(cache.resolved(item.source, BrowserCookieSource.Chrome))
+        cache.putResolved(item, BrowserCookieSource.Chrome)
+        assertNull(cache.resolved(item.source))
+        assertEquals(item, cache.resolved(item.source, BrowserCookieSource.Chrome))
+        assertEquals(2, cache.size())
+        assertNull(SessionMediaCache().resolved(item.source, BrowserCookieSource.Chrome))
+    }
+
+    @Test
     fun `bundled quickjs disables other runtimes before selecting quickjs`() {
         assertEquals(
             listOf("--no-js-runtimes", "--js-runtimes", "quickjs:C:\\Downlet\\qjs.exe"),
@@ -344,7 +360,7 @@ class DownloadRuntimeTest {
     @Test
     fun `typed tool metadata supplies labels and setup size`() {
         assertEquals(listOf("yt-dlp", "FFmpeg"), DownloadTool.entries.map(DownloadTool::label))
-        assertEquals(123, DownloadTool.entries.sumOf(DownloadTool::estimatedDownloadMegabytes))
+        assertEquals(124, DownloadTool.entries.sumOf(DownloadTool::estimatedDownloadMegabytes))
     }
 
     @Test

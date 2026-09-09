@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -26,6 +27,50 @@ import kotlin.time.Duration.Companion.milliseconds
 @OptIn(ExperimentalCoroutinesApi::class)
 @Suppress("LargeClass")
 class DownloadStateTest {
+    @Test
+    fun `formats become ready without waiting for preview and late preview preserves choices`() =
+        runTest {
+            val preview = CompletableDeferred<DownloadItem>()
+            val runtime =
+                object : DownloadRuntime by PreviewDownloadRuntime() {
+                    override suspend fun preview(source: YouTubeUrl): DownloadItem = preview.await()
+                }
+            val holder = testHolder(runtime)
+            holder.beginResolution(DownloadFixtures.normal.source.toString())
+            advanceTimeBy(FAKE_RESOLUTION_DELAY)
+            runCurrent()
+            assertTrue(holder.state is DownloadUiState.Ready)
+            holder.selectMode(DownloadMode.Audio)
+            holder.selectQuality(1)
+            holder.updateDownloadAuthorization(true)
+            preview.complete(DownloadFixtures.normal.copy(title = "Optional preview title"))
+            runCurrent()
+            assertEquals(DownloadFixtures.normal.title, (holder.state as DownloadUiState.Ready).item.title)
+            assertEquals(DownloadMode.Audio, holder.selectedMode)
+            assertEquals(1, holder.selectedQualityIndex)
+            assertTrue(holder.downloadAuthorizationAccepted)
+        }
+
+    @Test
+    fun `resolution expires after thirty seconds even without process output`() =
+        runTest {
+            val runtime =
+                object : DownloadRuntime by PreviewDownloadRuntime() {
+                    override suspend fun resolve(
+                        source: YouTubeUrl,
+                        browserCookies: BrowserCookieSource?,
+                    ): DownloadItem = awaitCancellation()
+                }
+            val holder = testHolder(runtime)
+            holder.beginResolution(DownloadFixtures.normal.source.toString())
+            advanceTimeBy(29_999)
+            runCurrent()
+            assertTrue(holder.state is DownloadUiState.Resolving)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(DownloadFailureReason.Network, (holder.state as DownloadUiState.Error).reason)
+        }
+
     private fun transferProgress(percent: Int): DownloadProgress.Transferring =
         DownloadProgress.Transferring(
             downloadedBytes = percent.toLong(),
@@ -122,7 +167,7 @@ class DownloadStateTest {
 
             holder.beginResolution(sourceUrl)
             runCurrent()
-            assertEquals(canonicalUrl, (holder.state as DownloadUiState.Previewing).item.source.toString())
+            assertEquals(canonicalUrl, (holder.state as DownloadUiState.Setup).item.source.toString())
             runtime.completePreview()
             runCurrent()
             assertEquals(
@@ -160,7 +205,7 @@ class DownloadStateTest {
 
             holder.beginResolution(sourceUrl)
             runCurrent()
-            assertEquals(canonicalUrl, (holder.state as DownloadUiState.Previewing).item.source.toString())
+            assertEquals(canonicalUrl, (holder.state as DownloadUiState.Resolving).item.source.toString())
 
             runtime.completePreview()
             runCurrent()
@@ -329,9 +374,14 @@ class DownloadStateTest {
         }
 
     @Test
-    fun `preview failure becomes recoverable without checking or installing tools`() =
+    fun `preview failure continues to consent before installing tools`() =
         runTest {
-            val runtime = ControlledPreviewRuntime(DownloadTool.entries, failPreview = true)
+            val runtime =
+                ControlledPreviewRuntime(
+                    DownloadTool.entries,
+                    failPreview = true,
+                    failureReason = DownloadFailureReason.Network,
+                )
             val holder = testHolder(runtime)
 
             holder.beginResolution(testVideoUrl("unavailable"))
@@ -339,13 +389,47 @@ class DownloadStateTest {
             runtime.completePreview()
             runCurrent()
 
-            assertEquals(DownloadErrorKind.Resolution, (holder.state as DownloadUiState.Error).kind)
-            assertEquals(0, runtime.toolStatusCount)
+            assertTrue(holder.state is DownloadUiState.Setup)
+            assertEquals(1, runtime.toolStatusCount)
             assertEquals(0, runtime.installCount)
+            holder.updateToolSetupConsent(true)
+            holder.installTools()
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertTrue(holder.state is DownloadUiState.Ready)
         }
 
     @Test
-    fun `browser cookies apply to one video resolution and download`() =
+    fun `failed preview defers to the extractor failure and cancellation stays cancelled`() =
+        runTest {
+            val runtime =
+                object : DownloadRuntime by PreviewDownloadRuntime() {
+                    override suspend fun preview(source: YouTubeUrl): DownloadItem =
+                        throw DownloadRuntimeException(reason = DownloadFailureReason.Network)
+
+                    override suspend fun resolve(
+                        source: YouTubeUrl,
+                        browserCookies: BrowserCookieSource?,
+                    ): DownloadItem = throw DownloadRuntimeException(reason = DownloadFailureReason.BotChallenge)
+                }
+            val holder = testHolder(runtime)
+            holder.beginResolution(testVideoUrl("challenge"))
+            runCurrent()
+            assertEquals(DownloadFailureReason.BotChallenge, (holder.state as DownloadUiState.Error).reason)
+
+            val pending = ControlledPreviewRuntime(failPreview = true)
+            val cancelled = testHolder(pending)
+            cancelled.beginResolution(testVideoUrl("cancel"))
+            runCurrent()
+            cancelled.observeLinkEdit("")
+            pending.completePreview()
+            runCurrent()
+            assertEquals(DownloadUiState.Empty, cancelled.state)
+            assertEquals(1, pending.toolStatusCount)
+        }
+
+    @Test
+    fun `browser cookies survive edits retries and download another until close`() =
         runTest {
             val runtime = BrowserCookieRuntime()
             val holder = testHolder(runtime)
@@ -384,14 +468,19 @@ class DownloadStateTest {
             runCurrent()
             assertEquals(BrowserCookieSource.Chrome, runtime.downloadRequests.single().browserCookies)
 
+            holder.downloadAnother()
             val secondUrl = testVideoUrl("second")
             assertTrue(holder.observeLinkEdit(secondUrl))
             holder.beginResolution(secondUrl)
             runCurrent()
             assertEquals(
-                listOf(null, BrowserCookieSource.Chrome, BrowserCookieSource.Chrome, null),
+                listOf(null, BrowserCookieSource.Chrome, BrowserCookieSource.Chrome, BrowserCookieSource.Chrome),
                 runtime.resolvedWith,
             )
+            holder.close()
+            testHolder(runtime).beginResolution(firstUrl)
+            runCurrent()
+            assertNull(runtime.resolvedWith.last())
         }
 
     @Test
@@ -1103,6 +1192,7 @@ class DownloadStateTest {
     private class ControlledPreviewRuntime(
         private val tools: List<DownloadTool> = emptyList(),
         private val failPreview: Boolean = false,
+        private val failureReason: DownloadFailureReason = DownloadFailureReason.Unknown,
     ) : DownloadRuntime by PreviewDownloadRuntime() {
         private val previewGate = CompletableDeferred<Unit>()
 
@@ -1118,7 +1208,7 @@ class DownloadStateTest {
 
         override suspend fun preview(source: YouTubeUrl): DownloadItem {
             previewGate.await()
-            if (failPreview) throw DownloadRuntimeException()
+            if (failPreview) throw DownloadRuntimeException(reason = failureReason)
             return DownloadFixtures.normal.copy(source = source)
         }
 
@@ -1127,7 +1217,7 @@ class DownloadStateTest {
             return if (installCount == 0) ToolStatus(missing = tools) else ToolStatus()
         }
 
-        override suspend fun installMissingTools() {
+        override suspend fun installMissingTools(onProgress: (DownloadTool, String) -> Unit) {
             installCount += 1
         }
     }
@@ -1154,7 +1244,10 @@ class DownloadStateTest {
 
         override suspend fun toolStatus(): ToolStatus = status
 
-        override suspend fun repairManagedTools(tools: List<DownloadTool>) {
+        override suspend fun repairManagedTools(
+            tools: List<DownloadTool>,
+            onProgress: (DownloadTool, String) -> Unit,
+        ) {
             repairCount += 1
             repairGate.await()
             if (failRepair) throw DownloadRuntimeException(reason = DownloadFailureReason.Tool)

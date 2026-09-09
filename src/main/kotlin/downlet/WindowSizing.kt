@@ -126,6 +126,8 @@ internal fun ManageProductWindowSizing(
     val animatedHeight = remember(window) { Animatable(window.height.toFloat()) }
 
     LaunchedEffect(preferredSize, animationsEnabled, densityScale) {
+        // Let Compose apply the initial position before preserving the window bounds.
+        while (!window.isShowing) withFrameNanos { }
         val current = window.bounds.toWindowBounds()
         val target =
             fitWindowBounds(

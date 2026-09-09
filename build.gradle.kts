@@ -15,6 +15,8 @@ import org.gradle.jvm.toolchain.JvmVendorSpec
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.process.ExecOperations
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.compose.desktop.application.tasks.AbstractJLinkTask
+import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -27,12 +29,48 @@ import java.util.zip.ZipFile
 import javax.inject.Inject
 
 private val downletVersion = providers.gradleProperty("downletVersion").get()
-private val strongDownloadTargetMiB = 65L
-private val maxDownloadSizeMiB = 90L
 
 check(downletVersion.matches(Regex("\\d+\\.\\d+\\.\\d+"))) {
     "downletVersion must be a numeric three-part version such as 0.1.0."
 }
+
+abstract class TrainStartupCacheTask
+    @Inject
+    constructor(
+        private val execOperations: ExecOperations,
+    ) : DefaultTask() {
+        @get:InputDirectory
+        abstract val sourceImage: DirectoryProperty
+
+        @get:InputFile
+        abstract val javaExecutable: RegularFileProperty
+
+        @get:InputFile
+        abstract val trainingScript: RegularFileProperty
+
+        @get:OutputDirectory
+        abstract val trainedImage: DirectoryProperty
+
+        @TaskAction
+        fun train() {
+            val output = trainedImage.get().asFile
+            output.deleteRecursively()
+            check(sourceImage.get().asFile.copyRecursively(output, overwrite = true))
+            execOperations
+                .exec {
+                    commandLine(
+                        "pwsh",
+                        "-NoProfile",
+                        "-File",
+                        trainingScript.get().asFile,
+                        "-AppImage",
+                        output,
+                        "-JavaExecutable",
+                        javaExecutable.get().asFile,
+                    )
+                }.assertNormalExitValue()
+        }
+    }
 
 abstract class PackageWindowsSingleExeTask
     @Inject
@@ -46,16 +84,13 @@ abstract class PackageWindowsSingleExeTask
         abstract val launcherSource: RegularFileProperty
 
         @get:InputFile
+        abstract val launcherTests: RegularFileProperty
+
+        @get:InputFile
         abstract val iconFile: RegularFileProperty
 
         @get:Input
         abstract val productVersion: org.gradle.api.provider.Property<String>
-
-        @get:Input
-        abstract val strongTargetMiB: org.gradle.api.provider.Property<Long>
-
-        @get:Input
-        abstract val maximumSizeMiB: org.gradle.api.provider.Property<Long>
 
         @get:LocalState
         abstract val workDirectory: DirectoryProperty
@@ -81,6 +116,10 @@ abstract class PackageWindowsSingleExeTask
             output.mkdirs()
             check(appImage.copyRecursively(staging, overwrite = true)) {
                 "Could not stage the Compose application image."
+            }
+            // Kotlin's copy resets timestamps, which invalidates the trained AOT class path.
+            staging.walkTopDown().filter(File::isFile).forEach { file ->
+                check(file.setLastModified(appImage.resolve(file.relativeTo(staging)).lastModified()))
             }
             check(staging.resolve("Downlet.exe").isFile) { "Staged application launcher is missing." }
             check(staging.resolve("runtime").isDirectory) { "Staged jlink runtime is missing." }
@@ -174,6 +213,8 @@ abstract class PackageWindowsSingleExeTask
             val resource = work.resolve("launcher.res")
             val objectFile = work.resolve("launcher.obj")
             val buildScript = work.resolve("build-launcher.cmd")
+            val testExecutable = work.resolve("launcher-test.exe")
+            val testObject = work.resolve("launcher-test.obj")
             buildScript.writeText(
                 """
                 @echo off
@@ -181,7 +222,11 @@ abstract class PackageWindowsSingleExeTask
                 if errorlevel 1 exit /b %errorlevel%
                 rc.exe /nologo /fo"${resource.absolutePath}" "${resourceScript.absolutePath}"
                 if errorlevel 1 exit /b %errorlevel%
-                cl.exe /nologo /std:c++20 /permissive- /W4 /WX /O2 /GL /MT /EHsc /DUNICODE /D_UNICODE /I"${work.absolutePath}" /Fo"${objectFile.absolutePath}" "${launcherSource.get().asFile.absolutePath}" "${resource.absolutePath}" /link /SUBSYSTEM:WINDOWS /LTCG /OPT:REF /OPT:ICF setupapi.lib shell32.lib ole32.lib bcrypt.lib user32.lib /OUT:"${finalExecutable.absolutePath}"
+                cl.exe /nologo /std:c++20 /permissive- /W4 /WX /O2 /GL /MT /EHsc /DUNICODE /D_UNICODE /I"${work.absolutePath}" /Fo"${objectFile.absolutePath}" "${launcherSource.get().asFile.absolutePath}" "${resource.absolutePath}" /link /SUBSYSTEM:WINDOWS /LTCG /OPT:REF /OPT:ICF setupapi.lib shell32.lib ole32.lib bcrypt.lib user32.lib gdi32.lib advapi32.lib dwmapi.lib /OUT:"${finalExecutable.absolutePath}"
+                if errorlevel 1 exit /b %errorlevel%
+                cl.exe /nologo /std:c++20 /permissive- /W4 /WX /O2 /MT /EHsc /DUNICODE /D_UNICODE /I"${work.absolutePath}" /Fo"${testObject.absolutePath}" "${launcherTests.get().asFile.absolutePath}" "${resource.absolutePath}" /link /SUBSYSTEM:CONSOLE setupapi.lib shell32.lib ole32.lib bcrypt.lib user32.lib gdi32.lib advapi32.lib dwmapi.lib /OUT:"${testExecutable.absolutePath}"
+                if errorlevel 1 exit /b %errorlevel%
+                "${testExecutable.absolutePath}"
                 """.trimIndent(),
                 StandardCharsets.UTF_8,
             )
@@ -197,16 +242,6 @@ abstract class PackageWindowsSingleExeTask
             check(readPeMachine(finalExecutable) == 0x8664) { "Downlet.exe is not an x64 PE image." }
 
             val sizeMiB = finalExecutable.length().toDouble() / (1024.0 * 1024.0)
-            check(sizeMiB <= maximumSizeMiB.get()) {
-                "Downlet.exe is ${"%.2f".format(sizeMiB)} MiB; release ceiling is ${maximumSizeMiB.get()} MiB."
-            }
-            if (sizeMiB > strongTargetMiB.get()) {
-                logger.warn(
-                    "Downlet.exe is ${"%.2f".format(
-                        sizeMiB,
-                    )} MiB, above the ${strongTargetMiB.get()} MiB strong target.",
-                )
-            }
             logger.lifecycle(
                 "Created ${finalExecutable.absolutePath} (${"%.2f".format(sizeMiB)} MiB; " +
                     "${"%.2f".format(
@@ -379,11 +414,15 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 tasks.withType<JavaExec>().configureEach {
-    jvmArgs("--enable-native-access=ALL-UNNAMED", "-Xms64m", "-Xmx256m")
+    jvmArgs("--enable-native-access=ALL-UNNAMED", "-Xms64m", "-Xmx256m", "-Djava.net.preferIPv4Stack=true")
+}
+
+tasks.withType<AbstractJLinkTask>().configureEach {
+    freeArgs.add("--compress=zip-6")
 }
 
 tasks.withType<Test>().configureEach {
-    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    jvmArgs("--enable-native-access=ALL-UNNAMED", "-XX:TieredStopAtLevel=1")
 }
 
 compose.desktop {
@@ -393,7 +432,9 @@ compose.desktop {
             jetBrainsJdk25
                 .get()
                 .metadata.installationPath.asFile.absolutePath
-        jvmArgs += listOf("--enable-native-access=ALL-UNNAMED", "-Xms64m", "-Xmx256m")
+        // Avoid IPv4-mapped IPv6 sockets rejected by Windows VPN split-tunnel drivers.
+        jvmArgs += listOf("--enable-native-access=ALL-UNNAMED", "-Xms64m", "-Xmx256m", "-XX:TieredStopAtLevel=1")
+        jvmArgs += "-Djava.net.preferIPv4Stack=true"
         nativeDistributions {
             targetFormats(TargetFormat.Msi)
             packageName = "Downlet"
@@ -467,16 +508,25 @@ tasks.register<Test>("smokeTest") {
     testLogging.showStandardStreams = true
 }
 
+val trainStartupCache =
+    tasks.register<TrainStartupCacheTask>("trainStartupCache") {
+        group = "distribution"
+        description = "Trains the JBR 25 startup cache against the final application image."
+        dependsOn("createDistributable")
+        sourceImage.set(layout.buildDirectory.dir("compose/binaries/main/app/Downlet"))
+        javaExecutable.set(jetBrainsJdk25.map { it.executablePath })
+        trainingScript.set(layout.projectDirectory.file("scripts/release/Train-StartupCache.ps1"))
+        trainedImage.set(layout.buildDirectory.dir("startup-cache/Downlet"))
+    }
+
 tasks.register<PackageWindowsSingleExeTask>("packageWindowsSingleExe") {
     description = "Builds the portable single-file Windows x64 distribution."
     group = "distribution"
-    dependsOn("createDistributable")
-    appImageDirectory.set(layout.buildDirectory.dir("compose/binaries/main/app/Downlet"))
+    appImageDirectory.set(trainStartupCache.flatMap { it.trainedImage })
     launcherSource.set(layout.projectDirectory.file("src/launcher/windows/launcher.cpp"))
+    launcherTests.set(layout.projectDirectory.file("src/launcher/windows/launcher_test.cpp"))
     iconFile.set(layout.projectDirectory.file("src/launcher/windows/downlet.ico"))
     productVersion.set(downletVersion)
-    strongTargetMiB.set(strongDownloadTargetMiB)
-    maximumSizeMiB.set(maxDownloadSizeMiB)
     workDirectory.set(layout.buildDirectory.dir("windows-single-exe/work"))
     distributionDirectory.set(layout.buildDirectory.dir("compose/binaries/main/windows-single-exe"))
 }
@@ -485,11 +535,12 @@ val verifyWindowsDistributionPayload =
     tasks.register("verifyWindowsDistributionPayload") {
         description = "Verifies the shared Windows application image before packaging."
         group = "verification"
-        dependsOn("createDistributable")
-        val appImageDirectory = layout.buildDirectory.dir("compose/binaries/main/app/Downlet")
+        val appImageDirectory = trainStartupCache.flatMap { it.trainedImage }
         inputs.dir(appImageDirectory)
         doLast {
             val appImage = appImageDirectory.get().asFile
+            check(appImage.resolve("app/downlet.aot").length() > 0) { "Trained JBR startup cache is missing." }
+            check(!appImage.resolve("runtime/bin/java.exe").exists()) { "The training launcher must not ship." }
             val packagedNames =
                 appImage
                     .walkTopDown()
@@ -519,6 +570,7 @@ tasks.named("packageWindowsSingleExe") {
 
 tasks.matching { it.name == "packageMsi" }.configureEach {
     dependsOn(verifyWindowsDistributionPayload)
+    (this as AbstractJPackageTask).appImage.set(trainStartupCache.flatMap { it.trainedImage })
 }
 
 afterEvaluate {

@@ -35,6 +35,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.TransformOrigin
@@ -73,10 +74,12 @@ private val CONTENT_ENTER_DURATION: Duration = 200.milliseconds
 private val CONTENT_EXIT_DURATION: Duration = 150.milliseconds
 
 @Composable
+@Suppress("LongMethod")
 internal fun ProductSurface(
     stateHolder: DownloadStateHolder,
     animationsEnabled: Boolean = true,
     onContentHeight: (Dp, Dp) -> Unit = { _, _ -> },
+    onDrawn: () -> Unit = {},
 ) {
     val linkFieldFocusRequester = remember { FocusRequester() }
     var pasteIntent by remember { mutableStateOf(false) }
@@ -99,7 +102,11 @@ internal fun ProductSurface(
         modifier =
             Modifier
                 .fillMaxSize()
-                .background(JewelTheme.globalColors.panelBackground),
+                .background(JewelTheme.globalColors.panelBackground)
+                .drawWithContent {
+                    drawContent()
+                    onDrawn()
+                },
         content = {
             val compact = stateHolder.state.windowPresentationTier == WindowPresentationTier.Compact
             val outerPadding = if (compact) 18.dp else 22.dp

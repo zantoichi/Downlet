@@ -123,7 +123,11 @@ The stable workflow uploads three generated WinGet 1.12 manifests. Before first 
 
 ## Clean-machine acceptance
 
+For the local `0.0.2` candidate, run `gradlew.bat --no-daemon --console=plain check smokeTest packageWindowsSingleExe packageMsi -PdownletVersion=0.0.2`. Do not retag or replace `v0.0.1-rc.1` assets. Verify the portable splash on fresh extraction and cached launches, its handoff to the main window, concurrent launches, and startup failure. Verify previews, tool setup, video download, and MP3 conversion with Mullvad split tunneling enabled, including launch from an excluded browser. Both package configurations must contain `-Djava.net.preferIPv4Stack=true`; this preserves VPN routing but cannot reach IPv6-only hosts.
+
 Run these checks before package-manager submission:
+
+Use `scripts/release/Test-PortableStartup.ps1 -PortablePath <candidate.exe>` for the splash timing and handoff check. It leaves the app open for visual inspection. Run once with a fresh version cache and again with the cache populated; a delayed startup should show the panel between 250 and 500 ms of launcher startup. Fast launches may correctly skip it; the probe discovers the main window independently and reports skipped panels.
 
 - Portable launch without Java, installation, or elevation.
 - Interactive and silent per-user MSI installation.
@@ -148,3 +152,15 @@ Run these checks before package-manager submission:
 - [ ] Stable release verified from a clean machine.
 - [ ] Chocolatey per-user MSI behavior confirmed, then package submitted.
 - [ ] WinGet identifier confirmed, manifests validated, then pull request submitted.
+
+The performance candidate uses the official unpacked yt-dlp ZIP (2026.08.19) and starts download-runtime initialization after window display. Build it into `build/release-performance-0.0.2`; leave published assets unchanged. With this candidate, manually check splash handoff and centered startup, immediate link entry, sequential previews, Original audio, and MP3. Existing tools migrate on preparation; opening the app alone performs no tool downloads. Keep local-fixture benchmark timings separate from YouTube results, which may be challenged or network-dependent.
+
+For the polished-startup candidate, use `build/release-startup-panel-0.0.2`. Native console checks run as part of portable packaging and cover timing, dismissal, status messages, fresh extraction, cached verification, invalid-cache recovery, and concurrent extraction in isolated test directories, without showing windows or launching the app. User-operated visual checks cover light/dark mode, high contrast, Windows 10 fallback, 100–200% scaling, centered placement, no focus theft, and handoff. Do not run the interactive startup probe automatically on the user's desktop.
+
+The performance packaging tasks now train JBR 25 AOT caches after the final application jars and compressed runtime image are built. `trainStartupCache` writes the shared image to `build/startup-cache/Downlet`; both `packageWindowsSingleExe` and `packageMsi` consume it. The training script briefly launches an empty application window, closes its owned JVM window, waits for cache assembly, and removes the temporary Java launcher before packaging. Run packaging on a Windows desktop-capable runner. The production launcher uses an APPDIR-relative cache path and JVM fallback when the cache cannot be used. Rebuild the cache whenever runtime or jar inputs change; do not copy a cache between builds.
+
+Inspect the recorded package sizes rather than enforcing the old 65/90 MiB targets. Validate startup readiness (first content draw plus UI event service), a relocated path containing spaces, an absent or incompatible AOT cache, and portable extraction/cache recovery. Read-only tool validation starts after readiness. The local opt-in CLI integration test uses `DOWNLET_YT_DLP_TEST=<path to pinned yt-dlp.exe>` and verifies that preparation makes no media request before Download.
+
+The ProGuard experiment reduced jar size but failed focused launch checks involving reflected JBR/Jewel classes. Its experimental rules were discarded. Standard portable/MSI packages use the checked unshrunk application with AOT caching.
+
+AOT also requires jar timestamps to match. Training rounds them to CAB's two-second precision, and portable staging preserves them. After packaging, run `pwsh -NoProfile -File scripts/release/Measure-Startup.ps1 -Executable build/compose/binaries/main/windows-single-exe/Downlet.exe -Portable -JvmOptions '-XX:AOTMode=on'`. This fails if the package silently falls back. Run the same probe without `-Portable` against an administratively extracted MSI image, including on a machine in a different time zone before release. Use `-XX:AOTMode=off` for a paired baseline; absent/incompatible-cache fallback must be checked without strict mode.

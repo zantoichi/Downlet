@@ -56,7 +56,7 @@ private val PRODUCT_BUTTON_MIN_HEIGHT = 36.dp
 fun main() =
     application {
         val scope = rememberCoroutineScope()
-        val stateHolder = remember(scope) { DownloadStateHolder(scope, runtime = YtDlpDownloadRuntime()) }
+        val stateHolder = remember(scope) { DownloadStateHolder(scope, runtime = DeferredDownloadRuntime(scope)) }
         val systemTheme = if (isSystemInDarkTheme()) DownletTheme.Dark else DownletTheme.Light
         var theme by remember { mutableStateOf(systemTheme) }
         val animationsEnabled = remember { windowsAnimationsEnabled() }
@@ -78,7 +78,7 @@ internal fun ProductWindow(
     theme: DownletTheme,
     onThemeChange: (DownletTheme) -> Unit,
     onCloseRequest: () -> Unit,
-    initialPosition: WindowPosition = WindowPosition.PlatformDefault,
+    initialPosition: WindowPosition = WindowPosition(Alignment.Center),
     animationsEnabled: Boolean = true,
 ) {
     val initialTier = WindowPresentationTier.Compact
@@ -122,6 +122,7 @@ internal fun ProductWindow(
                     animationsEnabled = animationsEnabled,
                 )
                 ManageWindowsTaskbarProgress(window, stateHolder.state)
+                val signalStartupReady = rememberStartupReady(window, stateHolder::warmUp)
 
                 val themeToggleStyle = JewelTheme.iconButtonStyle
                 TitleBar(modifier = Modifier.focusProperties { canFocus = true }) {
@@ -144,6 +145,7 @@ internal fun ProductWindow(
 
                 ProductSurface(
                     stateHolder = stateHolder,
+                    onDrawn = signalStartupReady,
                     animationsEnabled = animationsEnabled,
                     onContentHeight = { desired, viewport ->
                         contentHeight =

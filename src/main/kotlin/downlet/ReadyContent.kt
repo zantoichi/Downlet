@@ -64,7 +64,7 @@ import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
 
 @Composable
-@Suppress("LongMethod")
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 internal fun ToolSetupContent(
     stateHolder: DownloadStateHolder,
     state: DownloadUiState.Setup,
@@ -75,7 +75,7 @@ internal fun ToolSetupContent(
     ) {
         MediaIdentity(state.item, thumbnailWidth = 128.dp, showDuration = false)
         Text(
-            text = if (state.intent == ToolSetupIntent.Repair) "Repair download tools" else "Prepare this download",
+            text = if (state.intent == ToolSetupIntent.Repair) "Preparing tools" else "Prepare this download",
             style = LocalDownletTypography.current.sectionHeading,
         )
         Text(
@@ -108,7 +108,7 @@ internal fun ToolSetupContent(
                     ProductCopy.TOOL_SETUP_FAILURE_MESSAGE
                 }
             val failureTitle =
-                if (state.intent == ToolSetupIntent.Repair) "Tool repair failed." else "Tool setup failed."
+                if (state.intent == ToolSetupIntent.Repair) "Tool preparation failed." else "Tool setup failed."
             InlineErrorBanner(
                 icon = {
                     Icon(AllIconsKeys.General.NotificationError, contentDescription = null, tint = errorColor)
@@ -131,6 +131,11 @@ internal fun ToolSetupContent(
                 }
             }
         }
+        if (state.phase == ToolSetupPhase.Installing && state.progress.isNotEmpty()) {
+            state.tools.forEach { tool ->
+                Text("${tool.label}: ${state.progress[tool] ?: "Waiting"}")
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
@@ -142,7 +147,7 @@ internal fun ToolSetupContent(
                         Modifier.semantics(mergeDescendants = true) {
                             contentDescription =
                                 if (state.intent == ToolSetupIntent.Repair) {
-                                    "Status: Repairing and verifying managed tools."
+                                    "Status: Preparing and verifying managed tools."
                                 } else {
                                     "Status: Downloading and verifying required tools."
                                 }
@@ -154,7 +159,7 @@ internal fun ToolSetupContent(
                     CircularProgressIndicator()
                     Text(
                         if (state.intent == ToolSetupIntent.Repair) {
-                            "Repairing and verifying tools…"
+                            "Preparing and verifying tools…"
                         } else {
                             "Downloading and verifying tools…"
                         },
@@ -167,7 +172,7 @@ internal fun ToolSetupContent(
                 ) {
                     ButtonLabel(
                         AllIconsKeys.Actions.Download,
-                        if (state.intent == ToolSetupIntent.Repair) "Try repair again" else "Download and continue",
+                        if (state.intent == ToolSetupIntent.Repair) "Try again" else "Download and continue",
                     )
                 }
             }

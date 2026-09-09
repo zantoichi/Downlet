@@ -11,13 +11,20 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.nio.file.Path
+import kotlin.time.Duration.Companion.seconds
 
 @Stable
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 internal class DownloadStateHolder(
     scope: CoroutineScope,
     private val runtime: DownloadRuntime,
@@ -96,6 +103,8 @@ internal class DownloadStateHolder(
     private var metadataGeneration = 0L
     private var downloadGeneration = 0L
     private var metadataJob: Job? = null
+    private var previewJob: Job? = null
+    private var preparationJob: Job? = null
     private var downloadJob: Job? = null
     private var observedLinkText = ""
     private var browserCookies: BrowserCookieSource? = null
@@ -116,7 +125,6 @@ internal class DownloadStateHolder(
         if (text == observedLinkText) return false
 
         observedLinkText = text
-        browserCookies = null
         validationMessage =
             text
                 .takeIf { it.isNotBlank() && !isValidYouTubeUrl(it) }
@@ -130,7 +138,7 @@ internal class DownloadStateHolder(
 
     fun beginResolution(
         text: String,
-        browserCookies: BrowserCookieSource? = null,
+        browserCookies: BrowserCookieSource? = this.browserCookies,
     ) {
         val source = YouTubeUrl.parse(text) ?: return
         val value = source.toString()
@@ -142,7 +150,15 @@ internal class DownloadStateHolder(
         automaticRepairAttempts.clear()
         cancelActiveWork()
         transitionTo(DownloadUiState.Empty)
-        startPreview(DownloadFixtures.normal.copy(source = source))
+        startPreview(
+            DownloadFixtures.normal.copy(
+                source = source,
+                title = "YouTube video",
+                channel = "YouTube",
+                duration = null,
+                thumbnail = MediaThumbnail.Unavailable,
+            ),
+        )
     }
 
     fun updateToolSetupConsent(accepted: Boolean) {
@@ -167,8 +183,8 @@ internal class DownloadStateHolder(
             holderScope.launch {
                 try {
                     when (setup.intent) {
-                        ToolSetupIntent.Install -> runtime.installMissingTools()
-                        ToolSetupIntent.Repair -> runtime.repairManagedTools(setup.tools)
+                        ToolSetupIntent.Install -> runtime.installMissingTools(setupProgress(generation))
+                        ToolSetupIntent.Repair -> runtime.repairManagedTools(setup.tools, setupProgress(generation))
                     }
                     val status = runtime.toolStatus()
                     if (setup.tools.any { it in status.missing || it in status.repairable }) {
@@ -207,6 +223,7 @@ internal class DownloadStateHolder(
         selectedMode = mode
         selectedQualityIndex = 0
         readyFeedback = null
+        schedulePreparation()
     }
 
     fun selectQuality(index: Int) {
@@ -216,6 +233,7 @@ internal class DownloadStateHolder(
 
         selectedQualityIndex = index
         readyFeedback = null
+        schedulePreparation()
     }
 
     @Suppress("ReturnCount")
@@ -236,6 +254,7 @@ internal class DownloadStateHolder(
                 else -> null
             } ?: return
         state = updatedState
+        if (current is DownloadUiState.Ready) schedulePreparation()
         if (current is DownloadUiState.Ready) readyFeedback = "Save location changed to $destination."
     }
 
@@ -287,7 +306,6 @@ internal class DownloadStateHolder(
         linkFieldState.clearText()
         validationMessage = null
         clearReadySelection()
-        browserCookies = null
         automaticRepairAttempts.clear()
         requestLinkFocus()
         transitionTo(DownloadUiState.Empty)
@@ -324,11 +342,31 @@ internal class DownloadStateHolder(
         transitionTo(state)
     }
 
+    fun warmUp() = runtime.warmUp()
+
     fun close() {
         cancelActiveWork()
         browserCookies = null
         holderJob.cancel()
+        runtime.close()
     }
+
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun initializeRuntime(
+        item: DownloadItem,
+        generation: Long,
+    ): Boolean =
+        try {
+            runtime.initialize()
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            if (isCurrentPreview(item, generation)) {
+                transitionTo(DownloadUiState.Error(item, DownloadErrorKind.Resolution, DownloadFailureReason.Tool))
+            }
+            false
+        }
 
     @Suppress("TooGenericExceptionCaught")
     private fun startPreview(requestItem: DownloadItem) {
@@ -338,20 +376,8 @@ internal class DownloadStateHolder(
         transitionTo(DownloadUiState.Previewing(requestItem))
         metadataJob =
             holderScope.launch {
-                val previewItem =
-                    try {
-                        runtime.preview(requestItem.source)
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Exception) {
-                        if (isCurrentPreview(requestItem, generation)) {
-                            clearReadySelection()
-                            transitionTo(DownloadUiState.Error(requestItem, DownloadErrorKind.Resolution))
-                        }
-                        return@launch
-                    }
-                if (!isCurrentPreview(requestItem, generation)) return@launch
-
+                if (!initializeRuntime(requestItem, generation)) return@launch
+                previewJob = holderScope.launch { loadPreview(requestItem, generation) }
                 val status =
                     try {
                         runtime.toolStatus()
@@ -362,7 +388,7 @@ internal class DownloadStateHolder(
                             clearReadySelection()
                             transitionTo(
                                 DownloadUiState.Error(
-                                    previewItem,
+                                    state.itemOrNull ?: requestItem,
                                     DownloadErrorKind.Resolution,
                                     (error as? DownloadRuntimeException)?.reason ?: DownloadFailureReason.Tool,
                                 ),
@@ -370,6 +396,8 @@ internal class DownloadStateHolder(
                         }
                         return@launch
                     }
+                if (!isCurrentPreview(requestItem, generation)) return@launch
+                val previewItem = state.itemOrNull ?: requestItem
                 if (status.repairable.isNotEmpty()) {
                     startAutomaticRepair(previewItem, status.repairable, generation, DownloadErrorKind.Resolution)
                     return@launch
@@ -383,19 +411,77 @@ internal class DownloadStateHolder(
             }
     }
 
+    @Suppress("TooGenericExceptionCaught", "CyclomaticComplexMethod", "ReturnCount")
+    private suspend fun loadPreview(
+        item: DownloadItem,
+        generation: Long,
+    ) {
+        val preview =
+            try {
+                withTimeoutOrNull(3.seconds) { runtime.preview(item.source) } ?: return
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                return
+            }
+        if (generation != metadataGeneration) return
+        val current = state
+        val currentItem = current.itemOrNull?.takeIf { it.source == item.source } ?: return
+        val updated =
+            if (current is DownloadUiState.Ready ||
+                (current is DownloadUiState.Error && current.kind == DownloadErrorKind.Download)
+            ) {
+                currentItem.copy(thumbnail = preview.thumbnail)
+            } else {
+                currentItem.copy(
+                    title = preview.title,
+                    channel = preview.channel,
+                    duration = preview.duration,
+                    thumbnail = preview.thumbnail,
+                    destination = preview.destination,
+                )
+            }
+        state =
+            when (current) {
+                is DownloadUiState.Previewing -> current.copy(item = updated)
+                is DownloadUiState.Setup -> current.copy(item = updated)
+                is DownloadUiState.Resolving -> current.copy(item = updated)
+                is DownloadUiState.Ready -> current.copy(item = updated)
+                is DownloadUiState.Error -> current.copy(item = updated)
+                else -> current
+            }
+    }
+
     @Suppress("TooGenericExceptionCaught")
     private suspend fun resolve(
         requestItem: DownloadItem,
         generation: Long,
+        preserveDestination: Boolean = false,
     ) {
         if (!canResolve(requestItem, generation)) return
 
         transitionTo(DownloadUiState.Resolving(requestItem))
         try {
-            val resolvedItem = runtime.resolve(requestItem.source, browserCookies).withPreviewFrom(requestItem)
+            val resolvedItem =
+                try {
+                    withTimeout(30.seconds) { runtime.resolve(requestItem.source, browserCookies) }
+                } catch (error: TimeoutCancellationException) {
+                    throw DownloadRuntimeException(error, DownloadFailureReason.Network)
+                }.withPreviewFrom(state.itemOrNull ?: requestItem)
             if (isCurrentResolution(requestItem, generation)) {
                 prepareReady()
-                transitionTo(DownloadUiState.Ready(resolvedItem))
+                transitionTo(
+                    DownloadUiState.Ready(
+                        if (preserveDestination) {
+                            resolvedItem.copy(
+                                destination = requestItem.destination,
+                            )
+                        } else {
+                            resolvedItem
+                        },
+                    ),
+                )
+                schedulePreparation()
             }
         } catch (error: CancellationException) {
             throw error
@@ -405,7 +491,7 @@ internal class DownloadStateHolder(
                 if (
                     runtimeError != null &&
                     startAutomaticRepair(
-                        requestItem,
+                        state.itemOrNull ?: requestItem,
                         runtimeError.repairableTools,
                         generation,
                         DownloadErrorKind.Resolution,
@@ -416,13 +502,31 @@ internal class DownloadStateHolder(
                 clearReadySelection()
                 transitionTo(
                     DownloadUiState.Error(
-                        requestItem,
+                        state.itemOrNull ?: requestItem,
                         DownloadErrorKind.Resolution,
                         runtimeError?.reason ?: DownloadFailureReason.Unknown,
                     ),
                 )
             }
         }
+    }
+
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
+    private fun schedulePreparation() {
+        preparationJob?.cancel()
+        val item = (state as? DownloadUiState.Ready)?.item ?: return
+        runtime.cancel()
+        val request = DownloadRequest(item, selectedQuality, browserCookies)
+        preparationJob =
+            holderScope.launch {
+                delay(PREPARATION_DEBOUNCE_MILLIS)
+                try {
+                    runtime.prepareDownload(request)
+                } catch (error: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    // Preparation is optional; Download can launch the CLI normally.
+                }
+            }
     }
 
     private fun startDownload(item: DownloadItem) {
@@ -433,6 +537,10 @@ internal class DownloadStateHolder(
                 } == true
         if (!canStart) return
 
+        previewJob?.cancel()
+        previewJob = null
+        preparationJob?.cancel()
+        preparationJob = null
         downloadJob?.cancel()
         downloadGeneration += 1
         val generation = downloadGeneration
@@ -536,6 +644,7 @@ internal class DownloadStateHolder(
             null
         }
 
+    @Suppress("CyclomaticComplexMethod")
     private fun startAutomaticRepair(
         item: DownloadItem,
         tools: List<DownloadTool>,
@@ -560,7 +669,7 @@ internal class DownloadStateHolder(
             metadataJob =
                 holderScope.launch {
                     try {
-                        runtime.repairManagedTools(orderedTools)
+                        runtime.repairManagedTools(orderedTools, setupProgress(generation))
                         val status = runtime.toolStatus()
                         if (orderedTools.any { it in status.missing || it in status.repairable }) {
                             throw DownloadRuntimeException()
@@ -574,7 +683,7 @@ internal class DownloadStateHolder(
                         if (status.missing.isNotEmpty()) {
                             if (isCurrentInstallingSetup(setup, generation)) {
                                 clearReadySelection()
-                                transitionTo(DownloadUiState.Setup(item, status.missing))
+                                transitionTo(DownloadUiState.Setup(state.itemOrNull ?: item, status.missing))
                             }
                             return@launch
                         }
@@ -586,18 +695,36 @@ internal class DownloadStateHolder(
                         }
                         return@launch
                     }
-                    if (isCurrentInstallingSetup(setup, generation)) resolve(item, generation)
+                    if (isCurrentInstallingSetup(setup, generation)) {
+                        resolve(
+                            state.itemOrNull ?: item,
+                            generation,
+                            preserveDestination =
+                                errorKind == DownloadErrorKind.Download,
+                        )
+                    }
                 }
         }
         return true
     }
+
+    private fun setupProgress(generation: Long): (DownloadTool, String) -> Unit =
+        { tool, message ->
+            holderScope.launch {
+                val current = state as? DownloadUiState.Setup
+                if (generation == metadataGeneration && current?.phase == ToolSetupPhase.Installing) {
+                    state = current.copy(progress = current.progress + (tool to message))
+                }
+            }
+        }
 
     private fun isCurrentPreview(
         item: DownloadItem,
         generation: Long,
     ): Boolean =
         (state as? DownloadUiState.Previewing)?.let {
-            generation == metadataGeneration && it.item == item && observedLinkText == item.source.toString()
+            generation == metadataGeneration && it.item.source == item.source &&
+                observedLinkText == item.source.toString()
         } == true
 
     private fun isCurrentInstallingSetup(
@@ -606,7 +733,7 @@ internal class DownloadStateHolder(
     ): Boolean =
         (state as? DownloadUiState.Setup)?.let {
             generation == metadataGeneration &&
-                it.item == setup.item &&
+                it.item.source == setup.item.source &&
                 it.tools == setup.tools &&
                 it.intent == setup.intent &&
                 it.phase == ToolSetupPhase.Installing
@@ -623,7 +750,7 @@ internal class DownloadStateHolder(
                 }
 
                 is DownloadUiState.Setup -> {
-                    current.phase == ToolSetupPhase.Installing && current.item == item
+                    current.phase == ToolSetupPhase.Installing && current.item.source == item.source
                 }
 
                 else -> {
@@ -636,7 +763,7 @@ internal class DownloadStateHolder(
         generation: Long,
     ): Boolean =
         (state as? DownloadUiState.Resolving)?.let {
-            generation == metadataGeneration && it.item == item
+            generation == metadataGeneration && it.item.source == item.source
         } == true
 
     private fun isCurrentDownload(
@@ -666,9 +793,13 @@ internal class DownloadStateHolder(
     }
 
     private fun cancelActiveWork() {
+        preparationJob?.cancel()
+        preparationJob = null
         metadataGeneration += 1
         downloadGeneration += 1
         runtime.cancel()
+        previewJob?.cancel()
+        previewJob = null
         metadataJob?.cancel()
         metadataJob = null
         downloadJob?.cancel()
@@ -690,5 +821,6 @@ internal class DownloadStateHolder(
 private fun DownloadItem.withPreviewFrom(preview: DownloadItem): DownloadItem =
     copy(
         thumbnail = if (thumbnail is MediaThumbnail.Unavailable) preview.thumbnail else thumbnail,
-        destination = preview.destination,
     )
+
+private const val PREPARATION_DEBOUNCE_MILLIS = 250L
