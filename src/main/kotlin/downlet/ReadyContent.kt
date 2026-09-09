@@ -193,9 +193,7 @@ internal fun LegalDetailsContent(
             text = "Full terms",
             style = LocalDownletTypography.current.sectionHeading,
         )
-        ProductCopy.legalSections.forEach { section ->
-            InformationSection(title = section.title, body = section.body)
-        }
+        InformationPages(ProductCopy.legalSections)
     }
 }
 
@@ -243,7 +241,7 @@ internal fun DownloadWorkPlaneContent(
 ) {
     if (
         state is DownloadUiState.Error &&
-        (state.kind == DownloadErrorKind.Resolution || state.reason == DownloadFailureReason.Authentication)
+        (state.kind == DownloadErrorKind.Resolution || state.reason.needsBrowserSession)
     ) {
         ErrorActionRegion(stateHolder, state)
         return
@@ -286,10 +284,27 @@ private fun AudioQualityHelp(onBack: () -> Unit) {
     ) {
         IconLink(AllIconsKeys.Actions.Back, "Back to download", onClick = onBack)
         Text("Audio quality explained", style = LocalDownletTypography.current.sectionHeading)
-        ProductCopy.audioQualityAnswers.forEach { (question, answer) ->
-            InformationSection(title = question, body = answer)
-        }
-        Link("Back to download", onClick = onBack)
+        InformationPages(
+            ProductCopy.audioQualityAnswers.map { (question, answer) ->
+                LegalSectionCopy(question, answer)
+            },
+        )
+    }
+}
+
+@Composable
+private fun InformationPages(sections: List<LegalSectionCopy>) {
+    var page by remember(sections) { mutableStateOf(0) }
+    val section = sections[page]
+    InformationSection(section.title, section.body)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Link("Previous", enabled = page > 0, onClick = { page-- })
+        Text("${page + 1} of ${sections.size}", style = LocalDownletTypography.current.metadata)
+        Link("Next", enabled = page < sections.lastIndex, onClick = { page++ })
     }
 }
 
@@ -588,7 +603,7 @@ private fun ErrorActionRegion(
     stateHolder: DownloadStateHolder,
     error: DownloadUiState.Error,
 ) {
-    if (error.reason == DownloadFailureReason.Authentication) {
+    if (error.reason.needsBrowserSession) {
         AuthenticationActionRegion(stateHolder, error)
         return
     }
@@ -642,6 +657,9 @@ private fun AuthenticationActionRegion(
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(copy.title, style = LocalDownletTypography.current.mediaTitle)
             Text(copy.guidance)
+            if (error.reason == DownloadFailureReason.BotChallenge) {
+                Link("Retry", onClick = stateHolder::retryDownload)
+            }
         }
     }
 }

@@ -28,9 +28,10 @@ internal fun classifyDownloadFailure(lines: List<String>): DownloadFailureReason
             "error opening output file",
         ) -> DownloadFailureReason.Processing
 
+        hasAny("not a bot") -> DownloadFailureReason.BotChallenge
+
         hasAny(
             "sign in to confirm your age",
-            "sign in to confirm you're not a bot",
             "use --cookies-from-browser or --cookies for the authentication",
             "login required",
             "age-restricted",

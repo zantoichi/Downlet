@@ -38,6 +38,7 @@ internal enum class BrowserCookieSource(
 }
 
 internal enum class DownloadFailureReason {
+    BotChallenge,
     Authentication,
     Availability,
     Network,
@@ -46,6 +47,9 @@ internal enum class DownloadFailureReason {
     Tool,
     Unknown,
 }
+
+internal val DownloadFailureReason.needsBrowserSession: Boolean
+    get() = this == DownloadFailureReason.Authentication || this == DownloadFailureReason.BotChallenge
 
 internal enum class DownloadProcessingStage {
     Merging,

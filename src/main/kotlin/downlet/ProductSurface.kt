@@ -13,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -22,10 +21,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -48,12 +46,15 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -75,6 +76,7 @@ private val CONTENT_EXIT_DURATION: Duration = 150.milliseconds
 internal fun ProductSurface(
     stateHolder: DownloadStateHolder,
     animationsEnabled: Boolean = true,
+    onContentHeight: (Dp, Dp) -> Unit = { _, _ -> },
 ) {
     val linkFieldFocusRequester = remember { FocusRequester() }
     var pasteIntent by remember { mutableStateOf(false) }
@@ -93,36 +95,48 @@ internal fun ProductSurface(
         clearPasteIntent = { pasteIntent = false },
     )
 
-    BoxWithConstraints(
+    Layout(
         modifier =
             Modifier
                 .fillMaxSize()
                 .background(JewelTheme.globalColors.panelBackground),
-    ) {
-        val compact = maxHeight < 400.dp
-        val outerPadding = if (compact) 18.dp else 22.dp
-        val majorGap = if (compact) 8.dp else 16.dp
-        val workPlaneShape = RoundedCornerShape(10.dp)
-        val accent = JewelTheme.globalColors.outlines.focused
-        val workPlaneFill = accent.copy(alpha = if (JewelTheme.isDark) 0.10f else 0.055f)
-        val workPlaneBorder = JewelTheme.globalColors.borders.normal
+        content = {
+            val compact = stateHolder.state.windowPresentationTier == WindowPresentationTier.Compact
+            val outerPadding = if (compact) 18.dp else 22.dp
+            val majorGap = if (compact) 8.dp else 16.dp
+            val workPlaneShape = RoundedCornerShape(10.dp)
+            val accent = JewelTheme.globalColors.outlines.focused
+            val workPlaneFill = accent.copy(alpha = if (JewelTheme.isDark) 0.10f else 0.055f)
+            val workPlaneBorder = JewelTheme.globalColors.borders.normal
 
-        Column(
-            modifier = Modifier.fillMaxSize().padding(outerPadding),
-            verticalArrangement = Arrangement.spacedBy(majorGap),
-        ) {
-            LinkFieldRow(
-                stateHolder = stateHolder,
-                focusRequester = linkFieldFocusRequester,
-                onPasteIntent = { pasteIntent = true },
-            )
-            ProductBody(
-                stateHolder = stateHolder,
-                workPlaneShape = workPlaneShape,
-                workPlaneFill = workPlaneFill,
-                workPlaneBorder = workPlaneBorder,
-                animationsEnabled = animationsEnabled,
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(outerPadding),
+                verticalArrangement = Arrangement.spacedBy(majorGap),
+            ) {
+                LinkFieldRow(
+                    stateHolder = stateHolder,
+                    focusRequester = linkFieldFocusRequester,
+                    onPasteIntent = { pasteIntent = true },
+                )
+                ProductBody(
+                    stateHolder = stateHolder,
+                    workPlaneShape = workPlaneShape,
+                    workPlaneFill = workPlaneFill,
+                    workPlaneBorder = workPlaneBorder,
+                    animationsEnabled = animationsEnabled,
+                )
+            }
+        },
+    ) { measurables, constraints ->
+        val content = measurables.single().measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+        onContentHeight(content.height.toDp(), constraints.maxHeight.toDp())
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            val scale = (constraints.maxHeight.toFloat() / content.height.coerceAtLeast(1)).coerceAtMost(1f)
+            content.placeRelativeWithLayer(0, 0) {
+                transformOrigin = TransformOrigin(0f, 0f)
+                scaleX = scale
+                scaleY = scale
+            }
         }
     }
 }
@@ -269,14 +283,12 @@ private fun ColumnScope.ProductBody(
 ) {
     val easing = remember { CubicBezierEasing(0.22f, 1f, 0.36f, 1f) }
     val risePixels = with(LocalDensity.current) { 6.dp.roundToPx() }
-    val showsWorkPlane = stateHolder.state.isWorkPlaneState
 
     AnimatedContent(
         targetState = stateHolder.state,
         modifier =
             Modifier
-                .fillMaxWidth()
-                .then(if (showsWorkPlane) Modifier.weight(1f) else Modifier),
+                .fillMaxWidth(),
         transitionSpec = {
             if (!animationsEnabled) {
                 (EnterTransition.None togetherWith ExitTransition.None).using(sizeTransform = null)
@@ -395,11 +407,10 @@ private fun WorkPlane(
     Box(
         modifier =
             Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .clip(shape)
                 .background(fill)
                 .border(1.dp, border, shape)
-                .verticalScroll(rememberScrollState())
                 .padding(12.dp),
     ) {
         content()

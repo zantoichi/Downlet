@@ -264,7 +264,7 @@ internal class DownloadStateHolder(
     fun retryWithBrowserCookies(source: BrowserCookieSource) {
         val error =
             (state as? DownloadUiState.Error)?.takeIf {
-                it.reason == DownloadFailureReason.Authentication
+                it.reason.needsBrowserSession
             } ?: return
         browserCookies = source
         if (error.kind == DownloadErrorKind.Resolution) {

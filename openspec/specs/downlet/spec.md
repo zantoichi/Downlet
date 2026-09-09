@@ -67,7 +67,7 @@ Ready SHALL identify the resolved media with a thumbnail or stable missing-previ
 #### Scenario: User reads audio quality help
 
 - **WHEN** the user opens Audio quality explained beside the audio format selector
-- **THEN** Downlet shows scrollable explanations of Original, MP3, FLAC's source-quality ceiling, playback loudness, clipping limits, and ReplayGain's metadata-only adjustment and player dependence
+- **THEN** Downlet shows paged explanations of Original, MP3, FLAC's source-quality ceiling, playback loudness, clipping limits, and ReplayGain's metadata-only adjustment and player dependence, with Previous and Next navigation and no scrolling
 - **AND** the help states that Downlet does not boost or normalize exports and does not currently add ReplayGain tags
 - **AND** Back to download restores the user's format, destination, and authorization without starting a download
 
@@ -141,8 +141,13 @@ Downloading SHALL preserve media context, lock choices that must not change, and
 #### Scenario: YouTube requires authentication
 
 - **WHEN** diagnostics require age confirmation or browser cookies
-- **THEN** Downlet offers Firefox, Chrome, and Edge, explains that the selected profile must already have an age-verified YouTube session, and does not expose a redundant unauthenticated Retry
+- **THEN** Downlet offers Firefox, Chrome, and Edge, explains that the selected profile must be able to watch the video while signed in, and does not expose a redundant unauthenticated Retry
 - **AND** selecting a browser gives yt-dlp temporary cookie access for resolution, download, and retries of only the current video without Downlet storing or displaying cookie values
+
+#### Scenario: YouTube challenges a public-video session
+
+- **WHEN** YouTube asks the user to confirm they are not a bot
+- **THEN** Downlet explains that this can affect public videos without implying an age restriction, offers Retry and browser-session recovery, and asks the user to complete any YouTube check in that browser first
 
 #### Scenario: Storage recovery changes destination
 
@@ -255,7 +260,7 @@ Downlet SHALL be distributed for Windows 10 and 11 x64 as both one portable `Dow
 
 ### Requirement: Window size follows task stage
 
-The primary window SHALL use a fixed `760` logical-pixel width and two automatic height tiers: Compact at `188` logical pixels for Empty and Previewing, and Expanded at `480` logical pixels for Setup, Resolving, Ready, Downloading, Completed, and Error. Manual resize and maximize SHALL be unavailable while ordinary minimize and close remain available. Height changes SHALL keep the URL anchor stable, remain within the active work area, and use brief interruptible motion with an equivalent instant result when motion duration is disabled. The Downlet icon and wordmark SHALL remain centered in the title bar independently of the trailing theme control.
+The primary window SHALL use a fixed `760` logical-pixel width and content-driven height with a minimum of `188` logical pixels. Setup phases, Resolving, Ready, Downloading, Completed, Error, and help pages SHALL fit their measured content without scrolling. Full terms and audio help SHALL show one section per page with Previous and Next controls. Manual resize and maximize SHALL be unavailable while ordinary minimize and close remain available. Height changes SHALL keep the URL anchor stable, remain within the active work area, and use brief interruptible motion with an equivalent instant result when motion duration is disabled. If the work area is too small, content SHALL fit proportionally so actions remain visible. The Downlet icon and wordmark SHALL remain centered in the title bar independently of the trailing theme control.
 
 #### Scenario: Resolution reveals useful content
 

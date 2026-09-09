@@ -9,6 +9,23 @@ import kotlin.time.Duration.Companion.seconds
 
 class YtDlpProgressTest {
     @Test
+    fun `public video bot challenges do not claim an age restriction`() {
+        listOf("you're", "you’re").forEach { pronoun ->
+            val reason =
+                classifyDownloadFailure(
+                    listOf(
+                        "ERROR: DIHm1Jzu7vI: Sign in to confirm $pronoun not a bot. " +
+                            "Use --cookies-from-browser or --cookies for the authentication.",
+                    ),
+                )
+            assertEquals(DownloadFailureReason.BotChallenge, reason)
+            assertEquals(true, reason.needsBrowserSession)
+            val copy = ProductCopy.downloadFailure(DownloadErrorKind.Resolution, reason)
+            assertEquals("YouTube wants to verify this session.", copy.title)
+        }
+    }
+
+    @Test
     fun `parser accepts controlled values and treats unavailable numbers as missing`() {
         assertEquals(
             YtDlpProgressEvent.Plan(

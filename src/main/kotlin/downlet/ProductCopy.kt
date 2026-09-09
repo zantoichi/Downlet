@@ -49,15 +49,28 @@ internal object ProductCopy {
                 "Downlet does not currently add ReplayGain tags.",
         )
 
+    private val botChallengeFailure =
+        DownloadFailureCopy(
+            "YouTube wants to verify this session.",
+            "This can happen with public videos; it doesn’t mean the video is age-restricted. " +
+                "Open the video in your browser and complete any YouTube check, " +
+                "then choose that browser below. " +
+                "Downlet temporarily uses its cookies without storing them. You can also wait and retry.",
+        )
+
     fun downloadFailure(
         kind: DownloadErrorKind,
         reason: DownloadFailureReason,
     ): DownloadFailureCopy =
         when (reason) {
+            DownloadFailureReason.BotChallenge -> {
+                botChallengeFailure
+            }
+
             DownloadFailureReason.Authentication -> {
                 DownloadFailureCopy(
                     "Sign in required.",
-                    "Choose a browser where you’re signed in with an age-verified account. yt-dlp temporarily reads " +
+                    "Choose a browser where you can watch this video while signed in. yt-dlp temporarily reads " +
                         "that browser profile’s cookies; Downlet doesn’t store them.",
                 )
             }

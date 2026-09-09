@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -81,6 +82,7 @@ internal fun ProductWindow(
     animationsEnabled: Boolean = true,
 ) {
     val initialTier = WindowPresentationTier.Compact
+    var contentHeight by remember { mutableStateOf(initialTier.preferredSize.height) }
     val windowState =
         rememberWindowState(
             position = initialPosition,
@@ -112,10 +114,11 @@ internal fun ProductWindow(
                 icon = appIcon,
                 resizable = false,
             ) {
+                val density = LocalDensity.current
                 ManageProductWindowSizing(
                     window = window,
                     windowState = windowState,
-                    tier = stateHolder.state.windowPresentationTier,
+                    preferredSize = DpSize(initialTier.preferredSize.width, contentHeight),
                     animationsEnabled = animationsEnabled,
                 )
                 ManageWindowsTaskbarProgress(window, stateHolder.state)
@@ -142,6 +145,11 @@ internal fun ProductWindow(
                 ProductSurface(
                     stateHolder = stateHolder,
                     animationsEnabled = animationsEnabled,
+                    onContentHeight = { desired, viewport ->
+                        contentHeight =
+                            (with(density) { window.height.toDp() } + desired - viewport)
+                                .coerceAtLeast(initialTier.preferredSize.height)
+                    },
                 )
             }
         }

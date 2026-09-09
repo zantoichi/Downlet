@@ -29,7 +29,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performMouseInput
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
@@ -211,11 +210,10 @@ class ProductSmokeTest {
                 onNodeWithText("Read full terms").performClick()
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Full terms").assertExists()
-                onNodeWithText("Before setup").assertExists()
-                onNodeWithText("Third-party tools").assertExists()
-                onNodeWithText("Licenses").assertExists()
-                onNodeWithText("Your responsibility").assertExists()
-                onNodeWithText("Limits").assertExists()
+                ProductCopy.legalSections.forEachIndexed { index, section ->
+                    onNodeWithText(section.title).assertIsDisplayed()
+                    if (index < ProductCopy.legalSections.lastIndex) onNodeWithText("Next").performClick()
+                }
                 onNodeWithText("Back to setup").performClick()
                 mainClock.advanceTimeByFrame()
                 onNodeWithText("Prepare this download").assertExists()
@@ -319,13 +317,15 @@ class ProductSmokeTest {
                 val selectedQuality = stateHolder.selectedQualityLabel
                 onNodeWithText("Audio quality explained").performClick()
                 mainClock.advanceTimeByFrame()
-                ProductCopy.audioQualityAnswers.keys.forEach { question ->
-                    onNodeWithText(question).performScrollTo().assertIsDisplayed()
+                ProductCopy.audioQualityAnswers.keys.forEachIndexed { index, question ->
+                    onNodeWithText(question).assertIsDisplayed()
+                    if (index < ProductCopy.audioQualityAnswers.size - 1) onNodeWithText("Next").performClick()
+                    mainClock.advanceTimeByFrame()
                 }
-                onAllNodesWithText("Back to download")[1].performScrollTo().performClick()
+                onNodeWithText("Back to download").performClick()
                 mainClock.advanceTimeByFrame()
                 assertEquals(selectedQuality, stateHolder.selectedQualityLabel)
-                onNodeWithText("Download").performScrollTo().assertIsEnabled()
+                onNodeWithText("Download").assertIsEnabled()
                 onNodeWithText("Download").performClick()
                 stateScheduler.runCurrent()
                 mainClock.advanceTimeByFrame()
@@ -543,6 +543,20 @@ class ProductSmokeTest {
                 onNodeWithText("Use Chrome").assertIsDisplayed()
                 onNodeWithText("Use Edge").assertIsDisplayed()
                 assertTrue(onAllNodesWithText("Retry").fetchSemanticsNodes().isEmpty())
+                runOnIdle {
+                    stateHolder.showDesignState(
+                        DownloadUiState.Error(
+                            DownloadFixtures.normal,
+                            DownloadErrorKind.Resolution,
+                            DownloadFailureReason.BotChallenge,
+                        ),
+                    )
+                }
+                onNodeWithText("YouTube wants to verify this session.").assertIsDisplayed()
+                onNodeWithText("Retry").assertIsDisplayed()
+                onNodeWithText("Use Firefox").assertIsDisplayed().performClick()
+                stateScheduler.runCurrent()
+                assertTrue(stateHolder.state !is DownloadUiState.Error)
             }
         } finally {
             stateHolder.close()

@@ -118,20 +118,20 @@ private fun windowsClientAreaAnimationsEnabled(): Boolean {
 internal fun ManageProductWindowSizing(
     window: Frame,
     windowState: WindowState,
-    tier: WindowPresentationTier,
+    preferredSize: DpSize,
     animationsEnabled: Boolean,
 ) {
     val density = LocalDensity.current
     val densityScale = density.density
     val animatedHeight = remember(window) { Animatable(window.height.toFloat()) }
 
-    LaunchedEffect(tier, animationsEnabled, densityScale) {
+    LaunchedEffect(preferredSize, animationsEnabled, densityScale) {
         val current = window.bounds.toWindowBounds()
         val target =
             fitWindowBounds(
                 current = current,
                 workArea = activeWorkArea(window),
-                targetSize = tier.preferredSize.toDevicePixels(densityScale),
+                targetSize = preferredSize.toDevicePixels(densityScale),
             )
         animatedHeight.snapTo(current.height.toFloat())
 

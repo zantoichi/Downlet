@@ -10,7 +10,8 @@ Normal launch follows the host system's light or dark preference, with light as 
 
 - Keep one fixed `760` logical-pixel width.
 - Empty and Previewing use Compact `760 × 188`.
-- Setup, Resolving, Ready, Downloading, Completed, and Error use Expanded `760 × 480`.
+- All other states use measured content height, including setup phases, errors, and expanded guidance, with no scroll container.
+- Terms and audio help show one section per page with Previous and Next. If the active work area is smaller than the content, fit the content proportionally so all actions remain visible.
 - Keep the URL row anchored while automatic sizing changes height only.
 - Use one inset tonal work plane for resolved media and later states. No nested cards or shadows.
 - Center the Downlet icon and wordmark in the title bar independently of the trailing theme control.
