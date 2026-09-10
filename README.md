@@ -1,7 +1,7 @@
 # Downlet
 
 <p align="center">
-  <img src="src/main/composeResources/drawable/app_icon.svg" width="72" alt="Downlet logo">
+  <img src="src/main/composeResources/drawable/app_icon.png" width="72" alt="Downlet logo">
 </p>
 
 <p align="center">
