@@ -376,10 +376,10 @@ dependencies {
     implementation(compose.desktop.currentOs) {
         exclude(group = "org.jetbrains.compose.material")
     }
-    implementation("org.jetbrains.jewel:jewel-int-ui-standalone:0.40.0-262.10315.125") {
+    implementation("org.jetbrains.jewel:jewel-int-ui-standalone:0.41.0-262.10968.63") {
         exclude(group = "org.jetbrains.intellij.deps.kotlinx", module = "kotlinx-coroutines-core-jvm")
     }
-    implementation("org.jetbrains.jewel:jewel-int-ui-decorated-window:0.40.0-262.10315.125") {
+    implementation("org.jetbrains.jewel:jewel-int-ui-decorated-window:0.41.0-262.10968.63") {
         exclude(group = "org.jetbrains.intellij.deps.kotlinx", module = "kotlinx-coroutines-core-jvm")
     }
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
