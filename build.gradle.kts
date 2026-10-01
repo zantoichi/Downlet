@@ -361,7 +361,7 @@ abstract class PackageWindowsSingleExeTask
 plugins {
     kotlin("jvm") version "2.4.20"
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.20"
-    id("org.jetbrains.compose") version "1.12.0"
+    id("org.jetbrains.compose") version "1.12.1"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
     id("dev.detekt") version "2.0.0-alpha.6"
 }
@@ -376,10 +376,10 @@ dependencies {
     implementation(compose.desktop.currentOs) {
         exclude(group = "org.jetbrains.compose.material")
     }
-    implementation("org.jetbrains.jewel:jewel-int-ui-standalone:0.40.0-262.10315.125") {
+    implementation("org.jetbrains.jewel:jewel-int-ui-standalone:0.41.0-262.10968.63") {
         exclude(group = "org.jetbrains.intellij.deps.kotlinx", module = "kotlinx-coroutines-core-jvm")
     }
-    implementation("org.jetbrains.jewel:jewel-int-ui-decorated-window:0.40.0-262.10315.125") {
+    implementation("org.jetbrains.jewel:jewel-int-ui-decorated-window:0.41.0-262.10968.63") {
         exclude(group = "org.jetbrains.intellij.deps.kotlinx", module = "kotlinx-coroutines-core-jvm")
     }
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
@@ -388,7 +388,7 @@ dependencies {
     runtimeOnly("com.jetbrains.intellij.platform:icons:262.10315.174")
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("org.jetbrains.compose.ui:ui-test:1.12.0")
+    testImplementation("org.jetbrains.compose.ui:ui-test:1.12.1")
 }
 
 kotlin {
