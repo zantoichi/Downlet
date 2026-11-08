@@ -188,7 +188,8 @@ jobs:
               exit 0
           }
           winget validate --manifest build\release\package-managers\winget
-          if ($LASTEXITCODE -ne 0) {
+          # 0x8A150028: valid with warnings, e.g. a runner WinGet older than the manifest schema.
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335192) {
               throw "WinGet manifest validation failed with exit code $LASTEXITCODE."
           }
 
