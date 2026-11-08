@@ -25,8 +25,8 @@ Downlet does not redistribute yt-dlp, FFmpeg, or FFprobe. When required tools ar
 
 | Component | Pinned artifact | License | Source |
 | --- | --- | --- | --- |
-| yt-dlp | Official `yt-dlp.exe` 2026.08.19 | GPLv3+ for the official Windows executable | https://github.com/yt-dlp/yt-dlp |
-| FFmpeg and FFprobe | Gyan Windows essentials build 9.0.1 | GPLv3 | https://www.gyan.dev/ffmpeg/builds/ |
+| yt-dlp | Official `yt-dlp.exe` 2026.10.26 | GPLv3+ for the official Windows executable | https://github.com/yt-dlp/yt-dlp |
+| FFmpeg and FFprobe | Gyan Windows essentials build 9.0.2 | GPLv3 | https://www.gyan.dev/ffmpeg/builds/ (downloaded from https://github.com/GyanD/codexffmpeg/releases) |
 
 ## QuickJS-NG license
 

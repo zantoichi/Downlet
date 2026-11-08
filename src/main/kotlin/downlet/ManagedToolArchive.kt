@@ -138,7 +138,7 @@ private fun safeArchivePath(name: String): Boolean =
 
 internal fun ytDlpArchive(): ManagedToolArchive =
     ManagedToolArchive(
-        checkNotNull(ManagedToolArchive::class.java.getResourceAsStream("/tools/yt-dlp/2026.08.19/windows-x64.sha256"))
+        checkNotNull(ManagedToolArchive::class.java.getResourceAsStream("/tools/yt-dlp/2026.10.26/windows-x64.sha256"))
             .bufferedReader()
             .useLines { lines ->
                 lines.associate { line ->
