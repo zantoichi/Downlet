@@ -366,8 +366,8 @@ class DownloadRuntimeTest {
                 assertEquals(ToolStatus(missing = DownloadTool.entries), absent.toolStatus())
 
                 val managed = root.resolve("managed")
-                executable(managed.resolve("yt-dlp/2026.08.19"), "yt-dlp.exe")
-                executable(managed.resolve("ffmpeg/9.0.1/bin"), "ffmpeg.exe")
+                executable(managed.resolve("yt-dlp/2026.10.26"), "yt-dlp.exe")
+                executable(managed.resolve("ffmpeg/9.0.2/bin"), "ffmpeg.exe")
                 val incomplete = YtDlpDownloadRuntime(toolsDirectory = managed, environment = emptyMap())
 
                 assertEquals(ToolStatus(repairable = DownloadTool.entries), incomplete.toolStatus())
@@ -379,8 +379,8 @@ class DownloadRuntimeTest {
         withTempDirectory { root ->
             runTest {
                 val managed = root.resolve("managed")
-                executable(managed.resolve("yt-dlp/2026.08.19"), "yt-dlp.exe")
-                executable(managed.resolve("ffmpeg/9.0.1/bin"), "ffmpeg.exe")
+                executable(managed.resolve("yt-dlp/2026.10.26"), "yt-dlp.exe")
+                executable(managed.resolve("ffmpeg/9.0.2/bin"), "ffmpeg.exe")
                 val pathDirectory = root.resolve("path")
                 executable(pathDirectory, "yt-dlp.exe")
                 ffmpegPair(pathDirectory)
@@ -398,7 +398,7 @@ class DownloadRuntimeTest {
     @Test
     fun `typed tool metadata supplies labels and setup size`() {
         assertEquals(listOf("yt-dlp", "FFmpeg"), DownloadTool.entries.map(DownloadTool::label))
-        assertEquals(124, DownloadTool.entries.sumOf(DownloadTool::estimatedDownloadMegabytes))
+        assertEquals(133, DownloadTool.entries.sumOf(DownloadTool::estimatedDownloadMegabytes))
     }
 
     @Test

@@ -1232,27 +1232,29 @@ private val DOWNLOAD_TIMEOUT: Duration = 10.minutes
 private const val HTTP_SUCCESS_MIN = 200
 private const val HTTP_SUCCESS_MAX = 299
 private const val DOWNLET_DOWNLOAD_AGENT_VERSION = "0.1"
-private const val YT_DLP_VERSION = "2026.08.19"
+private const val YT_DLP_VERSION = "2026.10.26"
 private const val QUICKJS_VERSION = "0.16.2"
-private const val FFMPEG_VERSION = "9.0.1"
+private const val FFMPEG_VERSION = "9.0.2"
 private const val YT_DLP_MAX_DOWNLOAD_BYTES = 64L * 1024 * 1024
 private const val FFMPEG_MAX_DOWNLOAD_BYTES = 256L * 1024 * 1024
 private const val OEMBED_ENDPOINT = "https://www.youtube.com/oembed"
 private const val YOUTUBE_THUMBNAIL_HOST = "i.ytimg.com"
 private const val QUICKJS_RESOURCE_PATH = "/tools/quickjs-ng/$QUICKJS_VERSION/qjs.exe"
 private const val QUICKJS_SHA256 = "7b27412de844403545bd151fbe49191b4d5b91a9e15b5db7c863fea54639a82b"
-private const val FFMPEG_EXECUTABLE_SHA256 = "72a489eccd008c2ec2c0a5856c5c75bc3d8bbfa90166c4566865c246445e6aa3"
-private const val FFPROBE_EXECUTABLE_SHA256 = "19202b23c0043f15ad1b7bce2344f406fd52bd6efd8f995ce02e7392a1cec52f"
+private const val FFMPEG_EXECUTABLE_SHA256 = "3256173f3f8bffd7df12227c68adf68025edb1832273a9530688a7bb1ed8edec"
+private const val FFPROBE_EXECUTABLE_SHA256 = "f0d36ecbbdd3bcfac3efa078c96c7271c2e68b3810595552ac3b7f17e9a65c52"
 private val YT_DLP_ASSET =
     ToolAsset(
         uri = URI("https://github.com/yt-dlp/yt-dlp/releases/download/$YT_DLP_VERSION/yt-dlp_win.zip"),
-        sha256 = "30b4c14aafab6082becff7881e41b76df46dc43ea7633479410a91e29da492bf",
+        sha256 = "fd51b212cf8380c7a52ee08c0d6be7f3c59b2f2c832eaf7b45acfae6eab57419",
         maxBytes = YT_DLP_MAX_DOWNLOAD_BYTES,
     )
+private const val FFMPEG_RELEASES = "https://github.com/GyanD/codexffmpeg/releases/download"
 private val FFMPEG_ASSET =
     ToolAsset(
-        uri = URI("https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-$FFMPEG_VERSION-essentials_build.zip"),
-        sha256 = "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9",
+        // Gyan's GitHub mirror keeps every release; gyan.dev/packages drops old ones.
+        uri = URI("$FFMPEG_RELEASES/$FFMPEG_VERSION/ffmpeg-$FFMPEG_VERSION-essentials_build.zip"),
+        sha256 = "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
         maxBytes = FFMPEG_MAX_DOWNLOAD_BYTES,
     )
 private val PREVIEW_FAILURE_PROGRESS = fakeProgressSteps[2]
