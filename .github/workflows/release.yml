@@ -36,6 +36,8 @@ jobs:
 
       - name: Validate tag and version
         id: release
+        env:
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
         run: |
           $tag = $env:GITHUB_REF_NAME
           if ($tag -eq 'v0.0.1-rc.1') {
@@ -57,9 +59,12 @@ jobs:
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "version=$version" >> $env:GITHUB_OUTPUT
           "unsigned_bootstrap=$unsignedBootstrap" >> $env:GITHUB_OUTPUT
+          # Stable releases ship unsigned until SignPath credentials are configured.
+          $signed = ($unsignedBootstrap -eq 'false' -and -not [string]::IsNullOrWhiteSpace($env:SIGNPATH_ORGANIZATION_ID)).ToString().ToLowerInvariant()
+          "signed=$signed" >> $env:GITHUB_OUTPUT
 
       - name: Set up Java for Gradle
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '21'
@@ -98,7 +103,7 @@ jobs:
 
       - name: Upload signing input
         id: signing_input
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signing-input-${{ github.run_id }}
           path: build/signing-input/*
@@ -107,7 +112,7 @@ jobs:
           retention-days: 1
 
       - name: Submit stable artifacts to SignPath
-        if: steps.release.outputs.unsigned_bootstrap != 'true'
+        if: steps.release.outputs.signed == 'true'
         uses: SignPath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -119,8 +124,8 @@ jobs:
           output-artifact-directory: build/signed
           wait-for-completion-timeout-in-seconds: '3600'
 
-      - name: Keep bootstrap artifacts unsigned
-        if: steps.release.outputs.unsigned_bootstrap == 'true'
+      - name: Keep artifacts unsigned
+        if: steps.release.outputs.signed != 'true'
         run: |
           New-Item -ItemType Directory -Path build\signed -Force | Out-Null
           Copy-Item -Path build\signing-input\* -Destination build\signed
@@ -149,8 +154,10 @@ jobs:
               MsiPath = '${{ steps.signed.outputs.msi }}'
               OutputDirectory = 'build\release'
           }
-          if ('${{ steps.release.outputs.unsigned_bootstrap }}' -eq 'true') {
+          if ('${{ steps.release.outputs.signed }}' -ne 'true') {
               $arguments.SkipSignatureCheck = $true
+          }
+          if ('${{ steps.release.outputs.unsigned_bootstrap }}' -eq 'true') {
               $arguments.SkipPackageManagerMetadata = $true
           }
           .\scripts\release\Prepare-Release.ps1 @arguments
@@ -192,7 +199,7 @@ jobs:
 
       - name: Upload package-manager submission bundle
         if: steps.release.outputs.unsigned_bootstrap != 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: package-manager-submissions-${{ steps.release.outputs.version }}
           path: |
@@ -226,14 +233,28 @@ jobs:
           "@ | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
           }
           else {
+              $repository = '${{ github.repository }}'
+              if ('${{ steps.release.outputs.signed }}' -eq 'true') {
+                  $trustNotice = ''
+                  $trustFeature = 'Timestamped Authenticode signatures, SHA-256 checksums, and GitHub artifact attestations.'
+              }
+              else {
+                  $trustNotice = @"
+          > [!NOTE]
+          > This release is not code-signed. Windows may show an unknown-publisher or SmartScreen warning. Verify a download with SHA256SUMS.txt or with ``gh attestation verify <file> --repo $repository``.
+
+          "@
+                  $trustFeature = 'SHA-256 checksums and GitHub artifact attestations that prove each file was built by this repository.'
+              }
               @"
           # Downlet $version
 
+          $trustNotice
           Initial public release for Windows 10 and 11 x64.
 
           - Portable EXE with no installation or system Java requirement.
           - User-scoped MSI for WinGet and Chocolatey.
-          - Timestamped Authenticode signatures, SHA-256 checksums, and GitHub artifact attestations.
+          - $trustFeature
           - Real transfer bytes, speed, ETA, taskbar progress, cancellation, failure guidance, managed-tool repair, and exact **Show in folder** behavior.
 
           Package-manager submissions are prepared by this workflow and remain subject to Chocolatey and WinGet review.

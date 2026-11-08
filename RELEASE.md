@@ -8,10 +8,10 @@ This guide separates automated release work from account-bound approval and publ
 | --- | --- | --- |
 | GitHub Releases | Portable | `Downlet-<version>-windows-x64-portable.exe` |
 | Shared installer | Downlet | `Downlet-<version>-windows-x64-user.msi` |
-| Chocolatey | `downlet` | Thin package that downloads the signed MSI |
+| Chocolatey | `downlet` | Thin package that downloads the released MSI |
 | WinGet | `Downlet.Downlet` | User-scoped WiX/MSI manifest |
 
-Windows Store packaging is deferred. Bundled yt-dlp or FFmpeg, application self-update, extra architectures, and automated package-manager submission are out of scope.
+Microsoft Store packaging, bundled yt-dlp or FFmpeg, application self-update, extra architectures, and automated package-manager submission are out of scope.
 
 ## Local release check
 
@@ -33,7 +33,7 @@ Prepare unsigned metadata for local inspection only:
   -SkipSignatureCheck
 ```
 
-`-SkipSignatureCheck` marks generated metadata as unverified. Never submit that output to Chocolatey or WinGet.
+`-SkipSignatureCheck` records `signaturesVerified: false` and writes unsigned wording into the Chocolatey verification file. Submit only the output of the release workflow, never a local build.
 
 ## First preview: repository setup
 
@@ -43,18 +43,14 @@ The workflow bootstraps Gradle with Java 21, resolves JetBrains Runtime 25 throu
 
 Create/connect `zantoichi/Downlet`, push the reviewed source and workflow, then follow **Unsigned bootstrap** below. Share the exact prerelease URL, since GitHub's latest-release link is intended for stable releases.
 
-## Later signed-release setup
+## Repository setup
 
-These steps require the public GitHub repository owner:
+Releases are unsigned until SignPath credentials exist. The workflow checks `SIGNPATH_ORGANIZATION_ID`: when it is empty, stable tags skip SignPath, publish unsigned files with checksums and attestations, and still generate Chocolatey and WinGet metadata. Completed setup:
 
-1. Add and push the public `origin` remote.
-2. Create a protected GitHub environment named `public-release` with required reviewers.
-3. Enable immutable releases in repository settings before the first stable publication.
-4. Add the SignPath secret and variables listed in [CODE_SIGNING.md](CODE_SIGNING.md).
-5. Apply to SignPath Foundation with this repository, the code-signing policy, the privacy statement, and named maintainer roles.
-6. Configure the SignPath artifact rule to sign both final-named files and return those names unchanged.
-
-If SignPath Foundation rejects the project, stop the stable release. Evaluate an open-source Certum certificate as the fallback. Do not weaken the stable signing requirement.
+1. Done: public `origin` remote connected and pushed.
+2. Done (2026-11-08): `public-release` environment requires `zantoichi` approval and accepts only `v*` tags.
+3. Done (2026-11-08): immutable releases are enabled.
+To add signing later, apply to SignPath Foundation, add the secret and variables listed in [CODE_SIGNING.md](CODE_SIGNING.md) to `public-release`, and configure the artifact rule to return both files with unchanged names. The next stable tag is then signed with no workflow change.
 
 ## Unsigned bootstrap
 
@@ -86,15 +82,15 @@ git push origin main v0.1.0
 ```
 
 5. Approve the `public-release` environment deployment.
-6. Review and manually approve the SignPath signing request.
-7. Confirm the workflow verifies both timestamped signatures, writes checksums, creates attestations, and publishes the immutable release.
-8. Download the published files and repeat signature, checksum, and attestation verification from a clean machine.
+6. If signing is configured, review and manually approve the SignPath signing request.
+7. Confirm the workflow writes checksums, creates attestations, and publishes the immutable release (and verifies timestamped signatures when signing is configured).
+8. Download the published files and run `gh attestation verify <file> --repo zantoichi/Downlet` and the checksum check from a clean machine.
 
 Corrections use a new patch version. Never replace an asset attached to a published stable release.
 
 ## Chocolatey submission
 
-The stable workflow uploads `package-manager-submissions-<version>` containing a generated `.nupkg`. It has no yt-dlp, FFmpeg, Java, or runtime dependency. Its install script downloads the immutable signed MSI, verifies the exact SHA-256 hash, and passes:
+The stable workflow uploads `package-manager-submissions-<version>` containing a generated `.nupkg`. It has no yt-dlp, FFmpeg, Java, or runtime dependency. Its install script downloads the immutable released MSI, verifies the exact SHA-256 hash, and passes:
 
 ```text
 /qn /norestart ALLUSERS=2 MSIINSTALLPERUSER=1
@@ -121,6 +117,15 @@ The stable workflow uploads three generated WinGet 1.12 manifests. Before first 
 5. Wait for URL checks and SandboxTest. Resolve findings without replacing published release assets.
 6. On clean Windows 10 and 11 machines, test install, upgrade, launch, and uninstall through WinGet.
 
+## Account-bound steps
+
+Only these steps need the maintainer's identity, accounts, or agreement. Do them in order:
+
+1. Tag `v0.1.0`, push it, and approve the `public-release` deployment.
+2. Optional: test install, launch, and uninstall of the published MSI in Windows Sandbox (a Windows feature you enable yourself).
+3. Chocolatey: create a community account, download `package-manager-submissions-<version>` from the workflow run, and `choco push` the `.nupkg` with your API key.
+4. WinGet: in your fork of `microsoft/winget-pkgs`, copy the three manifests to `manifests/d/Downlet/Downlet/<version>` and open the pull request.
+
 ## Clean-machine acceptance
 
 For the local `0.0.2` candidate, run `gradlew.bat --no-daemon --console=plain check smokeTest packageWindowsSingleExe packageMsi -PdownletVersion=0.0.2`. Do not retag or replace `v0.0.1-rc.1` assets. Verify the portable splash on fresh extraction and cached launches, its handoff to the main window, concurrent launches, and startup failure. Verify previews, tool setup, video download, and MP3 conversion with Mullvad split tunneling enabled, including launch from an excluded browser. Both package configurations must contain `-Djava.net.preferIPv4Stack=true`; this preserves VPN routing but cannot reach IPv6-only hosts.
@@ -142,13 +147,11 @@ Use `scripts/release/Test-PortableStartup.ps1 -PortablePath <candidate.exe>` for
 
 ## Final manual pieces
 
-- [ ] Public GitHub remote connected and pushed.
-- [ ] `public-release` environment protected.
-- [ ] Immutable releases enabled.
-- [ ] SignPath Foundation project accepted and configured.
-- [ ] GitHub SignPath secret and variables installed.
+- [x] Public GitHub remote connected and pushed.
+- [x] `public-release` environment protected.
+- [x] Immutable releases enabled.
 - [ ] Unsigned bootstrap tested and kept out of package managers.
-- [ ] Stable signing request manually approved.
+- [ ] Optional later: SignPath accepted and its secret and variables installed.
 - [ ] Stable release verified from a clean machine.
 - [ ] Chocolatey per-user MSI behavior confirmed, then package submitted.
 - [ ] WinGet identifier confirmed, manifests validated, then pull request submitted.

@@ -143,7 +143,7 @@ if (-not $SkipSignatureCheck) {
     Assert-TimestampedSignature $msiSource
 }
 else {
-    Write-Warning 'Signature verification was explicitly skipped. Do not submit these artifacts to package managers.'
+    Write-Warning 'Artifacts are unsigned; users verify them with SHA256SUMS.txt and GitHub artifact attestations.'
 }
 
 $portableVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($portableSource).ProductVersion
@@ -212,7 +212,10 @@ if (-not $SkipPackageManagerMetadata) {
     <authors>Downlet maintainers</authors>
     <owners>Downlet maintainers</owners>
     <projectUrl>$projectUrl</projectUrl>
-    <packageSourceUrl>$projectUrl</packageSourceUrl>
+    <packageSourceUrl>$projectUrl/blob/$ReleaseTag/scripts/release/Prepare-Release.ps1</packageSourceUrl>
+    <iconUrl>https://raw.githubusercontent.com/$Repository/$ReleaseTag/src/main/composeResources/drawable/app_icon.png</iconUrl>
+    <docsUrl>$projectUrl#readme</docsUrl>
+    <bugTrackerUrl>$projectUrl/issues</bugTrackerUrl>
     <licenseUrl>$licenseUrl</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <projectSourceUrl>$projectUrl</projectSourceUrl>
@@ -242,16 +245,19 @@ Install-ChocolateyPackage @packageArgs
 "@
     Write-Utf8File (Join-Path $chocolateyTools 'chocolateyinstall.ps1') ($chocolateyInstall.Trim() + "`n")
 
+    $msiKind = if ($SkipSignatureCheck) { 'unsigned' } else { 'Authenticode-signed' }
     $verification = @"
 VERIFICATION
 
-The Chocolatey package downloads the signed MSI from the immutable Downlet GitHub release:
+The Chocolatey package downloads the $msiKind MSI from the immutable Downlet GitHub release:
 $msiUrl
 
 SHA-256:
 $msiHash  $msiName
 
-The checksum is generated from the signed MSI during the protected GitHub release workflow.
+The checksum is generated from that MSI during the protected GitHub release workflow.
+To confirm the MSI was built by this repository's release workflow, run:
+gh attestation verify $msiName --repo $Repository
 "@
     Write-Utf8File (Join-Path $chocolateyTools 'VERIFICATION.txt') ($verification.Trim() + "`n")
 
