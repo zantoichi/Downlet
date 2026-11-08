@@ -220,7 +220,7 @@ if (-not $SkipPackageManagerMetadata) {
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <projectSourceUrl>$projectUrl</projectSourceUrl>
     <releaseNotes>$releaseUrl</releaseNotes>
-    <description>Downlet is a focused Windows desktop app for downloading one accessible YouTube video or audio item. The app provisions pinned yt-dlp and FFmpeg tools after explicit first-use consent and repairs damaged Downlet-managed copies.</description>
+    <description>Downlet is a focused Windows desktop app for downloading one accessible YouTube video or audio item. The app downloads pinned yt-dlp and FFmpeg tools only after the user agrees on first use, and repairs damaged Downlet-managed copies.</description>
     <summary>Focused YouTube video and audio downloader for Windows.</summary>
     <tags>downloader youtube video audio windows desktop</tags>
   </metadata>
@@ -317,7 +317,7 @@ PackageUrl: $projectUrl
 License: 0BSD
 LicenseUrl: $licenseUrl
 ShortDescription: Focused YouTube video and audio downloader for Windows.
-Description: Downlet downloads one accessible YouTube video or audio item at a time. It shows real transfer progress, supports cancellation and recovery, and provisions pinned yt-dlp and FFmpeg tools after explicit first-use consent.
+Description: Downlet downloads one accessible YouTube video or audio item at a time. It shows real transfer progress, supports cancellation and recovery, and downloads pinned yt-dlp and FFmpeg tools only after the user agrees on first use.
 Tags:
   - audio
   - downloader
