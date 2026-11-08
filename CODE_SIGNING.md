@@ -1,10 +1,16 @@
 # Code-signing policy
 
-Current preview releases are unsigned. SignPath Foundation signing is planned, subject to application and approval. The policy below describes the intended signed-release process, not an active signing service.
+Downlet releases are currently not code-signed. No signing service is active. Each release instead publishes SHA-256 checksums and GitHub artifact attestations, so anyone can confirm a file was built by this repository's release workflow:
+
+```powershell
+gh attestation verify Downlet-<version>-windows-x64-user.msi --repo zantoichi/Downlet
+```
+
+Signing turns on automatically, with no workflow change, once SignPath credentials are configured (see below). Until then, Windows may show an unknown-publisher or SmartScreen warning.
 
 ## Scope
 
-The protected release workflow signs only these Downlet-produced Windows artifacts:
+When signing is configured, the protected release workflow signs only these Downlet-produced Windows artifacts:
 
 - `Downlet-<version>-windows-x64-portable.exe`
 - `Downlet-<version>-windows-x64-user.msi`
@@ -25,13 +31,13 @@ Changes from outside contributors require maintainer review before merge. Releas
 1. Stable tags use `v<major>.<minor>.<patch>` and must match `downletVersion` in `gradle.properties`.
 2. The protected workflow runs tests, smoke checks, portable packaging, MSI packaging, payload checks, and MSI identity checks.
 3. The workflow uploads the exact portable EXE and MSI as one short-lived signing input.
-4. Every stable release requires a manual SignPath approval.
-5. Both returned artifacts must have valid timestamped Authenticode signatures.
-6. Checksums and Chocolatey and WinGet metadata are generated only after signing.
+4. While `SIGNPATH_ORGANIZATION_ID` is unset, stable releases ship unsigned and say so in the release notes and Chocolatey verification file.
+5. When it is set, every stable release requires a manual SignPath approval, and both returned artifacts must have valid timestamped Authenticode signatures.
+6. Checksums and Chocolatey and WinGet metadata are generated from the final published files.
 7. GitHub artifact attestations bind the signed files to the release workflow.
 8. Published release assets are immutable. A correction requires a new patch release.
 
-The exact `v0.0.1-rc.1` tag is the only unsigned bootstrap exception. It serves as a feedback demo and the initial downloadable release for a future signing application. It uses the unprotected `bootstrap-release` environment without signing credentials, must be marked unsigned, and must never be submitted to Chocolatey or WinGet.
+The exact `v0.0.1-rc.1` tag is the only unsigned bootstrap exception. It serves as a feedback demo and the initial downloadable release for a future signing application. It uses the unprotected `bootstrap-release` environment, is marked as a prerelease, and must never be submitted to Chocolatey or WinGet.
 
 ## Privacy policy
 
@@ -39,9 +45,9 @@ Downlet has no telemetry, analytics, account, or persistent history. It contacts
 
 This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
 
-## SignPath configuration
+## SignPath configuration (future)
 
-The GitHub repository uses a protected `public-release` environment and these release settings:
+To enable signing, the GitHub repository uses a protected `public-release` environment and these release settings:
 
 - Secret: `SIGNPATH_API_TOKEN`
 - Variable: `SIGNPATH_ORGANIZATION_ID`

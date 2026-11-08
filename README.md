@@ -18,9 +18,15 @@ A focused, open source Windows app for downloading accessible YouTube videos and
 
 ## Download
 
-[Download the latest preview](https://github.com/zantoichi/Downlet/releases). It includes a portable EXE and a per-user MSI for Windows 10 and 11 x64.
+[Download the latest release](https://github.com/zantoichi/Downlet/releases). It includes a portable EXE and a per-user MSI for Windows 10 and 11 x64.
 
-The preview is unsigned, so Windows may show an unknown-publisher or SmartScreen warning.
+After package-manager review, you can also install it with `winget install Downlet.Downlet` or `choco install downlet`.
+
+Releases are not code-signed, so Windows may show an unknown-publisher or SmartScreen warning. To confirm a download was built by this repository, compare it with `SHA256SUMS.txt` or run:
+
+```powershell
+gh attestation verify <downloaded-file> --repo zantoichi/Downlet
+```
 
 ## Use Downlet
 
