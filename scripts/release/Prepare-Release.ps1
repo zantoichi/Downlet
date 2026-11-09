@@ -213,7 +213,8 @@ if (-not $SkipPackageManagerMetadata) {
     <owners>Downlet maintainers</owners>
     <projectUrl>$projectUrl</projectUrl>
     <packageSourceUrl>$projectUrl/blob/$ReleaseTag/scripts/release/Prepare-Release.ps1</packageSourceUrl>
-    <iconUrl>https://raw.githubusercontent.com/$Repository/$ReleaseTag/src/main/composeResources/drawable/app_icon.png</iconUrl>
+    <iconUrl>https://cdn.jsdelivr.net/gh/$Repository@$ReleaseTag/src/main/composeResources/drawable/app_icon.png</iconUrl>
+    <copyright>Copyright (c) 2026 zantoichi</copyright>
     <docsUrl>$projectUrl#readme</docsUrl>
     <bugTrackerUrl>$projectUrl/issues</bugTrackerUrl>
     <licenseUrl>$licenseUrl</licenseUrl>
