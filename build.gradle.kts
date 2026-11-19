@@ -383,7 +383,7 @@ dependencies {
         exclude(group = "org.jetbrains.intellij.deps.kotlinx", module = "kotlinx-coroutines-core-jvm")
     }
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.13.0")
     implementation("net.java.dev.jna:jna-platform:5.19.1")
     runtimeOnly("com.jetbrains.intellij.platform:icons:263.7307.211")
     testImplementation(kotlin("test"))
